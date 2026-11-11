@@ -24,7 +24,7 @@
     "installation": {
       "container": "ghcr.io/parkervcp/installers:debian",
       "entrypoint": "bash",
-      "script": "#!/bin/bash\napt-get update -y && apt-get install -y git curl ca-certificates\nmkdir -p /mnt/server && cd /mnt/server\nif [ -n \"${GIT_ADDRESS}\" ] && [ ! -d .git ]; then\n  git clone --depth 1 -b \"${GIT_BRANCH}\" \"${GIT_ADDRESS}\" . || { echo \"git clone failed\"; exit 1; }\nfi\n# cloudflared\nmkdir -p bin\nARCH=$(uname -m); case \"$ARCH\" in x86_64) A=amd64;; aarch64|arm64) A=arm64;; *) A=amd64;; esac\ncurl -fsSL -o bin/cloudflared \"https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-${A}\"\nchmod +x bin/cloudflared\necho \"install done\"\n"
+      "script": "#!/bin/bash\nset -e\napt-get update -y && apt-get install -y git curl ca-certificates\nmkdir -p /mnt/server && cd /mnt/server\n\n# ソース取得: 空でないフォルダでも動くよう init + fetch 方式にする\nif [ -z \"${GIT_ADDRESS}\" ]; then\n  echo \"!! GIT_ADDRESS が空です。ソースは自分でアップロードするか、変数を設定して再インストールしてください\"\nelif [ ! -d .git ]; then\n  git init -q\n  git remote add origin \"${GIT_ADDRESS}\"\n  git fetch --depth 1 origin \"+refs/heads/${GIT_BRANCH}:refs/remotes/origin/${GIT_BRANCH}\"\n  git checkout -q -f -B \"${GIT_BRANCH}\" \"origin/${GIT_BRANCH}\"\n  git branch -u \"origin/${GIT_BRANCH}\"\n  echo \"source cloned: $(git rev-parse --short HEAD)\"\nelse\n  git pull\nfi\n\n# cloudflared\nmkdir -p bin\nARCH=$(uname -m); case \"$ARCH\" in x86_64) A=amd64;; aarch64|arm64) A=arm64;; *) A=amd64;; esac\ncurl -fsSL -o bin/cloudflared \"https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-${A}\"\nchmod +x bin/cloudflared\necho \"install done\"\n"
     }
   },
   "variables": [
