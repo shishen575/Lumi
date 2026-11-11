@@ -19,7 +19,9 @@
 ## Discord側の準備
 1. Developer Portal でApplication作成 → Bot → **SERVER MEMBERS INTENT** を ON、トークン取得
 2. OAuth2 → Client Secret 取得、Redirects に `BASE_URL/auth/callback` を登録
-3. BOTのロールは付与したいロールより**上**に配置(Manage Roles権限が必要)
+3. 招待リンク(管理者権限・スラッシュコマンド対応。ダッシュボードの「BOTを招待」ボタンも同じ内容):
+   `https://discord.com/oauth2/authorize?client_id=<DISCORD_CLIENT_ID>&scope=bot%20applications.commands&permissions=8&integration_type=0`
+4. BOTのロールは付与したいロールより**上**に配置(管理者権限でもロールの上下の制限は無視できない)
 
 ## ローカル起動
 ```bash

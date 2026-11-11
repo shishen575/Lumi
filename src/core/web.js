@@ -62,7 +62,7 @@ export function startWeb(client, features) {
   api.get('/guilds', (req, res) => res.json({
     guilds: req.session.guilds.map((g) => ({ ...g, botIn: client.guilds.cache.has(g.id) })),
     invite: `https://discord.com/oauth2/authorize?${new URLSearchParams({
-      client_id: process.env.DISCORD_CLIENT_ID, scope: 'bot', permissions: '268435456' })}`, // Manage Roles
+      client_id: process.env.DISCORD_CLIENT_ID, scope: 'bot applications.commands', permissions: '8', integration_type: '0' })}`, // 管理者権限
   }));
 
   // /api/guilds/:gid/... は管理権限チェック済み。req.guild が使える
