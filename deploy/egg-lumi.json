@@ -13,7 +13,7 @@
     "Node.js 22": "ghcr.io/parkervcp/yolks:nodejs_22"
   },
   "file_denylist": [],
-  "startup": "while true; do if [ -d .git ] && [ \"${AUTO_UPDATE}\" = \"1\" ]; then git pull; fi; npm install --omit=dev --no-audit --no-fund; node src/index.js; rc=$?; [ $rc -eq 42 ] || exit $rc; echo \"[update] 更新のため再起動します\"; done",
+  "startup": "git config --global --add safe.directory '*' 2>/dev/null; while true; do if [ -d .git ] && [ \"${AUTO_UPDATE}\" = \"1\" ]; then git pull; fi; npm install --omit=dev --no-audit --no-fund; node src/index.js; rc=$?; [ $rc -eq 42 ] || exit $rc; echo \"[update] 更新のため再起動します\"; done",
   "config": {
     "files": "{}",
     "startup": "{\"done\": \"Dashboard:\"}",
@@ -24,7 +24,7 @@
     "installation": {
       "container": "ghcr.io/parkervcp/installers:debian",
       "entrypoint": "bash",
-      "script": "#!/bin/bash\nset -e\napt-get update -y && apt-get install -y git curl ca-certificates\nmkdir -p /mnt/server && cd /mnt/server\n\n# ソース取得: 空でないフォルダでも動くよう init + fetch 方式にする\nif [ -z \"${GIT_ADDRESS}\" ]; then\n  echo \"!! GIT_ADDRESS が空です。ソースは自分でアップロードするか、変数を設定して再インストールしてください\"\nelif [ ! -d .git ]; then\n  git init -q\n  git remote add origin \"${GIT_ADDRESS}\"\n  git fetch --depth 1 origin \"+refs/heads/${GIT_BRANCH}:refs/remotes/origin/${GIT_BRANCH}\"\n  git checkout -q -f -B \"${GIT_BRANCH}\" \"origin/${GIT_BRANCH}\"\n  git branch -u \"origin/${GIT_BRANCH}\"\n  echo \"source cloned: $(git rev-parse --short HEAD)\"\nelse\n  git pull\nfi\n\n# cloudflared\nmkdir -p bin\nARCH=$(uname -m); case \"$ARCH\" in x86_64) A=amd64;; aarch64|arm64) A=arm64;; *) A=amd64;; esac\ncurl -fsSL -o bin/cloudflared \"https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-${A}\"\nchmod +x bin/cloudflared\necho \"install done\"\n"
+      "script": "#!/bin/bash\nset -e\napt-get update -y && apt-get install -y git curl ca-certificates\nmkdir -p /mnt/server && cd /mnt/server\ngit config --global --add safe.directory '*'   # 所有者が違っても git を使えるようにする\n\n# ソース取得: 何度実行しても同じ結果になる init + fetch 方式(既存の .git や空でないフォルダでも可)\nif [ -z \"${GIT_ADDRESS}\" ]; then\n  echo \"!! GIT_ADDRESS が空です。ソースは自分でアップロードするか、変数を設定して再インストールしてください\"\nelse\n  git init -q\n  git remote set-url origin \"${GIT_ADDRESS}\" 2>/dev/null || git remote add origin \"${GIT_ADDRESS}\"\n  git fetch --depth 1 origin \"+refs/heads/${GIT_BRANCH}:refs/remotes/origin/${GIT_BRANCH}\"\n  git checkout -q -f -B \"${GIT_BRANCH}\" \"origin/${GIT_BRANCH}\"\n  git branch -u \"origin/${GIT_BRANCH}\"\n  echo \"source cloned: $(git rev-parse --short HEAD)\"\nfi\n\n# cloudflared\nmkdir -p bin\nARCH=$(uname -m); case \"$ARCH\" in x86_64) A=amd64;; aarch64|arm64) A=arm64;; *) A=amd64;; esac\ncurl -fsSL -o bin/cloudflared \"https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-${A}\"\nchmod +x bin/cloudflared\necho \"install done\"\n"
     }
   },
   "variables": [
