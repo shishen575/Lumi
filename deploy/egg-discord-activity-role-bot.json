@@ -35,10 +35,7 @@
       "default_value": "",
       "user_viewable": false,
       "user_editable": true,
-      "rules": [
-        "required",
-        "string"
-      ],
+      "rules": "required|string",
       "field_type": "text"
     },
     {
@@ -48,10 +45,7 @@
       "default_value": "",
       "user_viewable": true,
       "user_editable": true,
-      "rules": [
-        "required",
-        "string"
-      ],
+      "rules": "required|string",
       "field_type": "text"
     },
     {
@@ -61,10 +55,7 @@
       "default_value": "",
       "user_viewable": false,
       "user_editable": true,
-      "rules": [
-        "required",
-        "string"
-      ],
+      "rules": "required|string",
       "field_type": "text"
     },
     {
@@ -74,10 +65,7 @@
       "default_value": "",
       "user_viewable": true,
       "user_editable": true,
-      "rules": [
-        "required",
-        "string"
-      ],
+      "rules": "required|string",
       "field_type": "text"
     },
     {
@@ -87,11 +75,7 @@
       "default_value": "",
       "user_viewable": false,
       "user_editable": true,
-      "rules": [
-        "required",
-        "string",
-        "min:16"
-      ],
+      "rules": "required|string|min:16",
       "field_type": "text"
     },
     {
@@ -101,10 +85,7 @@
       "default_value": "",
       "user_viewable": false,
       "user_editable": true,
-      "rules": [
-        "nullable",
-        "string"
-      ],
+      "rules": "nullable|string",
       "field_type": "text"
     },
     {
@@ -114,10 +95,7 @@
       "default_value": "",
       "user_viewable": true,
       "user_editable": true,
-      "rules": [
-        "nullable",
-        "string"
-      ],
+      "rules": "nullable|string",
       "field_type": "text"
     },
     {
@@ -127,10 +105,7 @@
       "default_value": "main",
       "user_viewable": true,
       "user_editable": true,
-      "rules": [
-        "required",
-        "string"
-      ],
+      "rules": "required|string",
       "field_type": "text"
     },
     {
@@ -140,10 +115,7 @@
       "default_value": "0",
       "user_viewable": true,
       "user_editable": true,
-      "rules": [
-        "required",
-        "boolean"
-      ],
+      "rules": "required|boolean",
       "field_type": "text"
     },
     {
@@ -153,10 +125,7 @@
       "default_value": "",
       "user_viewable": true,
       "user_editable": true,
-      "rules": [
-        "nullable",
-        "string"
-      ],
+      "rules": "nullable|string",
       "field_type": "text"
     }
   ]
