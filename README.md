@@ -59,3 +59,15 @@ export default {
 - UIは `public/features/<名前>.js` で `Dash.registerTab({ name, render(el, ctx) })`(`ctx.api` `ctx.roles()` `ctx.channels()` `ctx.toast` 利用可。`public/features/activity-roles.js` が実例)
 - 必要なIntentは `src/core/bot.js` に追加
 - 無効化: 環境変数 `DISABLED_FEATURES=activity-roles,...`
+
+## GitHub 連携の自動更新
+`main` に push すると、サーバー上のLumiが自動で `git pull` → `npm install` → 再起動します。
+1. パネルの変数: `AUTO_UPDATE=1`、`GITHUB_WEBHOOK_SECRET=<ランダムな文字列>`
+2. GitHub リポジトリ → Settings → Webhooks → Add webhook
+   - Payload URL: `https://<BASE_URL>/webhook/github`
+   - Content type: `application/json`
+   - Secret: 上と同じ値 / Events: `Just the push event`
+3. push すると Recent Deliveries に 202 が返れば成功
+
+仕組み: Webhookを署名検証(HMAC-SHA256)して終了コード42で終了 → Egg の起動スクリプトが検知して pull・再起動します。
+非公開リポジトリは、clone時にURLへ読み取り専用トークンを含めておくと pull も通ります。

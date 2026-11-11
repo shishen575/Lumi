@@ -13,7 +13,7 @@
     "Node.js 22": "ghcr.io/parkervcp/yolks:nodejs_22"
   },
   "file_denylist": [],
-  "startup": "if [ -d .git ] && [ \"${AUTO_UPDATE}\" = \"1\" ]; then git pull; fi; npm install --omit=dev --no-audit --no-fund; node src/index.js",
+  "startup": "while true; do if [ -d .git ] && [ \"${AUTO_UPDATE}\" = \"1\" ]; then git pull; fi; npm install --omit=dev --no-audit --no-fund; node src/index.js; rc=$?; [ $rc -eq 42 ] || exit $rc; echo \"[update] 更新のため再起動します\"; done",
   "config": {
     "files": "{}",
     "startup": "{\"done\": \"Dashboard:\"}",
@@ -110,9 +110,9 @@
     },
     {
       "name": "Auto Update",
-      "description": "起動時にgit pullする(1/0)",
+      "description": "起動・再起動時にgit pullする(1/0)。Webhook自動更新を使うなら1",
       "env_variable": "AUTO_UPDATE",
-      "default_value": "0",
+      "default_value": "1",
       "user_viewable": true,
       "user_editable": true,
       "rules": "required|boolean",
@@ -124,6 +124,16 @@
       "env_variable": "DISABLED_FEATURES",
       "default_value": "",
       "user_viewable": true,
+      "user_editable": true,
+      "rules": "nullable|string",
+      "field_type": "text"
+    },
+    {
+      "name": "GitHub Webhook Secret",
+      "description": "GitHub Webhook の Secret(設定するとpushで自動更新。空なら無効)",
+      "env_variable": "GITHUB_WEBHOOK_SECRET",
+      "default_value": "",
+      "user_viewable": false,
       "user_editable": true,
       "rules": "nullable|string",
       "field_type": "text"

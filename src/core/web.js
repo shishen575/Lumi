@@ -4,6 +4,7 @@ import crypto from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { getKV, setKV, db } from './db.js';
+import { mountGithubWebhook } from './webhook.js';
 
 const API = 'https://discord.com/api/v10';
 const PERM_ADMIN = 0x8n, PERM_MANAGE_GUILD = 0x20n;
@@ -12,7 +13,8 @@ export function startWeb(client, features) {
   const app = express();
   const BASE = process.env.BASE_URL || 'http://localhost:3000';
   app.set('trust proxy', 1); // Cloudflare Tunnel / リバプロ越し
-  app.use(express.json());
+  app.use(express.json({ verify: (req, res, buf) => { req.rawBody = buf; } })); // Webhook署名検証用に生ボディを保持
+  mountGithubWebhook(app);
   app.use(session({
     secret: process.env.SESSION_SECRET, resave: false, saveUninitialized: false,
     cookie: { httpOnly: true, sameSite: 'lax', secure: BASE.startsWith('https'), maxAge: 7 * 864e5 },
