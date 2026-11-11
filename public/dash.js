@@ -32,7 +32,8 @@ async function main() {
 window.onhashchange = () => location.reload();
 
 async function guildList() {
-  const { guilds, invite } = await req('/guilds');
+  const { guilds: all, invite } = await req('/guilds');
+  const guilds = [...all].sort((a, b) => b.botIn - a.botIn || a.name.localeCompare(b.name, 'ja')); // BOT導入済みを上に
   app.innerHTML = `<div class="card"><h2>サーバーを選択</h2>${guilds.map((g) => `<div class="guild"><span>${esc(g.name)}</span>${g.botIn ? `<a href="#${g.id}"><button>設定</button></a>` : `<a href="${invite}&guild_id=${g.id}&disable_guild_select=true" target="_blank"><button class="sec">BOTを招待</button></a>`}</div>`).join('') || '<p class="mut">管理権限のあるサーバーがありません</p>'}</div>`;
 }
 
