@@ -71,7 +71,7 @@ export default {
    - Secret: 上と同じ値 / Events: `Just the push event`
 3. push すると Recent Deliveries に 202 が返れば成功
 
-仕組み: Webhookを署名検証(HMAC-SHA256)して終了コード42で終了 → Egg の起動スクリプトが検知して pull・再起動します。
+仕組み: Webhookを署名検証(HMAC-SHA256)して終了コード42で終了 → `src/index.js`(監視役)が検知して、最新へ更新(`git fetch` + `reset --hard`)して再起動します。起動コマンドは `node src/index.js` だけでOKです。
 非公開リポジトリは、clone時にURLへ読み取り専用トークンを含めておくと pull も通ります。
 
 ## スラッシュコマンド
