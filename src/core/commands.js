@@ -1,4 +1,4 @@
-import { Events } from 'discord.js';
+import { Events, SlashCommandBuilder, EmbedBuilder } from 'discord.js';
 
 /**
  * 各機能の `commands: [{ data: SlashCommandBuilder, execute(interaction) }]` を集めて登録・実行する。
@@ -6,6 +6,7 @@ import { Events } from 'discord.js';
  */
 export function setupCommands(client, features) {
   const cmds = features.flatMap((f) => f.commands ?? []);
+  if (!cmds.some((c) => c.data.name === 'help')) cmds.push(helpCommand(cmds, features)); // /help は自動生成
   if (!cmds.length) return;
   const byName = new Map(cmds.map((c) => [c.data.name, c]));
   const body = cmds.map((c) => c.data.toJSON());
@@ -26,4 +27,25 @@ export function setupCommands(client, features) {
     }
   });
   console.log(`[commands] ${cmds.length} 個のコマンドを登録します: ${[...byName.keys()].map((n) => '/' + n).join(' ')}`);
+}
+
+/** 登録済みコマンドと各機能の `help` 文から、ヘルプを自動生成する */
+function helpCommand(cmds, features) {
+  const all = [...cmds.map((c) => c.data), { name: 'help', description: 'このヘルプを表示します' }];
+  return {
+    data: new SlashCommandBuilder().setName('help').setDescription('Lumiの使い方とコマンド一覧を表示します').setDMPermission(false),
+    async execute(i) {
+      const embed = new EmbedBuilder()
+        .setColor(0x6d5dfc)
+        .setTitle('Lumi ヘルプ')
+        .addFields({ name: 'コマンド一覧', value: [...new Map(all.map((d) => [d.name, d])).values()]
+          .map((d) => `\`/${d.name}\` — ${d.description}`).join('\n') });
+      for (const f of features) if (f.help) embed.addFields({ name: f.title ?? f.name, value: f.help });
+      const base = process.env.BASE_URL;
+      if (base && i.memberPermissions?.has('ManageGuild')) {
+        embed.addFields({ name: '設定(管理者向け)', value: `ダッシュボード: ${base}` });
+      }
+      await i.reply({ embeds: [embed], ephemeral: true });
+    },
+  };
 }
