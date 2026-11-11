@@ -5,7 +5,7 @@
     "update_url": null
   },
   "exported_at": "2026-11-11T00:00:00+00:00",
-  "name": "Discord Activity Role Bot (Cloudflare Tunnel)",
+  "name": "Lumi (Discord Bot + Cloudflare Tunnel)",
   "author": "keinosuke575@gmail.com",
   "description": "発言数・リアクション・VC時間でロールを付与するBOT + Webダッシュボード。Cloudflare Tunnelで公開。",
   "features": null,

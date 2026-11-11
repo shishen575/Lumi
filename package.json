@@ -1,5 +1,5 @@
 {
-  "name": "activity-role-bot",
+  "name": "lumi",
   "version": "1.0.0",
   "description": "Discord bot that grants roles by activity (messages / reactions / voice time) with a web dashboard",
   "type": "module",
