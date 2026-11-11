@@ -1,0 +1,163 @@
+{
+  "_comment": "DO NOT EDIT: FILE GENERATED AUTOMATICALLY BY PTERODACTYL PANEL - PTERODACTYL.IO",
+  "meta": {
+    "version": "PTDL_v2",
+    "update_url": null
+  },
+  "exported_at": "2026-11-11T00:00:00+00:00",
+  "name": "Discord Activity Role Bot (Cloudflare Tunnel)",
+  "author": "keinosuke575@gmail.com",
+  "description": "発言数・リアクション・VC時間でロールを付与するBOT + Webダッシュボード。Cloudflare Tunnelで公開。",
+  "features": null,
+  "docker_images": {
+    "Node.js 22": "ghcr.io/parkervcp/yolks:nodejs_22"
+  },
+  "file_denylist": [],
+  "startup": "if [ -d .git ] && [ \"${AUTO_UPDATE}\" = \"1\" ]; then git pull; fi; npm install --omit=dev --no-audit --no-fund; node src/index.js",
+  "config": {
+    "files": "{}",
+    "startup": "{\"done\": \"Dashboard:\"}",
+    "logs": "{}",
+    "stop": "^C"
+  },
+  "scripts": {
+    "installation": {
+      "container": "ghcr.io/parkervcp/installers:debian",
+      "entrypoint": "bash",
+      "script": "#!/bin/bash\napt-get update -y && apt-get install -y git curl ca-certificates\nmkdir -p /mnt/server && cd /mnt/server\nif [ -n \"${GIT_ADDRESS}\" ] && [ ! -d .git ]; then\n  git clone --depth 1 -b \"${GIT_BRANCH}\" \"${GIT_ADDRESS}\" . || { echo \"git clone failed\"; exit 1; }\nfi\n# cloudflared\nmkdir -p bin\nARCH=$(uname -m); case \"$ARCH\" in x86_64) A=amd64;; aarch64|arm64) A=arm64;; *) A=amd64;; esac\ncurl -fsSL -o bin/cloudflared \"https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-${A}\"\nchmod +x bin/cloudflared\necho \"install done\"\n"
+    }
+  },
+  "variables": [
+    {
+      "name": "Discord Token",
+      "description": "BOTトークン",
+      "env_variable": "DISCORD_TOKEN",
+      "default_value": "",
+      "user_viewable": false,
+      "user_editable": true,
+      "rules": [
+        "required",
+        "string"
+      ],
+      "field_type": "text"
+    },
+    {
+      "name": "Client ID",
+      "description": "Application ID",
+      "env_variable": "DISCORD_CLIENT_ID",
+      "default_value": "",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": [
+        "required",
+        "string"
+      ],
+      "field_type": "text"
+    },
+    {
+      "name": "Client Secret",
+      "description": "OAuth2 Client Secret",
+      "env_variable": "DISCORD_CLIENT_SECRET",
+      "default_value": "",
+      "user_viewable": false,
+      "user_editable": true,
+      "rules": [
+        "required",
+        "string"
+      ],
+      "field_type": "text"
+    },
+    {
+      "name": "Base URL",
+      "description": "公開URL (例 https://bot.example.com)。OAuth2 Redirectに BASE_URL/auth/callback を登録",
+      "env_variable": "BASE_URL",
+      "default_value": "",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": [
+        "required",
+        "string"
+      ],
+      "field_type": "text"
+    },
+    {
+      "name": "Session Secret",
+      "description": "ランダムな長い文字列",
+      "env_variable": "SESSION_SECRET",
+      "default_value": "",
+      "user_viewable": false,
+      "user_editable": true,
+      "rules": [
+        "required",
+        "string",
+        "min:16"
+      ],
+      "field_type": "text"
+    },
+    {
+      "name": "Tunnel Token",
+      "description": "Cloudflare Tunnel のトークン(空ならトンネル無効)",
+      "env_variable": "TUNNEL_TOKEN",
+      "default_value": "",
+      "user_viewable": false,
+      "user_editable": true,
+      "rules": [
+        "nullable",
+        "string"
+      ],
+      "field_type": "text"
+    },
+    {
+      "name": "Git Address",
+      "description": "BOTのソースのGitリポジトリURL(アップロードで入れるなら空)",
+      "env_variable": "GIT_ADDRESS",
+      "default_value": "",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": [
+        "nullable",
+        "string"
+      ],
+      "field_type": "text"
+    },
+    {
+      "name": "Git Branch",
+      "description": "ブランチ",
+      "env_variable": "GIT_BRANCH",
+      "default_value": "main",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": [
+        "required",
+        "string"
+      ],
+      "field_type": "text"
+    },
+    {
+      "name": "Auto Update",
+      "description": "起動時にgit pullする(1/0)",
+      "env_variable": "AUTO_UPDATE",
+      "default_value": "0",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": [
+        "required",
+        "boolean"
+      ],
+      "field_type": "text"
+    },
+    {
+      "name": "Disabled Features",
+      "description": "無効にする機能名(カンマ区切り)",
+      "env_variable": "DISABLED_FEATURES",
+      "default_value": "",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": [
+        "nullable",
+        "string"
+      ],
+      "field_type": "text"
+    }
+  ]
+}
