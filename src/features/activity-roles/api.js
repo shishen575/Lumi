@@ -88,7 +88,7 @@ export function mountApi(router) {
   });
 
   router.post('/sync', async (req, res) => {
-    try { res.json({ changed: await evaluateGuild(req.guild) }); }
+    try { res.json({ changed: await evaluateGuild(req.guild, { notify: !!req.body?.notify }) }); }
     catch (e) { res.status(500).json({ error: e.message }); }
   });
 }

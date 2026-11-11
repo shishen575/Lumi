@@ -16,7 +16,7 @@ Dash.registerTab({
         <p class="mut">同じ条件で複数登録すると段階(ランク)になります。例: 発言100→Lv1、500→Lv2、1000→Lv3</p>
       </div>
       <div class="card"><h2>登録済みルール</h2><div id="rules"></div>
-        <div class="row" style="margin-top:12px"><button class="sec" id="sync">全メンバーに今すぐ適用</button><span class="mut">※通常は活動時に自動判定されます</span></div></div>
+        <div class="row" style="margin-top:12px"><button class="sec" id="sync">全メンバーに今すぐ適用</button><label class="mut"><input type="checkbox" id="syncn"> 通知も送る</label><span class="mut">※通常は活動時に自動判定されます</span></div></div>
       <div class="card"><h2>過去の発言数を取り込む</h2>
         <p class="mut">BOT導入前のメッセージも数えます(発言数のみ)。全チャンネルを遡るため、メッセージ数が多いと時間がかかります。<b>現在の発言数は取り込んだ結果で上書き</b>され、完了後に全員へロールを適用します。BOTが閲覧できないチャンネルは対象外です。</p>
         <div class="row"><label>期間 <input type="date" id="bff"> 〜 <input type="date" id="bft"></label><span class="mut">(開始日の初期値はBOTを入れた日。空欄=全期間 / 終了日を含む)</span></div>
@@ -28,7 +28,7 @@ Dash.registerTab({
         <div class="row" style="margin-top:10px"><label>ロール付与の通知先 <select id="nc"><option value="">通知しない</option></select></label>
           <button class="sec" id="nt">テスト送信</button></div>
         <div class="row" style="margin-top:10px"><label style="flex:1">通知メッセージ <input id="tpl" style="width:100%" maxlength="500" placeholder="🎉 {user} さんが **{role}** を獲得しました!({condition})"></label></div>
-        <p class="mut">使える変数: {user}(メンション) {name}(表示名) {role}(ロール名) {condition}(達成条件)。空欄で初期文。一括適用・過去ログ取り込み時は通知しません。</p>
+        <p class="mut">使える変数: {user}(メンション) {name}(表示名) {role}(ロール名) {condition}(達成条件)。空欄で初期文。「全員に今すぐ適用」は、チェックを入れたときだけ通知します。過去ログ取り込み後の自動適用は通知しません。</p>
         <button id="save">保存</button></div>
       <div class="card"><h2>ランキング</h2><div class="row"><select id="lm">${Object.entries(metrics).map(([k, v]) => `<option value="${k}">${esc(v)}</option>`).join('')}</select></div><div id="lb"></div></div>`;
     const $ = (s) => el.querySelector(s);
@@ -47,7 +47,11 @@ Dash.registerTab({
       await api('/rules', { method: 'POST', body: { metric: $('#m').value, threshold: $('#t').value, role_id: $('#r').value, replace_lower: $('#rl').checked } });
       $('#t').value = ''; toast('追加しました'); loadRules();
     };
-    $('#sync').onclick = async () => { toast('適用中…'); const { changed } = await api('/sync', { method: 'POST' }); toast(`${changed} 件のロールを更新しました`); };
+    $('#sync').onclick = async () => {
+      const notify = $('#syncn').checked;
+      if (notify && !confirm('ロールが付与された人ごとに、通知チャンネルへ通知します。人数が多いと大量に流れますがよろしいですか？')) return;
+      toast('適用中…'); const { changed } = await api('/sync', { method: 'POST', body: { notify } }); toast(`${changed} 件のロールを更新しました`);
+    };
     const [s, chans] = await Promise.all([api('/settings'), getChannels()]);
     $('#cd').value = s.message_cooldown; $('#vo').checked = !!s.voice_require_others;
     $('#nc').innerHTML += chans.map((c) => `<option value="${c.id}">#${esc(c.name)}</option>`).join('');

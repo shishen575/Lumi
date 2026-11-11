@@ -57,10 +57,10 @@ export async function evaluateUser(guild, userId) {
 }
 
 /** サーバー全員を再評価(既存の統計に新ルールを適用したい時用) */
-export async function evaluateGuild(guild) {
+export async function evaluateGuild(guild, { notify = false } = {}) {
   const rules = getRules(guild.id);
   const members = await guild.members.fetch();
   let changed = 0;
-  for (const m of members.values()) changed += await evaluateMember(m, rules, { notify: false }); // 一括適用は通知しない(スパム防止)
+  for (const m of members.values()) changed += await evaluateMember(m, rules, { notify }); // 既定は通知しない(スパム防止)。ダッシュボードで選んだときだけ通知
   return changed;
 }
