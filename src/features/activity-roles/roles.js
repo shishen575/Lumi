@@ -1,7 +1,8 @@
 import { getRules, getStats, metricValue } from './db.js';
+import { notifyGranted } from './notify.js';
 
 /** 1人分のロールを評価して付与/剥奪する。変更があった数を返す */
-export async function evaluateMember(member, rules = getRules(member.guild.id)) {
+export async function evaluateMember(member, rules = getRules(member.guild.id), { notify = true } = {}) {
   if (!rules.length || member.user.bot) return 0;
   const stats = getStats(member.guild.id, member.id);
   const me = member.guild.members.me;
@@ -34,6 +35,7 @@ export async function evaluateMember(member, rules = getRules(member.guild.id)) 
     console.error(`[roles] ${member.guild.name}/${member.id}:`, e.message);
     return 0;
   }
+  if (notify && toAdd.length) await notifyGranted(member, toAdd, rules, stats, metricValue);
   return toAdd.length + toRemove.length;
 }
 
@@ -49,6 +51,6 @@ export async function evaluateGuild(guild) {
   const rules = getRules(guild.id);
   const members = await guild.members.fetch();
   let changed = 0;
-  for (const m of members.values()) changed += await evaluateMember(m, rules);
+  for (const m of members.values()) changed += await evaluateMember(m, rules, { notify: false }); // 一括適用は通知しない(スパム防止)
   return changed;
 }

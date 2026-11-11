@@ -26,6 +26,11 @@ CREATE TABLE IF NOT EXISTS settings (
 );
 `);
 
+// 通知機能の追加カラム(既存DBにも適用。すでにあれば無視)
+for (const col of ['notify_channel_id TEXT', 'notify_template TEXT']) {
+  try { db.exec(`ALTER TABLE settings ADD COLUMN ${col}`); } catch { /* exists */ }
+}
+
 // 条件の種類。voice_minutes は保存値(秒)から換算する
 export const METRICS = {
   messages: '発言数',
@@ -57,16 +62,17 @@ export const getRules = (guildId) =>
 export function getSettings(guildId) {
   return (
     db.prepare('SELECT * FROM settings WHERE guild_id=?').get(guildId) ?? {
-      guild_id: guildId, message_cooldown: 5, voice_require_others: 0,
+      guild_id: guildId, message_cooldown: 5, voice_require_others: 0, notify_channel_id: null, notify_template: null,
     }
   );
 }
-export function saveSettings(guildId, { message_cooldown, voice_require_others }) {
+export function saveSettings(guildId, { message_cooldown, voice_require_others, notify_channel_id = null, notify_template = null }) {
   db.prepare(
-    `INSERT INTO settings (guild_id, message_cooldown, voice_require_others) VALUES (?,?,?)
+    `INSERT INTO settings (guild_id, message_cooldown, voice_require_others, notify_channel_id, notify_template) VALUES (?,?,?,?,?)
      ON CONFLICT(guild_id) DO UPDATE SET message_cooldown=excluded.message_cooldown,
-       voice_require_others=excluded.voice_require_others`
-  ).run(guildId, message_cooldown, voice_require_others);
+       voice_require_others=excluded.voice_require_others,
+       notify_channel_id=excluded.notify_channel_id, notify_template=excluded.notify_template`
+  ).run(guildId, message_cooldown, voice_require_others, notify_channel_id, notify_template);
 }
 
 export const leaderboard = (guildId, metric, limit = 50) => {

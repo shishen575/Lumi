@@ -1,6 +1,6 @@
 Dash.registerTab({
   name: 'activity-roles',
-  async render(el, { api, roles: getRoles, esc, toast }) {
+  async render(el, { api, roles: getRoles, channels: getChannels, esc, toast }) {
     const [{ metrics, botJoinedAt }, roles] = await Promise.all([api('/meta'), getRoles()]);
     const roleName = (id) => roles.find((r) => r.id === id);
     el.innerHTML = `
@@ -24,7 +24,12 @@ Dash.registerTab({
         <div id="bfbar" style="display:none;margin-top:10px;height:10px;border-radius:5px;background:var(--line);overflow:hidden"><div id="bfp" style="height:100%;width:0;background:var(--acc);transition:width .5s"></div></div></div>
       <div class="card"><h2>設定</h2><div class="row">
         <label>発言カウントのクールダウン <input id="cd" type="number" min="0" max="3600" style="width:80px"> 秒</label>
-        <label><input type="checkbox" id="vo"> VCは2人以上いる時だけ計測</label><button class="sec" id="save">保存</button></div></div>
+        <label><input type="checkbox" id="vo"> VCは2人以上いる時だけ計測</label></div>
+        <div class="row" style="margin-top:10px"><label>ロール付与の通知先 <select id="nc"><option value="">通知しない</option></select></label>
+          <button class="sec" id="nt">テスト送信</button></div>
+        <div class="row" style="margin-top:10px"><label style="flex:1">通知メッセージ <input id="tpl" style="width:100%" maxlength="500" placeholder="🎉 {user} さんが **{role}** を獲得しました!({condition})"></label></div>
+        <p class="mut">使える変数: {user}(メンション) {name}(表示名) {role}(ロール名) {condition}(達成条件)。空欄で初期文。一括適用・過去ログ取り込み時は通知しません。</p>
+        <button id="save">保存</button></div>
       <div class="card"><h2>ランキング</h2><div class="row"><select id="lm">${Object.entries(metrics).map(([k, v]) => `<option value="${k}">${esc(v)}</option>`).join('')}</select></div><div id="lb"></div></div>`;
     const $ = (s) => el.querySelector(s);
 
@@ -43,8 +48,13 @@ Dash.registerTab({
       $('#t').value = ''; toast('追加しました'); loadRules();
     };
     $('#sync').onclick = async () => { toast('適用中…'); const { changed } = await api('/sync', { method: 'POST' }); toast(`${changed} 件のロールを更新しました`); };
-    const s = await api('/settings'); $('#cd').value = s.message_cooldown; $('#vo').checked = !!s.voice_require_others;
-    $('#save').onclick = async () => { await api('/settings', { method: 'PUT', body: { message_cooldown: $('#cd').value, voice_require_others: $('#vo').checked } }); toast('保存しました'); };
+    const [s, chans] = await Promise.all([api('/settings'), getChannels()]);
+    $('#cd').value = s.message_cooldown; $('#vo').checked = !!s.voice_require_others;
+    $('#nc').innerHTML += chans.map((c) => `<option value="${c.id}">#${esc(c.name)}</option>`).join('');
+    $('#nc').value = s.notify_channel_id || ''; $('#tpl').value = s.notify_template || '';
+    const save = () => api('/settings', { method: 'PUT', body: { message_cooldown: $('#cd').value, voice_require_others: $('#vo').checked, notify_channel_id: $('#nc').value, notify_template: $('#tpl').value } });
+    $('#save').onclick = async () => { await save(); toast('保存しました'); };
+    $('#nt').onclick = async () => { await save(); await api('/notify-test', { method: 'POST' }); toast('テストを送信しました'); };
     async function loadLb() {
       const rows = await api('/leaderboard?metric=' + $('#lm').value);
       $('#lb').innerHTML = rows.length ? `<table>${rows.map((r, i) => `<tr><td>${i + 1}</td><td>${esc(r.name)}</td><td>${r.value}</td></tr>`).join('')}</table>` : '<p class="mut">データなし</p>';

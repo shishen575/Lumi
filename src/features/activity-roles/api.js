@@ -1,6 +1,7 @@
 import { db } from '../../core/db.js';
 import { METRICS, getRules, getSettings, saveSettings, leaderboard, metricValue } from './db.js';
 import { evaluateGuild } from './roles.js';
+import { sendTest } from './notify.js';
 import { startBackfill, resumeBackfill, getJob } from './backfill.js';
 
 /** router は /api/guilds/:gid/f/activity-roles に載っていて、req.guild が使える */
@@ -44,8 +45,21 @@ export function mountApi(router) {
   router.get('/settings', (req, res) => res.json(getSettings(req.guild.id)));
   router.put('/settings', (req, res) => {
     const cd = Math.min(3600, Math.max(0, Number.parseInt(req.body.message_cooldown, 10) || 0));
-    saveSettings(req.guild.id, { message_cooldown: cd, voice_require_others: req.body.voice_require_others ? 1 : 0 });
+    const chId = req.body.notify_channel_id ? String(req.body.notify_channel_id) : null;
+    if (chId) {
+      const ch = req.guild.channels.cache.get(chId);
+      if (!ch?.isTextBased() || ch.isThread()) return res.status(400).json({ error: '通知チャンネルが不正です' });
+    }
+    const tpl = String(req.body.notify_template ?? '').trim().slice(0, 500) || null;
+    saveSettings(req.guild.id, { message_cooldown: cd, voice_require_others: req.body.voice_require_others ? 1 : 0,
+      notify_channel_id: chId, notify_template: tpl });
     res.json({ ok: true });
+  });
+  router.post('/notify-test', async (req, res) => {
+    try {
+      const ok = await sendTest(req.guild, req.member);
+      res.status(ok ? 200 : 400).json(ok ? { ok: true } : { error: '通知チャンネルが未設定、または送信できません(保存してから試してください)' });
+    } catch (e) { res.status(400).json({ error: '送信に失敗: ' + e.message }); }
   });
 
   router.get('/leaderboard', async (req, res) => {
