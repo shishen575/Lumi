@@ -14,15 +14,15 @@ export function mountApi(router) {
     if (!Number.isFinite(threshold) || threshold < 1 || threshold > 1e9) return { error: '回数/時間は1以上の整数にしてください' };
     return { metric: b.metric, threshold, role_id: String(b.role_id), replace_lower: b.replace_lower ? 1 : 0 };
   };
-  const roleOk = (guild, id) => {
-    const r = guild.roles.cache.get(id);
-    return r && r.id !== guild.id && !r.managed;
+  const roleOk = (req, id) => {
+    const r = req.guild.roles.cache.get(id);
+    return r && r.id !== req.guild.id && !r.managed && req.canAssign(r); // 自分より上のロールは不可
   };
 
   router.post('/rules', (req, res) => {
     const r = parseRule(req.body);
     if (r.error) return res.status(400).json(r);
-    if (!roleOk(req.guild, r.role_id)) return res.status(400).json({ error: 'ロールが不正です' });
+    if (!roleOk(req, r.role_id)) return res.status(400).json({ error: 'このロールは設定できません(自分の最上位ロールより下のロールだけ選べます)' });
     if (getRules(req.guild.id).length >= 100) return res.status(400).json({ error: 'ルール数の上限(100)です' });
     const info = db.prepare('INSERT INTO rules (guild_id,metric,threshold,role_id,replace_lower) VALUES (?,?,?,?,?)')
       .run(req.guild.id, r.metric, r.threshold, r.role_id, r.replace_lower);
@@ -31,7 +31,7 @@ export function mountApi(router) {
   router.put('/rules/:rid', (req, res) => {
     const r = parseRule(req.body);
     if (r.error) return res.status(400).json(r);
-    if (!roleOk(req.guild, r.role_id)) return res.status(400).json({ error: 'ロールが不正です' });
+    if (!roleOk(req, r.role_id)) return res.status(400).json({ error: 'このロールは設定できません(自分の最上位ロールより下のロールだけ選べます)' });
     const info = db.prepare('UPDATE rules SET metric=?,threshold=?,role_id=?,replace_lower=? WHERE id=? AND guild_id=?')
       .run(r.metric, r.threshold, r.role_id, r.replace_lower, req.params.rid, req.guild.id);
     res.json({ ok: info.changes > 0 });

@@ -48,7 +48,7 @@ function helpCommand(cmds, features) {
           .map((d) => `\`/${d.name}\` — ${d.description}`).join('\n') });
       for (const f of features) if (f.help) embed.addFields({ name: f.title ?? f.name, value: f.help });
       const base = process.env.BASE_URL;
-      if (base && i.memberPermissions?.has('ManageGuild')) {
+      if (base && i.memberPermissions?.has('ManageRoles')) {
         embed.addFields({ name: '設定(管理者向け)', value: `ダッシュボード: ${base}` });
       }
       await i.reply({ embeds: [embed], ephemeral: true });
