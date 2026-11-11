@@ -3,11 +3,13 @@ import { addStat, getSettings } from './db.js';
 import { evaluateUser } from './roles.js';
 import { mountApi } from './api.js';
 import { noteLive, markInterrupted } from './backfill.js';
+import { rankCommand } from './commands.js';
 
 export default {
   name: 'activity-roles',
   title: '活動ロール',
   ui: '/features/activity-roles.js', // ダッシュボードのタブ
+  commands: [rankCommand],           // スラッシュコマンド(/rank)
 
   register({ client, router }) {
     mountApi(router, client);
