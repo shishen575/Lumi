@@ -2,7 +2,17 @@ import { getRules, getStats, metricValue } from './db.js';
 import { notifyGranted } from './notify.js';
 
 /** 1人分のロールを評価して付与/剥奪する。変更があった数を返す */
-export async function evaluateMember(member, rules = getRules(member.guild.id), { notify = true } = {}) {
+// 同じメンバーの評価は順番に1つずつ実行する(同時実行による二重付与・二重通知の防止)
+const chains = new Map();
+export function evaluateMember(member, rules = getRules(member.guild.id), opts = {}) {
+  const key = `${member.guild.id}:${member.id}`;
+  const p = (chains.get(key) ?? Promise.resolve()).then(() => evaluateOne(member, rules, opts));
+  chains.set(key, p);
+  p.finally(() => { if (chains.get(key) === p) chains.delete(key); }).catch(() => {});
+  return p;
+}
+
+async function evaluateOne(member, rules, { notify = true } = {}) {
   if (!rules.length || member.user.bot) return 0;
   const stats = getStats(member.guild.id, member.id);
   const me = member.guild.members.me;
