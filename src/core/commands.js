@@ -11,9 +11,15 @@ export function setupCommands(client, features) {
   const byName = new Map(cmds.map((c) => [c.data.name, c]));
   const body = cmds.map((c) => c.data.toJSON());
   const register = (guild) =>
-    guild.commands.set(body).catch((e) => console.error(`[commands] ${guild.name}:`, e.message));
+    guild.commands.set(body)
+      .then((r) => console.log(`[commands] ${guild.name}: ${r.size} 個を登録しました`))
+      .catch((e) => console.error(`[commands] ${guild.name}: 登録失敗 (${e.code ?? ''}) ${e.message}` +
+        (e.code === 50001 ? ' → このサーバーに applications.commands 付きで招待し直してください' : '')));
 
-  client.once(Events.ClientReady, () => client.guilds.cache.forEach(register));
+  client.once(Events.ClientReady, () => {
+    console.log(`[commands] ${client.guilds.cache.size} サーバーに登録します`);
+    client.guilds.cache.forEach(register);
+  });
   client.on(Events.GuildCreate, register);
   client.on(Events.InteractionCreate, async (i) => {
     if (!i.isChatInputCommand()) return;
