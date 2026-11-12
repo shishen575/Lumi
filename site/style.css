@@ -180,3 +180,7 @@ pre code { background: none; border: 0; padding: 0; }
 .contact { display: flex; flex-wrap: wrap; gap: 12px; margin: 16px 0 6px; }
 footer .wrap { row-gap: 8px; }
 @media (max-width: 860px) { .log section { grid-template-columns: minmax(0, 1fr); } }
+
+.dash-link { margin: 16px 0 0; display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 14px; }
+.dash-link a { font-weight: 700; }
+.dash-link span { font-size: 13px; color: var(--mut); }
