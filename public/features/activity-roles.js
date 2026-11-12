@@ -124,6 +124,43 @@
           await draw();
         } },
 
+      /* ===== 分布 ===== */
+      { id: 'distribution', title: '分布', icon: 'chart',
+        async render(el, { api, roles: getRoles, esc, pageHeader }) {
+          const [{ metrics }, roles] = await Promise.all([api('/meta'), getRoles()]);
+          const byId = new Map(roles.map((r) => [r.id, r]));
+          let metric = 'messages';
+          el.innerHTML = `${pageHeader('分布', 'メンバーの活動量が、どのあたりに何人いるかを見て、ルールの条件を決める目安にできます。')}
+            <div class="seg" role="group" aria-label="集計の種類">${Object.entries(metrics).map(([k, v]) => `<button type="button" data-m="${k}" aria-pressed="${k === metric}">${esc(v.replace('(分)', ''))}</button>`).join('')}</div>
+            <div id="dist"></div>`;
+          const num = (m, v) => `${v.toLocaleString()}${UNIT[m]}`;
+          const draw = async () => {
+            const d = await api('/distribution?metric=' + metric);
+            const box = el.querySelector('#dist');
+            if (!d.tracked) { box.innerHTML = '<div class="card empty"><h2>まだデータがありません</h2><p>活動が記録されると、ここに分布が表示されます。</p></div>'; return; }
+            const max = Math.max(1, ...d.buckets.map((b) => b.count));
+            const pc = (n) => `${(n / d.tracked * 100).toFixed(n && n / d.tracked < 0.1 ? 1 : 0)}%`;
+            const tile = (k, v) => `<div class="tile"><div class="k">${k}</div><div class="v" style="font-size:22px">${num(metric, v)}<span class="u">以上</span></div></div>`;
+            const label = (b) => (b.to === null ? `${num(metric, b.from)}以上` : b.from === b.to ? num(metric, b.from) : `${b.from.toLocaleString()}〜${num(metric, b.to)}`);
+            box.innerHTML = `
+              <div class="tiles">${tile('中央値(真ん中の人)', d.percentiles.p50)}${tile('上位25%', d.percentiles.p75)}${tile('上位10%', d.percentiles.p90)}${tile('上位1%', d.percentiles.p99)}</div>
+              <div class="card"><h2>人数の分布</h2>
+                <p class="sub">活動が記録されている ${d.tracked.toLocaleString()}人が対象です(サーバー全体は ${d.members_total.toLocaleString()}人。BOTと、活動のない人を含みます)。</p>
+                ${d.buckets.map((b) => `<div class="dr ${b.count ? '' : 'zero'}"><span class="l">${label(b)}</span><span class="b"><i style="width:${b.count / max * 100}%"></i></span><span class="n">${b.count.toLocaleString()}人<small>${pc(b.count)}</small></span></div>`).join('')}
+              </div>
+              <div class="card"><h2>ルールごとの到達人数</h2>
+                <p class="sub">いまの条件を満たしている人数です。数を変えるときの、目安にしてください。</p>
+                ${d.tiers.length ? d.tiers.map((t) => { const ro = byId.get(t.role_id); return `<div class="dr ${t.count ? '' : 'zero'}"><span class="roleline">${roleBadge(ro, esc)}<b>${num(metric, t.threshold)}以上</b></span><span class="l"></span><span class="b alt"><i style="width:${t.count / d.tracked * 100}%"></i></span><span class="n">${t.count.toLocaleString()}人<small>${pc(t.count)}</small></span></div>`; }).join('')
+                  : '<p class="mut" style="margin:0">この条件のルールは、まだ登録されていません。</p>'}
+              </div>`;
+          };
+          el.querySelector('.seg').onclick = (e) => {
+            const b = e.target.closest('button'); if (!b) return;
+            metric = b.dataset.m; el.querySelectorAll('.seg button').forEach((x) => x.setAttribute('aria-pressed', x === b)); draw();
+          };
+          await draw();
+        } },
+
       /* ===== 過去ログ取り込み ===== */
       { id: 'import', title: '過去ログ取り込み', icon: 'download',
         async render(el, { api, esc, ic, toast, confirm, pageHeader }) {

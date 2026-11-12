@@ -17,6 +17,31 @@ export function mountApi(router) {
       voice_minutes: Math.floor(t.v / 60), notify: !!getSettings(gid).notify_channel_id,
     });
   });
+  // 分布: 活動量ごとの人数、ルール別の到達人数、パーセンタイル(退出したメンバーは除く)
+  const BOUNDS = { // 階級の下限(0は「記録なし」に含まれるので、1から)
+    messages: [1, 10, 50, 100, 200, 500, 1000, 2000, 5000],
+    reactions_received: [1, 10, 50, 100, 200, 500, 1000, 2000, 5000],
+    reactions_given: [1, 10, 50, 100, 200, 500, 1000, 2000, 5000],
+    voice_minutes: [1, 30, 60, 180, 360, 600, 1200, 3000, 6000],
+  };
+  router.get('/distribution', (req, res) => {
+    const metric = req.query.metric in METRICS ? req.query.metric : 'messages';
+    const col = metric === 'voice_minutes' ? 'voice_seconds' : metric;
+    const div = metric === 'voice_minutes' ? 60 : 1;
+    const vals = db.prepare(`SELECT ${col} AS v FROM stats WHERE guild_id=? AND is_left=0 AND ${col}>=?`)
+      .all(req.guild.id, div).map((r) => Math.floor(r.v / div)).sort((a, b) => a - b); // 昇順
+    const lows = BOUNDS[metric];
+    const buckets = lows.map((lo, i) => ({ from: lo, to: i + 1 < lows.length ? lows[i + 1] - 1 : null, count: 0 }));
+    for (const v of vals) { let k = lows.length - 1; while (k > 0 && v < lows[k]) k--; buckets[k].count++; }
+    const pct = (p) => (vals.length ? vals[Math.min(vals.length - 1, Math.floor(vals.length * p))] : 0); // p割より上にいる人の下限
+    const tiers = getRules(req.guild.id).filter((r) => r.metric === metric).sort((a, b) => a.threshold - b.threshold)
+      .map((r) => ({ id: r.id, threshold: r.threshold, role_id: r.role_id, count: vals.length - vals.findIndex((v) => v >= r.threshold) }))
+      .map((t) => ({ ...t, count: vals.some((v) => v >= t.threshold) ? t.count : 0 }));
+    res.json({
+      metric, tracked: vals.length, members_total: req.guild.memberCount, buckets, tiers,
+      percentiles: { p50: pct(0.5), p75: pct(0.75), p90: pct(0.9), p99: pct(0.99) },
+    });
+  });
   router.get('/rules', (req, res) => res.json(getRules(req.guild.id)));
 
   const parseRule = (b) => {
