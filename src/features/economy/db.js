@@ -85,6 +85,13 @@ export function withdraw(guildId, userId, amount) {
 
 /* ---------- クールダウン・留置場 ---------- */
 export const cooldownLeft = (g, u, key) => Math.max(0, (db.prepare('SELECT until FROM eco_cooldowns WHERE guild_id=? AND user_id=? AND key=?').get(g, u, key)?.until ?? 0) - Date.now());
+/** クールダウンを解除する。kind: all / crime / work / beg / heist。解除した件数を返す(終わっているものは数えない) */
+export function clearCooldowns(g, u, kind = 'all') {
+  const now = Date.now();
+  const q = kind === 'all' ? db.prepare('DELETE FROM eco_cooldowns WHERE guild_id=? AND user_id=? AND until>?').run(g, u, now)
+    : db.prepare("DELETE FROM eco_cooldowns WHERE guild_id=? AND user_id=? AND until>? AND (key=? OR key LIKE ?)").run(g, u, now, kind, `${kind}:%`);
+  return Number(q.changes);
+}
 export const setCooldown = (g, u, key, ms) => db.prepare(`INSERT INTO eco_cooldowns (guild_id,user_id,key,until) VALUES (?,?,?,?)
   ON CONFLICT(guild_id,user_id,key) DO UPDATE SET until=excluded.until`).run(g, u, key, Date.now() + ms);
 export const jailLeft = (g, u) => Math.max(0, (db.prepare('SELECT jail_until FROM eco_accounts WHERE guild_id=? AND user_id=?').get(g, u)?.jail_until ?? 0) - Date.now());

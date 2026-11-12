@@ -1,6 +1,6 @@
 import { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, MessageFlags } from 'discord.js';
 import { getSettings, money } from './settings.js';
-import { adjustBalance, audit, peek, deposit, withdraw, cooldownLeft, setCooldown, jailLeft, jail, release, richest, getBj, saveBj, deleteBj, getHeist, saveHeist, claimHeist, expiredHeists, setHeistDeadline, releaseAll } from './db.js';
+import { adjustBalance, clearCooldowns, audit, peek, deposit, withdraw, cooldownLeft, setCooldown, jailLeft, jail, release, richest, getBj, saveBj, deleteBj, getHeist, saveHeist, claimHeist, expiredHeists, setHeistDeadline, releaseAll } from './db.js';
 import { ensureAccount, pay, collect, fine, treasury } from './ledger.js';
 import { hasAccessSync, isOperator } from '../../core/access.js';
 import { PermissionFlagsBits } from 'discord.js';
@@ -422,4 +422,18 @@ export const balanceEditCommand = {
   },
 };
 
-export const commands = [balanceCommand, depositCommand, withdrawCommand, richestCommand, crimeCommand, workCommand, begCommand, bailCommand, chinchiroCommand, slotCommand, blackjackCommand, heistCommand, releaseCommand, balanceEditCommand];
+const CD_LABEL = { all: 'すべて', crime: '犯罪', work: 'バイト', beg: '乞食', heist: '大型銀行' };
+export const cooldownResetCommand = {
+  data: guildOnly(new SlashCommandBuilder().setName('cooldown-reset').setDescription('【管理者向け】メンバーのクールダウンを解除します')
+    .addUserOption((o) => o.setName('user').setDescription('対象の人').setRequired(true))
+    .addStringOption((o) => o.setName('kind').setDescription('解除するもの(省略するとすべて)').addChoices(...Object.entries(CD_LABEL).map(([value, name]) => ({ name, value }))))),
+  async execute(i) {
+    if (!canEditBalance(i)) return refuse(i, 'クールダウンを解除できるのは、サーバーのオーナー・管理者だけです。');
+    const u = i.options.getUser('user'), kind = i.options.getString('kind') ?? 'all';
+    const n = clearCooldowns(i.guildId, u.id, kind);
+    audit(i.guildId, { id: i.user.id, name: i.member?.displayName ?? i.user.username }, u.id, `クールダウン解除(${CD_LABEL[kind]})`, null, `${n}件 / /cooldown-reset`);
+    await i.reply({ content: n ? `✅ <@${u.id}> のクールダウン(${CD_LABEL[kind]})を、${n}件 解除しました。` : `<@${u.id}> には、解除するクールダウンがありません。`, allowedMentions: NO_MENTIONS, ...EPH });
+  },
+};
+
+export const commands = [balanceCommand, depositCommand, withdrawCommand, richestCommand, crimeCommand, workCommand, begCommand, bailCommand, chinchiroCommand, slotCommand, blackjackCommand, heistCommand, releaseCommand, balanceEditCommand, cooldownResetCommand];

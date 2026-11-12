@@ -1,6 +1,6 @@
 import { canEditAccess } from '../../core/access.js';
 import { getSettings, saveSettings } from './settings.js';
-import { richest, jailed, release, jailLeft, releaseAll, peek, recentFines, claimFineRefund, audit, recentAudit, adjustBalance } from './db.js';
+import { richest, jailed, release, jailLeft, releaseAll, peek, recentFines, claimFineRefund, audit, recentAudit, adjustBalance, clearCooldowns } from './db.js';
 import { treasury, setTreasury, addTreasury, circulation, pay } from './ledger.js';
 import { SLOT_SYMBOLS, CHERRY_TWO, CHERRY_ONE, slotRtp, slotScale, chinchiroScale, bjScale, bjStats } from './games.js';
 
@@ -90,6 +90,15 @@ export function mountApi(router) {
     const col = b.target === 'bank' ? 'bank' : 'wallet';
     audit(g, req.actor, uid, `${b.target === 'bank' ? '銀行' : '手持ち'}を${{ add: '増やす', subtract: '減らす', set: '指定額にする' }[b.mode]}`, amount, `${before[col]} → ${after[col]}${b.note ? ` / ${b.note}` : ''}`);
     res.json({ wallet: after.wallet, bank: after.bank });
+  });
+  // クールダウンの解除
+  router.post('/cooldown-reset', async (req, res) => {
+    if (!adminOnly(req, res)) return;
+    const uid = String(req.body?.user_id ?? ''), kind = req.body?.kind ?? 'all';
+    if (!ID.test(uid) || !['all', 'crime', 'work', 'beg', 'heist'].includes(kind)) return res.status(400).json({ error: '指定が不正です' });
+    const n = clearCooldowns(req.guild.id, uid, kind);
+    audit(req.guild.id, req.actor, uid, `クールダウン解除(${kind})`, null, `${n}件`);
+    res.json({ cleared: n });
   });
   // 罰金の返金(1つの罰金につき、1回だけ)
   router.post('/refund', async (req, res) => {
