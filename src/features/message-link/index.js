@@ -3,6 +3,7 @@ import { findLinks, buildQuote, canQuote, downloadSpoilers } from './quote.js';
 import { mountApi } from './api.js';
 import { getSettings } from './settings.js';
 
+let warnedEmpty = false;
 const lastByUser = new Map();   // 連投の防止(ユーザーごとに5秒)
 const lastByLink = new Map();   // 同じメッセージを続けて転送しない(チャンネルごとに30秒)
 const USER_COOLDOWN = 5_000, LINK_COOLDOWN = 30_000;
@@ -25,7 +26,14 @@ export default {
 
     client.on(Events.MessageCreate, async (message) => {
       try {
-        if (!message.guildId || message.author.bot || message.webhookId || !message.content) return;
+        if (!message.guildId || message.author.bot || message.webhookId) return;
+        if (!message.content) { // 本文が空: MESSAGE CONTENT INTENT が無効だと、ユーザーの発言の本文は、すべて空で届く
+          if (!warnedEmpty && !client.options.intents.has(GatewayIntentBits.MessageContent) && !message.attachments?.size) {
+            warnedEmpty = true;
+            console.warn('[message-link] メッセージの本文が空で届いています。MESSAGE CONTENT INTENT が無効のため、リンクを見つけられません(環境変数 MESSAGE_CONTENT_INTENT=1 が必要です)');
+          }
+          return;
+        }
         const found = findLinks(message.content);
         if (!found.length) return;
         if (!getSettings(message.guildId).enabled) return why(message, 'このサーバーでは、ダッシュボードでオフになっています');

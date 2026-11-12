@@ -6,8 +6,12 @@ Dash.registerTab({
     async render(el, { api, esc, toast, pageHeader }) {
       const st = await api('/settings');
       el.innerHTML = `${pageHeader('メッセージリンクの転送', 'メッセージのリンクを貼ると、元のメッセージの<b>文章と画像を、そのまま転送</b>します。')}
-        ${st.intentEnabled ? '' : `<div class="card" style="background:var(--warn-soft);border-color:transparent"><b>BOTの側で、準備が必要です</b>
-          <p class="small" style="margin:6px 0 0">この機能は、メッセージの本文を読める設定が必要です。BOTの運営者が、Developer Portal で「MESSAGE CONTENT INTENT」をオンにして、環境変数 <code>MESSAGE_CONTENT_INTENT=1</code> を設定すると、使えるようになります。</p></div>`}
+        <div class="card"><h2>状態の確認</h2>
+          <ul class="todo">
+            <li class="${st.intentEnabled ? 'done' : 'warn'}"><span class="mark">${st.intentEnabled ? Dash.ic('check') : Dash.ic('alert')}</span><div class="grow"><b>BOTがメッセージの本文を読める</b>
+              <span class="mut small">${st.intentEnabled ? '有効です' : '<b>無効です。</b>この機能は、本文を読めないと動きません。BOTの運営者が、Developer Portal の Bot で「MESSAGE CONTENT INTENT」をオンにして、環境変数 <code>MESSAGE_CONTENT_INTENT=1</code> を設定し、BOTを再起動してください(順番を守らないと、BOTが起動できません)'}</span></div></li>
+            <li class="${st.enabled ? 'done' : ''}"><span class="mark">${Dash.ic('check')}</span><div class="grow"><b>このサーバーで転送する</b><span class="mut small">${st.enabled ? 'オンです' : 'オフです。下のスイッチをオンにして、保存してください'}</span></div></li>
+          </ul></div>
         <div class="card"><h2>設定</h2>
           <label class="sw"><input type="checkbox" id="en" ${st.enabled ? 'checked' : ''}><i></i><span><b>メッセージリンクを転送する</b><small>このサーバーのメッセージのリンクが貼られたら、元の文章・画像・添付ファイルを、貼られたチャンネルに表示します</small></span></label>
           <div class="acts" style="margin-top:12px"><button class="btn" id="save" type="button">保存</button></div></div>
