@@ -1,12 +1,13 @@
 import { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, MessageFlags } from 'discord.js';
 import { getSettings, money } from './settings.js';
-import { peek, deposit, withdraw, cooldownLeft, setCooldown, jailLeft, jail, release, richest, getBj, saveBj, deleteBj } from './db.js';
+import { peek, deposit, withdraw, cooldownLeft, setCooldown, jailLeft, jail, release, richest, getBj, saveBj, deleteBj, getHeist, saveHeist, claimHeist, expiredHeists } from './db.js';
 import { ensureAccount, pay, collect, fine, treasury } from './ledger.js';
 import {
   rnd, roundProb, chinchiroPlay, chinchiroCompare, chinchiroScale, slotSpin, slotPayout, slotMultiplier,
   bjDeal, bjHit, bjStand, bjDouble, handValue, cardText, bjScale,
 } from './games.js';
 import { CRIMES, JOBS, resolveCrime, resolveWork, resolveBeg, BEG } from './jobs.js';
+import { HEIST, makeSteps, heistReward, heistBase, heistFine } from './heist.js';
 
 const EPH = { flags: MessageFlags.Ephemeral };
 const NO_MENTIONS = { parse: [] };
@@ -31,6 +32,8 @@ async function open(i) {
   ensureAccount(i.guildId, i.user.id, s);
   const b = getBj(i.guildId, i.user.id);
   if (b && Date.now() - b.started_at > BJ_TTL) deleteBj(i.guildId, i.user.id); // 時間切れ: 賭け金は戻らない
+  const h = getHeist(i.guildId, i.user.id);
+  if (h && Date.now() > h.deadline) settleHeistFailure(i.guildId, i.user.id, s, 'timeout'); // 放置された大型銀行強盗は、失敗として精算
   return s;
 }
 const refuse = (i, text) => i.reply({ content: text, ...EPH });
@@ -258,4 +261,99 @@ export const blackjackButton = {
   },
 };
 
-export const commands = [balanceCommand, depositCommand, withdrawCommand, richestCommand, crimeCommand, workCommand, begCommand, bailCommand, chinchiroCommand, slotCommand, blackjackCommand];
+/* ================= 大型銀行強盗(ミニゲーム) ================= */
+/** 失敗の精算(罰金と留置場)。claim できたときだけ精算するので、二重に罰金が引かれない。精算したら、そのゲームを返す */
+function settleHeistFailure(g, u, s, reason, rng = rnd) {
+  const game = claimHeist(g, u); if (!game) return null;
+  const took = fine(g, u, heistFine(rng), s); jail(g, u, HEIST.jail);
+  return { game, took, reason };
+}
+const REASON = { timeout: '⏰ 時間切れ! 警備員に見つかった。', alarm: `🚨 ${HEIST.maxMistakes + 1}回間違えて、警報が鳴り響いた!` };
+const failEmbed = (s, name, r) => new EmbedBuilder().setColor(RED).setTitle(`${HEIST.emoji} ${HEIST.name} 失敗…`)
+  .setDescription(`${REASON[r.reason]}\n\n罰金 **- ${money(s, r.took)}**\n🚔 留置場に ${dur(HEIST.jail)} 入ります。(/bail で、保釈金を払って出られます)`).setAuthor({ name });
+const hsStatus = (st, deadline) => {
+  const left = HEIST.maxMistakes - st.mistakes;
+  return `制限時間: <t:${Math.floor(deadline / 1000)}:R> まで ・ ステップ **${st.idx + 1} / ${st.steps.length}** ・ 間違えられるのは あと **${left}回**`;
+};
+function hsBody(st, deadline, uid, warn = '') {
+  const step = st.steps[st.idx];
+  const e = new EmbedBuilder().setColor(BLUE).setTitle(`${HEIST.emoji} ${HEIST.name}`).setAuthor({ name: st.name, iconURL: st.avatar })
+    .setDescription(`${hsStatus(st, deadline)}\n\n${warn ? `${warn}\n\n` : ''}${step.prompt}`);
+  const row = new ActionRowBuilder().addComponents(step.options.map((label, k) =>
+    new ButtonBuilder().setCustomId(`eco:hs:${uid}:${st.idx}:${k}`).setLabel(label).setStyle(ButtonStyle.Secondary).setDisabled(st.wrong.includes(k))));
+  return { embeds: [e], components: [row] };
+}
+export const heistCommand = {
+  data: guildOnly(new SlashCommandBuilder().setName('heist').setDescription(`大型銀行強盗(ミニゲーム。${HEIST.timeMs / 1000}秒以内に、${HEIST.steps}つの問題を解けば成功)`)),
+  async execute(i, rng = rnd) {
+    const s = await open(i); if (!s) return;
+    const g = i.guildId, u = i.user.id;
+    const jl = jailLeft(g, u); if (jl) return refuse(i, `🚔 留置場にいる間は、犯罪はできません。(あと ${dur(jl)})`);
+    const w = wallet(i); if (w <= 0) return refuse(i, `💸 所持金が0以下のときは、犯罪はできません。(いまの所持金 ${money(s, w)})`);
+    if (getHeist(g, u)) return refuse(i, '進行中の大型銀行強盗があります。先に、そちらを終わらせてください。');
+    const cd = cooldownLeft(g, u, 'heist'); if (cd) return refuse(i, `${HEIST.emoji} 大型銀行は、まだ警備が厳重です。あと ${dur(cd)}。`);
+    if (budgetEmpty(s, g)) return refuse(i, BUDGET_EMPTY);
+    const st = { steps: makeSteps(rng), idx: 0, mistakes: 0, wrong: [], reward: heistBase(rng), name: i.member?.displayName ?? i.user.username, avatar: i.user.displayAvatarURL?.() };
+    const deadline = Date.now() + HEIST.timeMs;
+    setCooldown(g, u, 'heist', HEIST.cd);
+    saveHeist(g, u, { channelId: i.channelId, state: st, deadline });  // 先に保存してから返信する
+    try { await i.reply(hsBody(st, deadline, u)); }
+    catch (e) { claimHeist(g, u); setCooldown(g, u, 'heist', 0); throw e; } // 画面を出せなかったときは、遊んでいないので、罰を受けない
+    const msg = await i.fetchReply().catch(() => null);
+    if (msg) saveHeist(g, u, { channelId: i.channelId, msgId: msg.id, state: st, deadline });
+  },
+};
+export const heistButton = {
+  id: 'eco:hs',
+  async execute(i) {
+    const [, , uid, idxS, kS] = i.customId.split(':');
+    if (i.user.id !== uid) return i.reply({ content: 'これは、あなたの強盗ではありません。`/heist` で、自分で挑戦できます。', ...EPH });
+    const g = i.guildId, s = getSettings(g);
+    const game = getHeist(g, uid);
+    if (!game) return i.update({ content: 'この強盗は、すでに終了しています。', embeds: [], components: [] });
+    const now = Date.now(), st = game.state;
+    if (now > game.deadline) { // 制限時間を過ぎている
+      const r = settleHeistFailure(g, uid, s, 'timeout');
+      return r ? i.update({ embeds: [failEmbed(s, st.name, r)], components: [] }) : i.update({ content: 'この強盗は、すでに終了しています。', embeds: [], components: [] });
+    }
+    if (Number(idxS) !== st.idx) return i.reply({ content: 'その問題は、すでに終わっています。', ...EPH });
+    const step = st.steps[st.idx], k = Number(kS);
+    if (k === step.answer) {
+      st.idx++; st.wrong = [];
+      if (st.idx >= st.steps.length) { // 全ステップ突破 → 成功
+        if (!claimHeist(g, uid)) return i.update({ content: 'この強盗は、すでに終了しています。', embeds: [], components: [] });
+        const left = game.deadline - now, amount = heistReward(st.reward, left);
+        const p = pay(g, uid, amount, s);
+        return i.update({ embeds: [new EmbedBuilder().setColor(GOLD).setTitle(`${HEIST.emoji} ${HEIST.name} 成功!`).setAuthor({ name: st.name, iconURL: st.avatar })
+          .setDescription(`金庫を開けて、大金を持ち出した!\n残り ${dur(left)} でクリア(スピードボーナス +${Math.round((amount / st.reward - 1) * 100)}%)\n\n**+ ${money(s, p.paid)}**${shortNote(s, p)}`)], components: [] });
+      }
+      saveHeist(g, uid, { state: st, deadline: game.deadline });
+      return i.update(hsBody(st, game.deadline, uid));
+    }
+    st.mistakes++; st.wrong.push(k);
+    if (st.mistakes > HEIST.maxMistakes) { // 警報
+      const r = settleHeistFailure(g, uid, s, 'alarm');
+      return r ? i.update({ embeds: [failEmbed(s, st.name, r)], components: [] }) : i.update({ content: 'この強盗は、すでに終了しています。', embeds: [], components: [] });
+    }
+    saveHeist(g, uid, { state: st, deadline: game.deadline });
+    await i.update(hsBody(st, game.deadline, uid, '⚠️ 違う! 警報が鳴りかけた…'));
+  },
+};
+/** 制限時間を過ぎたまま放置された強盗を、失敗にする(罰金・留置場)。画面も、できれば更新する */
+export async function resolveExpiredHeists(client) {
+  for (const row of expiredHeists()) {
+    try {
+      const s = getSettings(row.guild_id);
+      const before = getHeist(row.guild_id, row.user_id);
+      const r = settleHeistFailure(row.guild_id, row.user_id, s, 'timeout');
+      if (!r) continue;
+      console.log(`[economy] 放置された大型銀行強盗を、失敗にしました (${row.guild_id})`);
+      if (before?.channel_id && before?.msg_id) {
+        const ch = await client.channels.fetch(before.channel_id).catch(() => null);
+        await ch?.messages?.edit?.(before.msg_id, { embeds: [failEmbed(s, before.state.name, r)], components: [] }).catch(() => {});
+      }
+    } catch (e) { console.warn('[economy] 強盗の精算に失敗:', e.message); }
+  }
+}
+
+export const commands = [balanceCommand, depositCommand, withdrawCommand, richestCommand, crimeCommand, workCommand, begCommand, bailCommand, chinchiroCommand, slotCommand, blackjackCommand, heistCommand];

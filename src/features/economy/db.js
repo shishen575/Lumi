@@ -17,6 +17,12 @@ CREATE TABLE IF NOT EXISTS eco_bj (            -- 進行中のブラックジャ
   guild_id TEXT NOT NULL, user_id TEXT NOT NULL, msg_id TEXT, state TEXT NOT NULL, started_at INTEGER NOT NULL,
   PRIMARY KEY (guild_id, user_id)
 );
+CREATE TABLE IF NOT EXISTS eco_heist (          -- 進行中の大型銀行強盗(1人1ゲーム)。再起動しても続けられる
+  guild_id TEXT NOT NULL, user_id TEXT NOT NULL, channel_id TEXT, msg_id TEXT,
+  state TEXT NOT NULL, deadline INTEGER NOT NULL, started_at INTEGER NOT NULL,
+  PRIMARY KEY (guild_id, user_id)
+);
+CREATE INDEX IF NOT EXISTS idx_eco_heist_deadline ON eco_heist (deadline);
 CREATE INDEX IF NOT EXISTS idx_eco_accounts_rich ON eco_accounts (guild_id, wallet, bank);
 `);
 
@@ -84,3 +90,12 @@ export const getBj = (g, u) => { const r = db.prepare('SELECT * FROM eco_bj WHER
 export const saveBj = (g, u, msgId, state) => db.prepare(`INSERT INTO eco_bj (guild_id,user_id,msg_id,state,started_at) VALUES (?,?,?,?,?)
   ON CONFLICT(guild_id,user_id) DO UPDATE SET msg_id=excluded.msg_id, state=excluded.state`).run(g, u, msgId, JSON.stringify(state), Date.now());
 export const deleteBj = (g, u) => db.prepare('DELETE FROM eco_bj WHERE guild_id=? AND user_id=?').run(g, u);
+
+/* ---------- 大型銀行強盗の進行状況 ---------- */
+const heistRow = (r) => r && { ...r, state: JSON.parse(r.state) };
+export const getHeist = (g, u) => heistRow(db.prepare('SELECT * FROM eco_heist WHERE guild_id=? AND user_id=?').get(g, u));
+export const saveHeist = (g, u, { channelId, msgId, state, deadline }) => db.prepare(`INSERT INTO eco_heist (guild_id,user_id,channel_id,msg_id,state,deadline,started_at) VALUES (?,?,?,?,?,?,?)
+  ON CONFLICT(guild_id,user_id) DO UPDATE SET channel_id=COALESCE(excluded.channel_id, channel_id), msg_id=COALESCE(excluded.msg_id, msg_id), state=excluded.state`).run(g, u, channelId ?? null, msgId ?? null, JSON.stringify(state), deadline, Date.now());
+/** ゲームを終わらせる。取れたら、そのゲームを返す(同時に2か所から終わらせても、片方しか取れない=二重に精算されない) */
+export const claimHeist = (g, u) => heistRow(db.prepare('DELETE FROM eco_heist WHERE guild_id=? AND user_id=? RETURNING *').get(g, u));
+export const expiredHeists = (now = Date.now()) => db.prepare('SELECT guild_id, user_id FROM eco_heist WHERE deadline < ?').all(now);
