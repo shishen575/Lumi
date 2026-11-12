@@ -49,7 +49,8 @@ export function setupCommands(client, features) {
 function helpCommand(cmds, features) {
   const all = [...cmds.map((c) => c.data), { name: 'help', description: 'このヘルプを表示します' }];
   return {
-    data: new SlashCommandBuilder().setName('help').setDescription('Lumiの使い方とコマンド一覧を表示します').setDMPermission(false),
+    data: new SlashCommandBuilder().setName('help').setDescription('Lumiの使い方とコマンド一覧を表示します').setDMPermission(false)
+      .addBooleanOption((o) => o.setName('public').setDescription('全員に表示する(省略すると自分だけに表示)')),
     async execute(i) {
       const embed = new EmbedBuilder()
         .setColor(0x6d5dfc)
@@ -58,10 +59,11 @@ function helpCommand(cmds, features) {
           .map((d) => `\`/${d.name}\` — ${d.description}`).join('\n') });
       for (const f of features) if (f.help) embed.addFields({ name: f.title ?? f.name, value: f.help });
       const base = process.env.BASE_URL;
-      if (base && hasAccessSync(i.guild, i.member, i.user.id)) { // ダッシュボードを操作できる人にだけ案内
+      const pub = i.options.getBoolean('public') ?? false;
+      if (!pub && base && hasAccessSync(i.guild, i.member, i.user.id)) { // ダッシュボードを操作できる人にだけ案内(全員に表示するときは出さない)
         embed.addFields({ name: '設定(管理者向け)', value: `ダッシュボード: ${base.replace(/\/$/, '')}/dashboard/` });
       }
-      await i.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
+      await i.reply({ embeds: [embed], ...(pub ? {} : { flags: MessageFlags.Ephemeral }) }); // 既定は自分だけに表示
     },
   };
 }
