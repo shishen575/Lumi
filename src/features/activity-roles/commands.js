@@ -140,3 +140,47 @@ export const topCommand = {
     collector.on('end', () => i.editReply({ components: [] }).catch(() => {}));
   },
 };
+
+// ---------- /roles : 昇格条件(取れるロールと、その条件)の一覧 ----------
+export const rolesCommand = {
+  data: new SlashCommandBuilder()
+    .setName('roles')
+    .setDescription('このサーバーで取れるロールと、昇格の条件を表示します')
+    .setDMPermission(false)
+    .addBooleanOption((o) => o.setName('private').setDescription('自分だけに表示する')),
+
+  async execute(i) {
+    const rules = getRules(i.guildId).filter((r) => i.guild.roles.cache.has(r.role_id)); // 削除されたロールは出さない
+    if (!rules.length) {
+      return i.reply({ content: 'このサーバーには、まだ昇格のルールが登録されていません。', ...eph() });
+    }
+    const stats = getStats(i.guildId, i.user.id);
+    const fields = [];
+    for (const metric of Object.keys(METRICS)) {
+      const tiers = rules.filter((r) => r.metric === metric).sort((a, b) => a.threshold - b.threshold);
+      if (!tiers.length) continue;
+      const v = metricValue(stats, metric);
+      const nextId = tiers.find((r) => r.threshold > v)?.id; // 次に目指すルール
+      const lines = tiers.map((r) => {
+        const mark = r.threshold <= v ? '✅' : r.id === nextId ? '▶' : '▫';
+        const left = r.id === nextId ? `(あと **${fmt(metric, r.threshold - v)}**)` : '';
+        const notes = [r.replace_lower ? '上のランクで入れ替わり' : '', r.revoke ? '下回ると外れます' : ''].filter(Boolean);
+        return [`${mark} **${fmt(metric, r.threshold)}**以上 → <@&${r.role_id}>`, left, notes.length ? `_(${notes.join('・')})_` : ''].filter(Boolean).join(' ');
+      });
+      // 1フィールドは1024文字まで。長いときは分ける
+      let chunk = '';
+      for (const line of lines) {
+        if (chunk.length + line.length + 1 > 1000) { fields.push({ name: fields.some((f) => f.metric === metric) ? '\u200b' : `${METRICS[metric]}(あなた: ${fmt(metric, v)})`, value: chunk, metric }); chunk = ''; }
+        chunk += (chunk ? '\n' : '') + line;
+      }
+      fields.push({ name: fields.some((f) => f.metric === metric) ? '\u200b' : `${METRICS[metric]}(あなた: ${fmt(metric, v)})`, value: chunk, metric });
+    }
+    const embed = new EmbedBuilder()
+      .setColor(0x6d5dfc)
+      .setTitle('取れるロールと昇格の条件')
+      .setDescription('✅ 達成済み  ▶ 次の目標  ▫ これから')
+      .addFields(fields.slice(0, 25).map(({ name, value }) => ({ name, value })))
+      .setFooter({ text: '自分の詳しい順位は /rank で確認できます' });
+    await i.reply({ embeds: [embed], ...eph(i.options.getBoolean('private') ?? false) });
+  },
+};
