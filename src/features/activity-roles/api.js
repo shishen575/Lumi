@@ -7,6 +7,16 @@ import { startBackfill, resumeBackfill, getJob } from './backfill.js';
 /** router は /api/guilds/:gid/f/activity-roles に載っていて、req.guild が使える */
 export function mountApi(router) {
   router.get('/meta', (req, res) => res.json({ metrics: METRICS, botJoinedAt: req.guild.members.me?.joinedTimestamp ?? null }));
+  // 概要ページ用の集計(退出したメンバーは除く)
+  router.get('/overview', (req, res) => {
+    const gid = req.guild.id;
+    const t = db.prepare(`SELECT COUNT(*) AS c, COALESCE(SUM(messages),0) AS m, COALESCE(SUM(reactions_received),0) AS rr,
+      COALESCE(SUM(reactions_given),0) AS rg, COALESCE(SUM(voice_seconds),0) AS v FROM stats WHERE guild_id=? AND is_left=0`).get(gid);
+    res.json({
+      rules: getRules(gid).length, members: t.c, messages: t.m, reactions_received: t.rr, reactions_given: t.rg,
+      voice_minutes: Math.floor(t.v / 60), notify: !!getSettings(gid).notify_channel_id,
+    });
+  });
   router.get('/rules', (req, res) => res.json(getRules(req.guild.id)));
 
   const parseRule = (b) => {
