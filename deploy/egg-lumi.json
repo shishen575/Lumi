@@ -167,6 +167,16 @@
       "user_editable": true,
       "rules": "required|integer|min:0",
       "field_type": "text"
+    },
+    {
+      "name": "Message Content Intent",
+      "description": "メッセージリンクの転送に必要。Developer PortalでMESSAGE CONTENT INTENTをオンにしてから1にする(オンにしていないのに1にするとBOTが起動できません)",
+      "env_variable": "MESSAGE_CONTENT_INTENT",
+      "default_value": "0",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": "required|in:0,1",
+      "field_type": "text"
     }
   ]
 }
