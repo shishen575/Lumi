@@ -1,6 +1,6 @@
 import { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, MessageFlags } from 'discord.js';
 import { getSettings, money } from './settings.js';
-import { peek, deposit, withdraw, cooldownLeft, setCooldown, jailLeft, jail, release, richest, getBj, saveBj, deleteBj, getHeist, saveHeist, claimHeist, expiredHeists, setHeistDeadline, releaseAll } from './db.js';
+import { audit, peek, deposit, withdraw, cooldownLeft, setCooldown, jailLeft, jail, release, richest, getBj, saveBj, deleteBj, getHeist, saveHeist, claimHeist, expiredHeists, setHeistDeadline, releaseAll } from './db.js';
 import { ensureAccount, pay, collect, fine, treasury } from './ledger.js';
 import { hasAccessSync } from '../../core/access.js';
 import {
@@ -125,7 +125,7 @@ export const crimeCommand = {
       if (p.paid > 0) setCooldown(i.guildId, i.user.id, `crime:${key}`, c.cd);
       return i.reply({ embeds: [card(i, s, GREEN, `${c.emoji} ${c.name} 成功!`, `${r.text}\n\n**+ ${money(s, p.paid)}**${shortNote(s, p)}`)] });
     }
-    const took = fine(i.guildId, i.user.id, r.amount, s);
+    const took = fine(i.guildId, i.user.id, r.amount, s, 'crime');
     jail(i.guildId, i.user.id, c.jail); setCooldown(i.guildId, i.user.id, `crime:${key}`, c.cd);
     await i.reply({ embeds: [card(i, s, RED, `${c.emoji} ${c.name} 失敗…`, `${r.text}\n\n罰金 **- ${money(s, took)}**${debtNote(i, s)}\n🚔 留置場に ${dur(c.jail)} 入ります。(/bail で、保釈金を払って出られます)`)] });
   },
@@ -178,13 +178,13 @@ export const releaseCommand = {
     const s = await open(i); if (!s) return;
     if (!hasAccessSync(i.guild, i.member, i.user.id)) return refuse(i, '釈放できるのは、サーバーの管理者(または管理ロールを持つ人)だけです。');
     if (i.options.getBoolean('all')) {
-      const n = releaseAll(i.guildId);
+      const n = releaseAll(i.guildId); audit(i.guildId, { id: i.user.id, name: i.member?.displayName ?? i.user.username }, null, '全員を釈放', null, `${n}人 / /release`);
       return i.reply({ content: n ? `🔓 留置場にいた ${n}人 を、全員釈放しました。` : '留置場には、だれもいません。', allowedMentions: NO_MENTIONS, ...(n ? {} : EPH) });
     }
     const u = i.options.getUser('user');
     if (!u) return refuse(i, '釈放する人(user)を選ぶか、all を選んでください。');
     if (!jailLeft(i.guildId, u.id)) return refuse(i, `${u.displayName ?? u.username} さんは、留置場にいません。`);
-    release(i.guildId, u.id);
+    release(i.guildId, u.id); audit(i.guildId, { id: i.user.id, name: i.member?.displayName ?? i.user.username }, u.id, '釈放', null, '/release');
     await i.reply({ content: `🔓 <@${u.id}> を釈放しました。`, allowedMentions: NO_MENTIONS });
   },
 };
@@ -205,7 +205,7 @@ export const chinchiroCommand = {
       const profit = roundProb(bet * r.mult * chinchiroScale(s.payoutRate), rng); const p = pay(i.guildId, i.user.id, bet + profit, s);
       title = '🎲 勝ち!'; color = GREEN; line = `配当 **+ ${money(s, p.paid - bet)}**(×${r.mult})${shortNote(s, p)}`;
     } else {
-      const extra = fine(i.guildId, i.user.id, bet * (r.mult - 1), s); // 倍払いのぶんは、持っている範囲まで
+      const extra = fine(i.guildId, i.user.id, bet * (r.mult - 1), s, 'gamble'); // 倍払いのぶん(借金を許可していなければ、持っている範囲まで)。返金の対象外
       title = '🎲 負け…'; color = RED; line = `**- ${money(s, bet + extra)}**(×${r.mult})${debtNote(i, s)}`;
     }
     await i.reply({ embeds: [card(i, s, color, title, `**あなた**\n${show(P)}\n\n**親**\n${show(D)}\n\n${line}`)] });
@@ -298,7 +298,7 @@ export const blackjackButton = {
 /** 失敗の精算(罰金と留置場)。claim できたときだけ精算するので、二重に罰金が引かれない。精算したら、そのゲームを返す */
 function settleHeistFailure(g, u, s, reason, rng = rnd) {
   const game = claimHeist(g, u); if (!game) return null;
-  const took = fine(g, u, heistFine(rng), s); jail(g, u, HEIST.jail);
+  const took = fine(g, u, heistFine(rng), s, 'heist'); jail(g, u, HEIST.jail);
   return { game, took, reason };
 }
 const REASON = { timeout: '⏰ 時間切れ! 警備員に見つかった。', alarm: `🚨 ${HEIST.maxMistakes + 1}回間違えて、警報が鳴り響いた!` };

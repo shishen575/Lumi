@@ -23,6 +23,16 @@ CREATE TABLE IF NOT EXISTS eco_heist (          -- 進行中の大型銀行強�
   PRIMARY KEY (guild_id, user_id)
 );
 CREATE INDEX IF NOT EXISTS idx_eco_heist_deadline ON eco_heist (deadline);
+CREATE TABLE IF NOT EXISTS eco_fines (            -- 罰金の記録(返金できるようにするため。30日で削除)
+  id INTEGER PRIMARY KEY AUTOINCREMENT, guild_id TEXT NOT NULL, user_id TEXT NOT NULL,
+  amount INTEGER NOT NULL, kind TEXT NOT NULL, at INTEGER NOT NULL, refunded INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_eco_fines_user ON eco_fines (guild_id, user_id, at);
+CREATE TABLE IF NOT EXISTS eco_audit (            -- 管理者の操作の記録(だれが・だれに・何を・いくら)
+  id INTEGER PRIMARY KEY AUTOINCREMENT, guild_id TEXT NOT NULL, actor_id TEXT NOT NULL, actor_name TEXT NOT NULL,
+  target_id TEXT, action TEXT NOT NULL, amount INTEGER, note TEXT, at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_eco_audit_guild ON eco_audit (guild_id, at);
 CREATE INDEX IF NOT EXISTS idx_eco_accounts_rich ON eco_accounts (guild_id, wallet, bank);
 `);
 
@@ -104,3 +114,30 @@ export const setHeistDeadline = (g, u, deadline) => db.prepare('UPDATE eco_heist
 /** ゲームを終わらせる。取れたら、そのゲームを返す(同時に2か所から終わらせても、片方しか取れない=二重に精算されない) */
 export const claimHeist = (g, u) => heistRow(db.prepare('DELETE FROM eco_heist WHERE guild_id=? AND user_id=? RETURNING *').get(g, u));
 export const expiredHeists = (now = Date.now()) => db.prepare('SELECT guild_id, user_id FROM eco_heist WHERE deadline < ?').all(now);
+
+/* ---------- 罰金の記録・返金・管理者の操作の記録 ---------- */
+db.prepare('DELETE FROM eco_fines WHERE at < ?').run(Date.now() - 30 * 864e5); // 30日より古い罰金の記録は消す
+export const logFine = (g, u, amount, kind) => db.prepare('INSERT INTO eco_fines (guild_id,user_id,amount,kind,at) VALUES (?,?,?,?,?)').run(g, u, amount, kind, Date.now());
+/** 返金できる罰金(犯罪・大型銀行)。新しい順 */
+export const recentFines = (g, u, limit = 10) => db.prepare("SELECT id, amount, kind, at, refunded FROM eco_fines WHERE guild_id=? AND user_id=? AND kind IN ('crime','heist') ORDER BY at DESC, id DESC LIMIT ?").all(g, u, limit);
+/** 罰金を返金済みにする。取れたら、その罰金を返す(同時に2回押されても、片方しか取れない=二重に返金されない) */
+export const claimFineRefund = (g, id) => db.prepare("UPDATE eco_fines SET refunded=1 WHERE id=? AND guild_id=? AND refunded=0 AND kind IN ('crime','heist') RETURNING *").get(id, g);
+export const audit = (g, actor, target, action, amount, note) => db.prepare('INSERT INTO eco_audit (guild_id,actor_id,actor_name,target_id,action,amount,note,at) VALUES (?,?,?,?,?,?,?,?)')
+  .run(g, actor.id, String(actor.name ?? actor.id).slice(0, 80), target ?? null, action, amount ?? null, note ? String(note).slice(0, 200) : null, Date.now());
+export const recentAudit = (g, limit = 20) => db.prepare('SELECT * FROM eco_audit WHERE guild_id=? ORDER BY at DESC, id DESC LIMIT ?').all(g, limit);
+
+/** 管理者による残高の調整。target: 'wallet' | 'bank'、mode: 'add' | 'subtract' | 'set'。
+ *  借金を許可していなければ、手持ちも0未満にならない。銀行は、常に0未満にならない。新しい残高を返す */
+export function adjustBalance(g, u, { target, mode, amount, allowDebt }) {
+  db.exec('BEGIN');
+  try {
+    db.prepare('INSERT OR IGNORE INTO eco_accounts (guild_id,user_id,wallet,created_at) VALUES (?,?,0,?)').run(g, u, Date.now());
+    const col = target === 'bank' ? 'bank' : 'wallet';
+    const cur = db.prepare(`SELECT ${col} AS v FROM eco_accounts WHERE guild_id=? AND user_id=?`).get(g, u).v;
+    let next = mode === 'add' ? cur + amount : mode === 'subtract' ? cur - amount : amount;
+    if (col === 'bank' || !allowDebt) next = Math.max(0, next);
+    db.prepare(`UPDATE eco_accounts SET ${col}=? WHERE guild_id=? AND user_id=?`).run(next, g, u);
+    db.exec('COMMIT');
+    return peek(g, u);
+  } catch (e) { db.exec('ROLLBACK'); throw e; }
+}

@@ -64,6 +64,60 @@ Dash.registerTab({
         await draw();
       } },
 
+    /* ===== 管理者ツール(残高の調整・罰金の返金・操作の記録) ===== */
+    { id: 'admin', title: '残高の調整', icon: 'shield',
+      async render(el, { api, esc, ic, toast, confirm, pageHeader }) {
+        const st = await api('/settings'); const can = st.canEditBudget; const em = esc(st.currencyEmoji);
+        const fmtN = (n) => `${em} ${Number(n).toLocaleString()}`;
+        const dt = (t) => new Date(t).toLocaleString('ja-JP', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+        let picked = null;
+        el.innerHTML = `${pageHeader('残高の調整', '管理者が、メンバーのお金を増やす・減らす・指定した額にする、罰金を返金する、ためのページです。すべての操作は、下の記録に残ります。')}
+          ${can ? '' : '<div class="card" style="background:var(--warn-soft);border-color:transparent"><b>この操作ができるのは、サーバーのオーナー・管理者・運営だけです</b><p class="small" style="margin:6px 0 0">あなたは、記録を見ることだけができます。</p></div>'}
+          ${can ? `<div class="card"><h2>1. メンバーを選ぶ</h2><div class="inline"><input id="q" type="text" placeholder="名前の一部、またはユーザーID" maxlength="32" style="max-width:320px"><button class="btn ghost sm" id="find" type="button">探す</button></div><div id="found" style="margin-top:10px"></div></div>
+          <div id="panel"></div>` : ''}
+          <div class="card flush"><div class="card-h"><h2>操作の記録</h2></div><div id="log"></div></div>`;
+        const q = (x) => el.querySelector(x);
+        const drawLog = async () => {
+          const rows = await api('/audit');
+          q('#log').innerHTML = rows.length ? `<ol class="lb">${rows.map((r) => `<li style="grid-template-columns:minmax(0,1fr) auto"><span class="nm" style="white-space:normal"><b>${esc(r.actor_name)}</b> が ${r.target_name ? `<b>${esc(r.target_name)}</b> の ` : ''}${esc(r.action)}${r.amount != null ? ` ${fmtN(r.amount)}` : ''}${r.note ? `<br><span class="mut small">${esc(r.note)}</span>` : ''}</span><span class="mut small">${dt(r.at)}</span></li>`).join('')}</ol>` : '<div class="empty"><h2>まだ、記録がありません</h2></div>';
+        };
+        const drawPanel = async () => {
+          if (!picked) { q('#panel').innerHTML = ''; return; }
+          const a = await api('/account/' + picked);
+          q('#panel').innerHTML = `<div class="card"><h2>2. ${esc(a.name)} の口座</h2>
+              <div class="tiles" style="margin:10px 0 14px"><div class="tile"><div class="k">手持ち${a.wallet < 0 ? '(借金)' : ''}</div><div class="v">${fmtN(a.wallet)}</div></div><div class="tile"><div class="k">銀行</div><div class="v">${fmtN(a.bank)}</div></div></div>
+              <div class="grid2"><div class="field"><label class="f" for="tg">対象</label><select id="tg"><option value="wallet">手持ち</option><option value="bank">銀行</option></select></div>
+                <div class="field"><label class="f" for="md">操作</label><select id="md"><option value="add">増やす</option><option value="subtract">減らす</option><option value="set">指定した額にする</option></select></div>
+                <div class="field"><label class="f" for="am">金額</label><input id="am" type="number" min="0" placeholder="1000"></div>
+                <div class="field"><label class="f" for="nt">メモ(任意)</label><input id="nt" type="text" maxlength="100" placeholder="理由など"></div></div>
+              <div class="acts"><button class="btn" id="apply" type="button">調整する</button></div>
+              <p class="hint">予算には、影響しません(管理者による調整は、予算の出し入れとは別です)。${st.allowDebt ? '' : '借金を許可していないので、手持ちは0未満になりません。'}</p></div>
+            <div class="card flush"><div class="card-h"><h2>最近の罰金(犯罪・大型銀行)</h2></div>${a.fines.length ? `<ol class="lb">${a.fines.map((f) => `<li style="grid-template-columns:minmax(0,1fr) auto auto"><span class="nm">${f.kind === 'heist' ? '🏦 大型銀行' : '🚔 犯罪'}の罰金 <b>${fmtN(f.amount)}</b> <span class="mut small">${dt(f.at)}</span></span>${f.refunded ? '<span class="badge ok">返金済み</span>' : `<button class="btn ghost sm" type="button" data-f="${f.id}" data-a="${f.amount}">返金する</button>`}<span></span></li>`).join('')}</ol>` : '<div class="empty"><h2>最近の罰金は、ありません</h2></div>'}</div>`;
+          q('#apply').onclick = async () => {
+            const body = { user_id: picked, target: q('#tg').value, mode: q('#md').value, amount: q('#am').value, note: q('#nt').value };
+            if (body.amount === '') { toast('金額を入力してください', 'err'); return; }
+            const label = `${a.name} の${body.target === 'bank' ? '銀行' : '手持ち'}を、${Number(body.amount).toLocaleString()} ${{ add: '増やします', subtract: '減らします', set: 'にします' }[body.mode]}。`;
+            if (!await confirm({ title: '残高を調整', message: label, ok: '実行する', danger: body.mode !== 'add' })) return;
+            await api('/adjust', { method: 'POST', body }); toast('調整しました'); await drawPanel(); drawLog();
+          };
+          el.querySelectorAll('[data-f]').forEach((b) => (b.onclick = async () => {
+            if (!await confirm({ title: '罰金を返金', message: `${a.name} に、罰金 ${Number(b.dataset.a).toLocaleString()} を返金します。(1つの罰金につき、1回だけです)`, ok: '返金する' })) return;
+            const r = await api('/refund', { method: 'POST', body: { fine_id: b.dataset.f } });
+            toast(r.short ? `予算が足りず、${r.paid.toLocaleString()} だけ返金しました` : '返金しました'); await drawPanel(); drawLog();
+          }));
+        };
+        if (can) {
+          const find = async () => {
+            const v = q('#q').value.trim(); if (!v) return;
+            const list = await api('/members?q=' + encodeURIComponent(v));
+            q('#found').innerHTML = list.length ? list.map((m) => `<button class="btn ghost sm" type="button" data-id="${m.id}" style="margin:0 6px 6px 0">${esc(m.name)}</button>`).join('') : '<span class="mut small">見つかりませんでした</span>';
+            q('#found').querySelectorAll('[data-id]').forEach((b) => (b.onclick = () => { picked = b.dataset.id; drawPanel(); }));
+          };
+          q('#find').onclick = find; q('#q').onkeydown = (e) => { if (e.key === 'Enter') find(); };
+        }
+        await drawLog();
+      } },
+
     /* ===== 予算 ===== */
     { id: 'budget', title: '予算', icon: 'shield',
       async render(el, { api, esc, ic, toast, confirm, pageHeader }) {
