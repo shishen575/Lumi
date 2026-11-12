@@ -1,4 +1,4 @@
-import { getRules, getStats, metricValue } from './db.js';
+import { getRules, getStats, metricValue, reconcileMembers } from './db.js';
 import { notifyGranted } from './notify.js';
 
 /** 1人分のロールを評価して付与/剥奪する。変更があった数を返す */
@@ -60,6 +60,7 @@ export async function evaluateUser(guild, userId) {
 export async function evaluateGuild(guild, { notify = false } = {}) {
   const rules = getRules(guild.id);
   const members = await guild.members.fetch();
+  reconcileMembers(guild.id, members.keys()); // ついでに退出フラグを実態に合わせる
   let changed = 0;
   for (const m of members.values()) changed += await evaluateMember(m, rules, { notify }); // 既定は通知しない(スパム防止)。ダッシュボードで選んだときだけ通知
   return changed;

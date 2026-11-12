@@ -1,5 +1,5 @@
 import { Events } from 'discord.js';
-import { addStat, getSettings } from './db.js';
+import { addStat, getSettings, setLeft, reconcileMembers } from './db.js';
 import { evaluateUser } from './roles.js';
 import { mountApi } from './api.js';
 import { noteLive, markInterrupted } from './backfill.js';
@@ -22,6 +22,16 @@ export default {
   register({ client, router }) {
     mountApi(router, client);
     markInterrupted();
+
+    // 退出したメンバーはランキングから除外(再参加で復活)。停止中の出入りは起動時に合わせ直す
+    client.on(Events.GuildMemberRemove, (m) => setLeft(m.guild.id, m.id, true));
+    client.on(Events.GuildMemberAdd, (m) => setLeft(m.guild.id, m.id, false));
+    client.once(Events.ClientReady, async () => {
+      for (const g of client.guilds.cache.values()) {
+        try { reconcileMembers(g.id, (await g.members.fetch()).keys()); }
+        catch (e) { console.error(`[activity-roles] メンバー同期に失敗 ${g.name}:`, e.message); }
+      }
+    });
 
     const lastMsg = new Map();
     client.on(Events.MessageCreate, async (msg) => {

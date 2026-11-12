@@ -15,9 +15,9 @@ const fmt = (metric, v) => {
 function position(guildId, metric, userId) {
   const col = COL[metric];
   const mine = db.prepare(`SELECT ${col} AS v FROM stats WHERE guild_id=? AND user_id=?`).get(guildId, userId)?.v ?? 0;
-  const total = db.prepare(`SELECT COUNT(*) AS c FROM stats WHERE guild_id=? AND ${col}>0`).get(guildId).c;
+  const total = db.prepare(`SELECT COUNT(*) AS c FROM stats WHERE guild_id=? AND is_left=0 AND ${col}>0`).get(guildId).c;
   if (mine <= 0) return { pos: null, total };
-  const above = db.prepare(`SELECT COUNT(*) AS c FROM stats WHERE guild_id=? AND ${col}>?`).get(guildId, mine).c;
+  const above = db.prepare(`SELECT COUNT(*) AS c FROM stats WHERE guild_id=? AND is_left=0 AND ${col}>?`).get(guildId, mine).c;
   return { pos: above + 1, total };
 }
 
@@ -69,12 +69,12 @@ const PAGE = 10;
 
 function pageData(gid, metric, page) {
   const col = COL[metric];
-  const total = db.prepare(`SELECT COUNT(*) AS c FROM stats WHERE guild_id=? AND ${col}>0`).get(gid).c;
+  const total = db.prepare(`SELECT COUNT(*) AS c FROM stats WHERE guild_id=? AND is_left=0 AND ${col}>0`).get(gid).c;
   const pages = Math.max(1, Math.ceil(total / PAGE));
   const p = Math.min(Math.max(1, page), pages);
   const rows = db.prepare(
     `SELECT user_id, v, rk FROM (
-       SELECT user_id, ${col} AS v, RANK() OVER (ORDER BY ${col} DESC) AS rk FROM stats WHERE guild_id=? AND ${col}>0
+       SELECT user_id, ${col} AS v, RANK() OVER (ORDER BY ${col} DESC) AS rk FROM stats WHERE guild_id=? AND is_left=0 AND ${col}>0
      ) ORDER BY v DESC, user_id LIMIT ? OFFSET ?`
   ).all(gid, PAGE, (p - 1) * PAGE);
   return { rows, total, pages, page: p };

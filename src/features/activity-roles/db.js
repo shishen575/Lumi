@@ -31,6 +31,23 @@ for (const col of ['notify_channel_id TEXT', 'notify_template TEXT']) {
   try { db.exec(`ALTER TABLE settings ADD COLUMN ${col}`); } catch { /* exists */ }
 }
 
+// 退出したメンバーはランキングから除外する(統計は残すので、再参加すれば復活する)
+try { db.exec('ALTER TABLE stats ADD COLUMN is_left INTEGER NOT NULL DEFAULT 0'); } catch { /* exists */ }
+
+export const setLeft = (guildId, userId, left) =>
+  db.prepare('UPDATE stats SET is_left=? WHERE guild_id=? AND user_id=?').run(left ? 1 : 0, guildId, userId);
+
+/** サーバーに実在するメンバーIDの一覧で、退出フラグを一括で合わせ直す */
+export function reconcileMembers(guildId, memberIds) {
+  db.exec('BEGIN');
+  try {
+    db.prepare('UPDATE stats SET is_left=1 WHERE guild_id=?').run(guildId);
+    const up = db.prepare('UPDATE stats SET is_left=0 WHERE guild_id=? AND user_id=?');
+    for (const id of memberIds) up.run(guildId, id);
+    db.exec('COMMIT');
+  } catch (e) { db.exec('ROLLBACK'); throw e; }
+}
+
 // 条件の種類。voice_minutes は保存値(秒)から換算する
 export const METRICS = {
   messages: '発言数',
@@ -78,5 +95,5 @@ export function saveSettings(guildId, { message_cooldown, voice_require_others, 
 export const leaderboard = (guildId, metric, limit = 50) => {
   const col = metric === 'voice_minutes' ? 'voice_seconds' : metric;
   if (!COLS.includes(col)) return [];
-  return db.prepare(`SELECT * FROM stats WHERE guild_id=? ORDER BY ${col} DESC LIMIT ?`).all(guildId, limit);
+  return db.prepare(`SELECT * FROM stats WHERE guild_id=? AND is_left=0 ORDER BY ${col} DESC LIMIT ?`).all(guildId, limit);
 };
