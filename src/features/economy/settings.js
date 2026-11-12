@@ -5,6 +5,7 @@ export const DEFAULTS = {
   enabled: false, currencyName: 'コイン', currencyEmoji: '🪙', startBalance: 1000, maxBet: 100000,
   payoutRate: 95,        // ギャンブルの還元率(%)。賭け金に対して、平均でどれだけ戻るか(50〜150)
   budgetEnabled: false,  // サーバーの予算を使うか。オンのとき、報酬・配当は予算から支払われ、罰金・負けは予算に入る
+  allowDebt: true,       // 借金を許可するか。許可すると、罰金などで、所持金が0より下になる(0以下の間は、犯罪ができない)
 };
 const clamp = (v, lo, hi, def) => { const n = Math.floor(Number(v)); return Number.isFinite(n) ? Math.min(hi, Math.max(lo, n)) : def; };
 
@@ -19,6 +20,7 @@ export function saveSettings(guildId, s) {
     maxBet: s.maxBet === undefined ? cur.maxBet : clamp(s.maxBet, 10, 1_000_000_000, DEFAULTS.maxBet),
     payoutRate: s.payoutRate === undefined ? cur.payoutRate : clamp(s.payoutRate, 50, 150, DEFAULTS.payoutRate),
     budgetEnabled: s.budgetEnabled === undefined ? cur.budgetEnabled : !!s.budgetEnabled,
+    allowDebt: s.allowDebt === undefined ? cur.allowDebt : !!s.allowDebt,
   };
   setKV(guildId, 'economy', next);
   return next;

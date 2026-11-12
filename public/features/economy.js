@@ -16,6 +16,8 @@ Dash.registerTab({
               <div class="field"><label class="f" for="sb">最初にもらえるお金</label><input id="sb" type="number" min="0" max="1000000" value="${st.startBalance}"></div>
               <div class="field"><label class="f" for="mb">1回に賭けられる上限</label><input id="mb" type="number" min="10" value="${st.maxBet}"></div>
             </div></div>
+          <div class="card"><h2>借金</h2>
+            <label class="sw"><input type="checkbox" id="ad" ${st.allowDebt ? 'checked' : ''}><i></i><span><b>借金を許可する</b><small>オンのとき: 罰金やチンチロの倍払いが、持っているお金を超えると、所持金が0より下(借金)になります。<b>所持金が0以下の間は、犯罪ができません</b>(バイト・乞食で返せます)。オフのとき: 持っているお金までしか、引かれません</small></span></label></div>
           <div class="card"><h2>ギャンブルの還元率</h2>
             <p class="sub">賭け金に対して、平均でどれだけ戻ってくるかを、パーセントで決めます。100%未満だと、遊ぶほど、お金が減っていきます。</p>
             <div class="field"><label class="f" for="pr">還元率(%)</label><div class="inline"><input id="pr" type="number" min="50" max="150" value="${st.payoutRate}" style="width:110px"><input id="prs" type="range" min="50" max="150" value="${st.payoutRate}" style="flex:1;min-width:120px"><span class="mut">%</span></div>
@@ -36,7 +38,7 @@ Dash.registerTab({
         q('#pr').onchange = q('#prs').onchange = drawRates;
         drawRates();
         q('#save').onclick = async () => {
-          await api('/settings', { method: 'PUT', body: { enabled: q('#en').checked, currencyName: q('#cn').value, currencyEmoji: q('#ce').value, startBalance: q('#sb').value, maxBet: q('#mb').value, payoutRate: q('#pr').value } });
+          await api('/settings', { method: 'PUT', body: { enabled: q('#en').checked, currencyName: q('#cn').value, currencyEmoji: q('#ce').value, startBalance: q('#sb').value, maxBet: q('#mb').value, payoutRate: q('#pr').value, allowDebt: q('#ad').checked } });
           toast('保存しました');
         };
       } },

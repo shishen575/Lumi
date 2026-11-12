@@ -36,6 +36,7 @@ async function open(i) {
 const refuse = (i, text) => i.reply({ content: text, ...EPH });
 const budgetEmpty = (s, g) => s.budgetEnabled && treasury(g) <= 0;
 const BUDGET_EMPTY = 'いま、サーバーの予算が空です。管理者が予算を追加するまで、報酬はもらえません。';
+const debtNote = (i, s) => { const w = wallet(i); return w < 0 ? `\n-# 💸 借金が ${money(s, -w)} 残っています` : ''; };
 const shortNote = (s, r) => (r.short > 0 ? `\n-# 予算が足りなかったため、${money(s, r.short)} が減額されました` : '');
 
 /** 賭け金の確認。問題があれば、理由を返信して null */
@@ -56,8 +57,8 @@ export const balanceCommand = {
     const u = i.options.getUser('user') ?? i.user; const a = peek(i.guildId, u.id);
     const jl = jailLeft(i.guildId, u.id);
     await i.reply({ embeds: [new EmbedBuilder().setColor(BLUE).setTitle(`${s.currencyEmoji} 残高`).setAuthor({ name: u.displayName ?? u.username, iconURL: u.displayAvatarURL?.() })
-      .addFields({ name: '手持ち', value: money(s, a.wallet), inline: true }, { name: '銀行', value: money(s, a.bank), inline: true }, { name: '合計', value: money(s, a.wallet + a.bank), inline: true })
-      .setDescription(jl ? `🚔 留置場にいます(あと ${dur(jl)})` : '手持ちは、犯罪で捕まったときの罰金の対象です。銀行に預けると安全です。')], allowedMentions: NO_MENTIONS });
+      .addFields({ name: a.wallet < 0 ? '手持ち(借金)' : '手持ち', value: money(s, a.wallet), inline: true }, { name: '銀行', value: money(s, a.bank), inline: true }, { name: '合計', value: money(s, a.wallet + a.bank), inline: true })
+      .setDescription([jl ? `🚔 留置場にいます(あと ${dur(jl)})` : '', a.wallet < 0 ? `💸 **借金があります。** バイト(/work)や乞食(/beg)で返しましょう。返すまで、犯罪はできません。` : jl ? '' : '手持ちは、犯罪で捕まったときの罰金の対象です。銀行に預けると安全です。'].filter(Boolean).join('\n'))], allowedMentions: NO_MENTIONS });
   },
 };
 const moveCommand = (name, desc, fn, verb) => ({
@@ -99,6 +100,7 @@ export const crimeCommand = {
     const s = await open(i); if (!s) return;
     const key = i.options.getString('type', true); const c = CRIMES[key];
     const jl = jailLeft(i.guildId, i.user.id); if (jl) return refuse(i, `🚔 留置場にいる間は、犯罪はできません。(あと ${dur(jl)}。/bail で保釈できます)`);
+    const w = wallet(i); if (w <= 0) return refuse(i, `💸 所持金が0以下のときは、犯罪はできません。(いまの所持金 ${money(s, w)})\nバイト(/work)や乞食(/beg)で、お金を稼ぎましょう。`);
     const cd = cooldownLeft(i.guildId, i.user.id, `crime:${key}`); if (cd) return refuse(i, `${c.emoji} ${c.name}は、まだ警戒が厳しいです。あと ${dur(cd)}。`);
     if (budgetEmpty(s, i.guildId)) return refuse(i, BUDGET_EMPTY);
     const r = resolveCrime(key, rng);
@@ -109,7 +111,7 @@ export const crimeCommand = {
     }
     const took = fine(i.guildId, i.user.id, r.amount, s);
     jail(i.guildId, i.user.id, c.jail); setCooldown(i.guildId, i.user.id, `crime:${key}`, c.cd);
-    await i.reply({ embeds: [card(i, s, RED, `${c.emoji} ${c.name} 失敗…`, `${r.text}\n\n罰金 **- ${money(s, took)}**\n🚔 留置場に ${dur(c.jail)} 入ります。(/bail で、保釈金を払って出られます)`)] });
+    await i.reply({ embeds: [card(i, s, RED, `${c.emoji} ${c.name} 失敗…`, `${r.text}\n\n罰金 **- ${money(s, took)}**${debtNote(i, s)}\n🚔 留置場に ${dur(c.jail)} 入ります。(/bail で、保釈金を払って出られます)`)] });
   },
 };
 export const workCommand = {
@@ -124,7 +126,7 @@ export const workCommand = {
     const r = resolveWork(key, rng);
     const p = pay(i.guildId, i.user.id, r.pay + (r.bonus?.amount ?? 0), s);
     if (p.paid > 0) setCooldown(i.guildId, i.user.id, `work:${key}`, j.cd);
-    await i.reply({ embeds: [card(i, s, GREEN, `${j.emoji} ${j.name}のバイト`, `${r.text}\n\n給料 **+ ${money(s, r.pay)}**${r.bonus ? `\n${r.bonus.text} **+ ${money(s, r.bonus.amount)}**` : ''}${shortNote(s, p)}`)] });
+    await i.reply({ embeds: [card(i, s, GREEN, `${j.emoji} ${j.name}のバイト`, `${r.text}\n\n給料 **+ ${money(s, r.pay)}**${r.bonus ? `\n${r.bonus.text} **+ ${money(s, r.bonus.amount)}**` : ''}${shortNote(s, p)}${debtNote(i, s)}`)] });
   },
 };
 export const begCommand = {
@@ -136,7 +138,7 @@ export const begCommand = {
     const r = resolveBeg(rng); setCooldown(i.guildId, i.user.id, 'beg', BEG.cd);
     if (!r.amount) return i.reply({ embeds: [card(i, s, GRAY, '🙏 乞食', `${r.text}`)] });
     const p = pay(i.guildId, i.user.id, r.amount, s);
-    await i.reply({ embeds: [card(i, s, GREEN, '🙏 乞食', `${r.text}\n\n**+ ${money(s, p.paid)}**${shortNote(s, p)}`)] });
+    await i.reply({ embeds: [card(i, s, GREEN, '🙏 乞食', `${r.text}\n\n**+ ${money(s, p.paid)}**${shortNote(s, p)}${debtNote(i, s)}`)] });
   },
 };
 export const bailCommand = {
@@ -168,7 +170,7 @@ export const chinchiroCommand = {
       title = '🎲 勝ち!'; color = GREEN; line = `配当 **+ ${money(s, p.paid - bet)}**(×${r.mult})${shortNote(s, p)}`;
     } else {
       const extra = fine(i.guildId, i.user.id, bet * (r.mult - 1), s); // 倍払いのぶんは、持っている範囲まで
-      title = '🎲 負け…'; color = RED; line = `**- ${money(s, bet + extra)}**(×${r.mult})`;
+      title = '🎲 負け…'; color = RED; line = `**- ${money(s, bet + extra)}**(×${r.mult})${debtNote(i, s)}`;
     }
     await i.reply({ embeds: [card(i, s, color, title, `**あなた**\n${show(P)}\n\n**親**\n${show(D)}\n\n${line}`)] });
   },

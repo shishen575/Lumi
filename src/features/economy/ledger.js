@@ -1,5 +1,5 @@
 import { db, migrate } from '../../core/db.js';
-import { addWallet, takeUpTo } from './db.js';
+import { addWallet, takeUpTo, debit } from './db.js';
 
 /**
  * お金の出し入れ。サーバーの予算(国庫)がオンのときは、
@@ -50,11 +50,12 @@ export function collect(g, u, amount, s) {
     db.exec('COMMIT'); return ok;
   } catch (e) { db.exec('ROLLBACK'); throw e; }
 }
-/** 罰金。持っているぶんだけ引く。引いた額を返す */
+/** 罰金。借金を許可しているときは、全額を引く(所持金がマイナスになることがある)。許可していないときは、持っているぶんだけ。引いた額を返す */
 export function fine(g, u, amount, s) {
   db.exec('BEGIN');
   try {
-    const took = takeUpTo(g, u, amount);
+    let took;
+    if (s.allowDebt) { debit(g, u, amount); took = amount; } else took = takeUpTo(g, u, amount);
     if (took > 0 && s.budgetEnabled) addTreasury(g, took);
     db.exec('COMMIT'); return took;
   } catch (e) { db.exec('ROLLBACK'); throw e; }

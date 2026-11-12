@@ -33,15 +33,20 @@ export function account(guildId, userId, startBalance = 0) {
 /** 口座を作らずに見る(なければ、ゼロ) */
 export const peek = (g, u) => db.prepare('SELECT * FROM eco_accounts WHERE guild_id=? AND user_id=?').get(g, u) ?? { wallet: 0, bank: 0, jail_until: 0 };
 
-/** 手持ちを増減する。足りなければ変えずに false(同期処理なので、確認と更新の間に割り込まれない) */
+/** 手持ちを増減する。減らす場合に、足りなければ変えずに false(同期処理なので、確認と更新の間に割り込まれない)。
+ *  増やす場合は、借金中(マイナス)でも、常に通る */
 export function addWallet(guildId, userId, delta) {
-  const r = db.prepare('UPDATE eco_accounts SET wallet = wallet + ? WHERE guild_id=? AND user_id=? AND wallet + ? >= 0').run(delta, guildId, userId, delta);
+  const r = db.prepare('UPDATE eco_accounts SET wallet = wallet + ? WHERE guild_id=? AND user_id=? AND (? >= 0 OR wallet + ? >= 0)').run(delta, guildId, userId, delta, delta);
   return r.changes > 0;
+}
+/** 手持ちが足りなくても、引く(借金になる)。罰金などに使う */
+export function debit(guildId, userId, amount) {
+  db.prepare('UPDATE eco_accounts SET wallet = wallet - ? WHERE guild_id=? AND user_id=?').run(amount, guildId, userId);
 }
 /** 手持ちが足りないときは、持っているぶんだけ引く(罰金用)。引いた額を返す */
 export function takeUpTo(guildId, userId, amount) {
   const a = db.prepare('SELECT wallet FROM eco_accounts WHERE guild_id=? AND user_id=?').get(guildId, userId);
-  const take = Math.min(a?.wallet ?? 0, amount);
+  const take = Math.min(Math.max(0, a?.wallet ?? 0), amount);
   if (take > 0) addWallet(guildId, userId, -take);
   return take;
 }
