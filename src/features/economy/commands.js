@@ -1,6 +1,6 @@
 import { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, MessageFlags } from 'discord.js';
 import { getSettings, money } from './settings.js';
-import { peek, deposit, withdraw, cooldownLeft, setCooldown, jailLeft, jail, release, richest, getBj, saveBj, deleteBj, getHeist, saveHeist, claimHeist, expiredHeists } from './db.js';
+import { peek, deposit, withdraw, cooldownLeft, setCooldown, jailLeft, jail, release, richest, getBj, saveBj, deleteBj, getHeist, saveHeist, claimHeist, expiredHeists, setHeistDeadline } from './db.js';
 import { ensureAccount, pay, collect, fine, treasury } from './ledger.js';
 import {
   rnd, roundProb, chinchiroPlay, chinchiroCompare, chinchiroScale, slotSpin, slotPayout, slotMultiplier,
@@ -14,6 +14,12 @@ const NO_MENTIONS = { parse: [] };
 const GREEN = 0x57f287, RED = 0xed4245, GOLD = 0xf1c40f, BLUE = 0x5865f2, GRAY = 0x99aab5;
 const DICE = ['⚀', '⚁', '⚂', '⚃', '⚄', '⚅'];
 const BJ_TTL = 10 * 60_000;
+const SWEEP_GRACE = 20_000;   // 制限時間を過ぎても、20秒は、遅れて届くボタンを待つ
+const CLICK_GRACE = 2_000;    // ボタンを押した時刻の判定の、誤差の許容
+const LAG_COMPENSATION_MAX = 20_000; // ボタンが遅れて届いたとき、その遅れの分だけ制限時間を延ばす(1回につき最大20秒)
+let holdSweepUntil = 0;       // この時刻までは、放置の精算をしない(BOTの再起動や停止のあと)
+export const holdHeistSweep = (ms, now = Date.now()) => { holdSweepUntil = Math.max(holdSweepUntil, now + ms); };
+const heistAbandoned = (h, now = Date.now()) => now >= holdSweepUntil && now > h.deadline + SWEEP_GRACE;
 
 const dur = (ms) => { const t = Math.ceil(ms / 1000), m = Math.floor(t / 60), r = t % 60; return m ? `${m}分${r ? `${r}秒` : ''}` : `${r}秒`; };
 const wallet = (i) => peek(i.guildId, i.user.id).wallet;
@@ -25,6 +31,12 @@ const card = (i, s, color, title, desc) => {
 };
 const guildOnly = (b) => b.setDMPermission(false);
 
+/** ボタンへの応答(画面の更新)。BOTの処理が遅れて、3秒の応答期限を過ぎていても、メッセージを直接書き換えて、画面を進める */
+async function safeUpdate(i, payload) {
+  try { await i.update(payload); }
+  catch (e) { try { await i.message?.edit?.(payload); } catch { /* 画面を更新できなくても、ゲームの状態は保存済み */ } }
+}
+
 /** 共通の入口: オフのサーバーでは断る。口座を用意して、時間切れのブラックジャックを精算する */
 async function open(i) {
   const s = getSettings(i.guildId);
@@ -33,7 +45,7 @@ async function open(i) {
   const b = getBj(i.guildId, i.user.id);
   if (b && Date.now() - b.started_at > BJ_TTL) deleteBj(i.guildId, i.user.id); // 時間切れ: 賭け金は戻らない
   const h = getHeist(i.guildId, i.user.id);
-  if (h && Date.now() > h.deadline) settleHeistFailure(i.guildId, i.user.id, s, 'timeout'); // 放置された大型銀行強盗は、失敗として精算
+  if (h && heistAbandoned(h)) settleHeistFailure(i.guildId, i.user.id, s, 'timeout'); // 放置された大型銀行強盗は、失敗として精算
   return s;
 }
 const refuse = (i, text) => i.reply({ content: text, ...EPH });
@@ -245,8 +257,8 @@ export const blackjackButton = {
     if (i.user.id !== uid) return i.reply({ content: 'これは、あなたのゲームではありません。`/blackjack` で、自分のゲームを始められます。', ...EPH });
     const s = getSettings(i.guildId);
     const g = getBj(i.guildId, uid);
-    if (!g) return i.update({ content: 'このゲームは、すでに終了しています。', embeds: [], components: [] });
-    if (Date.now() - g.started_at > BJ_TTL) { deleteBj(i.guildId, uid); return i.update({ content: '時間切れで、ゲームが終了しました。(賭け金は戻りません)', embeds: [], components: [] }); }
+    if (!g) return safeUpdate(i, { content: 'このゲームは、すでに終了しています。', embeds: [], components: [] });
+    if (Date.now() - g.started_at > BJ_TTL) { deleteBj(i.guildId, uid); return safeUpdate(i, { content: '時間切れで、ゲームが終了しました。(賭け金は戻りません)', embeds: [], components: [] }); }
     let st = g.state;
     if (action === 'double') {
       if (st.player.length !== 2 || st.doubled) return i.reply({ content: 'ダブルダウンは、最初の2枚のときだけです。', ...EPH });
@@ -255,9 +267,9 @@ export const blackjackButton = {
     } else if (action === 'hit') st = bjHit(st);
     else if (action === 'stand') st = bjStand(st);
     else return;
-    if (st.done) return i.update(bjFinish(i, s, st));
+    if (st.done) return safeUpdate(i, bjFinish(i, s, st));
     saveBj(i.guildId, uid, g.msg_id, st);
-    await i.update({ embeds: [bjEmbed(i, s, st, false)], components: bjButtons(i, st, s) });
+    await safeUpdate(i, { embeds: [bjEmbed(i, s, st, false)], components: bjButtons(i, st, s) });
   },
 };
 
@@ -294,7 +306,7 @@ export const heistCommand = {
     const cd = cooldownLeft(g, u, 'heist'); if (cd) return refuse(i, `${HEIST.emoji} 大型銀行は、まだ警備が厳重です。あと ${dur(cd)}。`);
     if (budgetEmpty(s, g)) return refuse(i, BUDGET_EMPTY);
     const st = { steps: makeSteps(rng), idx: 0, mistakes: 0, wrong: [], reward: heistBase(rng), name: i.member?.displayName ?? i.user.username, avatar: i.user.displayAvatarURL?.() };
-    const deadline = Date.now() + HEIST.timeMs;
+    const deadline = (i.createdTimestamp ?? Date.now()) + HEIST.timeMs; // コマンドを打った時刻から数える(BOTの処理の遅れで、短くならない)
     setCooldown(g, u, 'heist', HEIST.cd);
     saveHeist(g, u, { channelId: i.channelId, state: st, deadline });  // 先に保存してから返信する
     try { await i.reply(hsBody(st, deadline, u)); }
@@ -310,38 +322,46 @@ export const heistButton = {
     if (i.user.id !== uid) return i.reply({ content: 'これは、あなたの強盗ではありません。`/heist` で、自分で挑戦できます。', ...EPH });
     const g = i.guildId, s = getSettings(g);
     const game = getHeist(g, uid);
-    if (!game) return i.update({ content: 'この強盗は、すでに終了しています。', embeds: [], components: [] });
-    const now = Date.now(), st = game.state;
-    if (now > game.deadline) { // 制限時間を過ぎている
+    if (!game) return safeUpdate(i, { content: 'この強盗は、すでに終了しています。', embeds: [], components: [] });
+    const st = game.state;
+    const now = i.createdTimestamp ?? Date.now(); // ボタンを押した時刻(Discordの記録)。BOTの処理が遅れても、押した時刻で判定する
+    if (now > game.deadline + CLICK_GRACE) { // 制限時間を過ぎてから、押された
       const r = settleHeistFailure(g, uid, s, 'timeout');
-      return r ? i.update({ embeds: [failEmbed(s, st.name, r)], components: [] }) : i.update({ content: 'この強盗は、すでに終了しています。', embeds: [], components: [] });
+      return safeUpdate(i, r ? { embeds: [failEmbed(s, st.name, r)], components: [] } : { content: 'この強盗は、すでに終了しています。', embeds: [], components: [] });
     }
     if (Number(idxS) !== st.idx) return i.reply({ content: 'その問題は、すでに終わっています。', ...EPH });
+    // 押してから届くまでの遅れ(BOT側のネットワークの遅れ)の分だけ、制限時間を延ばす。画面の更新も遅れるので、そうしないと、プレイヤーが不利になる
+    const lag = Math.max(0, Date.now() - now);
+    if (lag > 1500) { game.deadline += Math.min(lag, LAG_COMPENSATION_MAX); setHeistDeadline(g, uid, game.deadline); }
     const step = st.steps[st.idx], k = Number(kS);
     if (k === step.answer) {
       st.idx++; st.wrong = [];
       if (st.idx >= st.steps.length) { // 全ステップ突破 → 成功
-        if (!claimHeist(g, uid)) return i.update({ content: 'この強盗は、すでに終了しています。', embeds: [], components: [] });
-        const left = game.deadline - now, amount = heistReward(st.reward, left);
+        if (!claimHeist(g, uid)) return safeUpdate(i, { content: 'この強盗は、すでに終了しています。', embeds: [], components: [] });
+        const left = Math.max(0, game.deadline - now), amount = heistReward(st.reward, left);
         const p = pay(g, uid, amount, s);
-        return i.update({ embeds: [new EmbedBuilder().setColor(GOLD).setTitle(`${HEIST.emoji} ${HEIST.name} 成功!`).setAuthor({ name: st.name, iconURL: st.avatar })
+        return safeUpdate(i, { embeds: [new EmbedBuilder().setColor(GOLD).setTitle(`${HEIST.emoji} ${HEIST.name} 成功!`).setAuthor({ name: st.name, iconURL: st.avatar })
           .setDescription(`金庫を開けて、大金を持ち出した!\n残り ${dur(left)} でクリア(スピードボーナス +${Math.round((amount / st.reward - 1) * 100)}%)\n\n**+ ${money(s, p.paid)}**${shortNote(s, p)}`)], components: [] });
       }
       saveHeist(g, uid, { state: st, deadline: game.deadline });
-      return i.update(hsBody(st, game.deadline, uid));
+      return safeUpdate(i, hsBody(st, game.deadline, uid));
     }
     st.mistakes++; st.wrong.push(k);
     if (st.mistakes > HEIST.maxMistakes) { // 警報
       const r = settleHeistFailure(g, uid, s, 'alarm');
-      return r ? i.update({ embeds: [failEmbed(s, st.name, r)], components: [] }) : i.update({ content: 'この強盗は、すでに終了しています。', embeds: [], components: [] });
+      return safeUpdate(i, r ? { embeds: [failEmbed(s, st.name, r)], components: [] } : { content: 'この強盗は、すでに終了しています。', embeds: [], components: [] });
     }
     saveHeist(g, uid, { state: st, deadline: game.deadline });
-    await i.update(hsBody(st, game.deadline, uid, '⚠️ 違う! 警報が鳴りかけた…'));
+    await safeUpdate(i, hsBody(st, game.deadline, uid, '⚠️ 違う! 警報が鳴りかけた…'));
   },
 };
 /** 制限時間を過ぎたまま放置された強盗を、失敗にする(罰金・留置場)。画面も、できれば更新する */
-export async function resolveExpiredHeists(client) {
-  for (const row of expiredHeists()) {
+let lastSweep = Date.now();
+export async function resolveExpiredHeists(client, now = Date.now()) {
+  const drift = now - lastSweep - 15_000; lastSweep = now;       // 巡回が、予定より大きく遅れた = BOTが止まっていた
+  if (drift > 5_000) holdHeistSweep(SWEEP_GRACE, now);           // 止まっていた直後は、遅れて届くボタンを待つ
+  if (now < holdSweepUntil) return;
+  for (const row of expiredHeists(now - SWEEP_GRACE)) {
     try {
       const s = getSettings(row.guild_id);
       const before = getHeist(row.guild_id, row.user_id);
