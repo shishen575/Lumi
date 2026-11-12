@@ -3,6 +3,7 @@ import session from 'express-session';
 import crypto from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { SqliteStore } from './session-store.js';
 import { guildAccess, mountAccessRoutes, resolveAccess, isOperator } from './access.js';
 import { getKV, setKV, db } from './db.js';
 import { mountGithubWebhook } from './webhook.js';
@@ -17,7 +18,7 @@ export function startWeb(client, features) {
   app.use(express.json({ verify: (req, res, buf) => { req.rawBody = buf; } })); // Webhook署名検証用に生ボディを保持
   mountGithubWebhook(app);
   app.use(session({
-    secret: process.env.SESSION_SECRET, resave: false, saveUninitialized: false,
+    secret: process.env.SESSION_SECRET, resave: false, saveUninitialized: false, store: new SqliteStore(),
     cookie: { httpOnly: true, sameSite: 'lax', secure: BASE.startsWith('https'), maxAge: 7 * 864e5 },
   }));
 
