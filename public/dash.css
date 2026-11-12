@@ -46,8 +46,8 @@ p { margin: 0 0 10px; }
   background: color-mix(in srgb, var(--bg) 88%, transparent); backdrop-filter: blur(10px); border-bottom: 1px solid var(--line); }
 .brand { display: flex; align-items: center; gap: 9px; color: var(--fg); text-decoration: none; font: 900 19px var(--head); }
 .brand img { width: 30px; height: 30px; border-radius: 9px; }
-.bar-link { color: var(--mut); text-decoration: none; font-size: 14px; }
-.bar-link:hover { color: var(--fg); }
+.bar-btn { gap: 6px; }
+.bar-btn .ic { width: 16px; height: 16px; }
 .user { font-size: 13px; color: var(--mut); max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .icon-btn { display: grid; place-items: center; width: 36px; height: 36px; border-radius: 10px; border: 1px solid var(--line); background: transparent; color: var(--mut); cursor: pointer; }
 .icon-btn:hover { color: var(--fg); border-color: var(--accent); }
@@ -221,7 +221,9 @@ label.f { display: block; font-size: 13px; font-weight: 700; color: var(--mut); 
   .nav a[aria-current] { border-color: var(--accent); }
   .main { padding: 14px max(16px, env(safe-area-inset-right)) 70px max(16px, env(safe-area-inset-left)); }
   .grid2 { grid-template-columns: minmax(0, 1fr); }
-  .user, .bar-link { display: none; }
+  .user { display: none; }
+  .bar-btn { padding: 0; width: 34px; }
+  .bar-btn span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); } /* 画面が狭いときはアイコンだけ(読み上げ用の文字は残す) */
   .rule .thr { min-width: 0; }
 }
 @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
