@@ -3,7 +3,21 @@ import fs from 'node:fs';
 
 fs.mkdirSync('data', { recursive: true });
 export const db = new DatabaseSync('data/bot.db');
-db.exec('PRAGMA journal_mode = WAL;');
+// WAL + synchronous=NORMAL: 書き込みのたびにディスクの完了を待たない(WALでは、電源断でも壊れず、最後の数件が失われるだけ)。
+// このDBは同期APIなので、書き込みが遅いと、その間BOT全体が止まる。busy_timeout は、別のプロセスが使っているときの待ち時間
+db.exec('PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL; PRAGMA busy_timeout = 5000;');
+
+// 遅いクエリを、ログに出す(原因調べ用)。200ms以上かかったものだけ
+const SLOW_MS = 200;
+const origPrepare = db.prepare.bind(db);
+db.prepare = (sql) => {
+  const st = origPrepare(sql);
+  for (const m of ['run', 'get', 'all']) {
+    const f = st[m].bind(st);
+    st[m] = (...a) => { const t = performance.now(); try { return f(...a); } finally { const d = performance.now() - t; if (d > SLOW_MS) console.warn(`[db] 遅いクエリ ${Math.round(d)}ms: ${String(sql).replace(/\s+/g, ' ').slice(0, 100)}`); } };
+  }
+  return st;
+};
 
 /** 機能ごとのテーブル作成。各featureのinitで呼ぶ (CREATE IF NOT EXISTS 推奨) */
 export const migrate = (sql) => db.exec(sql);
