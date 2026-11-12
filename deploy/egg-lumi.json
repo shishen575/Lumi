@@ -147,6 +147,26 @@
       "user_editable": true,
       "rules": "nullable|string",
       "field_type": "text"
+    },
+    {
+      "name": "Bump Every",
+      "description": "大喜利: 回答がこの件数たまるごとに、お題を一番下に出し直す(0で無効)",
+      "env_variable": "BUMP_EVERY",
+      "default_value": "5",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": "required|integer|min:0",
+      "field_type": "text"
+    },
+    {
+      "name": "Bump Minutes",
+      "description": "大喜利: この分数ごとに、新しい回答があればお題を出し直す(0で無効)",
+      "env_variable": "BUMP_MINUTES",
+      "default_value": "0",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": "required|integer|min:0",
+      "field_type": "text"
     }
   ]
 }

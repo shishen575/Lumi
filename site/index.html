@@ -31,7 +31,7 @@
     </div>
     <div class="cta" style="margin-top:12px"><a class="btn ghost" href="/dashboard/">ダッシュボードを開く</a></div>
     <p class="stat" id="stat" hidden></p>
-    <p class="note">管理者権限つきで招待します。保存するのはユーザーIDと各カウントだけで、メッセージ本文は保存しません。</p>
+    <p class="note">管理者権限つきで招待します。活動ロールで保存するのはユーザーIDと各カウントだけで、メッセージ本文は保存しません。</p>
   </div>
 
   <div class="mock" role="img" aria-label="Lumiの表示例。ロール獲得の通知と、/rankコマンドの結果">
@@ -102,7 +102,7 @@
 <section id="faq" class="alt"><div class="wrap">
   <div class="sec-h"><h2>よくある質問</h2></div>
   <details><summary>なぜ管理者権限が必要なのですか?</summary><p>ロールの付与と、過去ログの取り込みのためにチャンネルの履歴を読む必要があるためです。Lumiが使うのは、ロールの管理、チャンネルの閲覧、メッセージ履歴の読み取りです。</p></details>
-  <details><summary>何のデータを保存していますか?</summary><p>サーバーID、ユーザーID、各カウント(発言数・リアクション数・VC秒数)、ルールと通知の設定です。メッセージの本文は保存しません。</p></details>
+  <details><summary>何のデータを保存していますか?</summary><p>サーバーID、ユーザーID、各カウント(発言数・リアクション数・VC秒数)、ルールと通知の設定です。活動ロールの集計では、メッセージの本文は保存しません。大喜利を使った場合に限り、投稿された回答の内容と、投票(草)の記録を保存します。</p></details>
   <details><summary>ロールが付きません。</summary><p>最も多い原因は、Lumiのロールが付与したいロールより下にあることです。サーバー設定のロール一覧で、Lumiのロールを上へ移動してください。</p></details>
   <details><summary>導入前の発言も数えられますか?</summary><p>はい。ダッシュボードの「過去の発言数を取り込む」で、期間を指定して取り込めます。取り込めるのは発言数のみで、VC時間は過去分を取得できません。</p></details>
   <details><summary>誰が設定を変えられますか?</summary><p>サーバーのオーナー、管理者権限を持つ人、そして管理者がダッシュボードで選んだ「管理ロール」を持つ人です。管理ロールの人は、自分の最上位ロールより上のロールを、ルールに設定できません。</p></details>
