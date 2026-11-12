@@ -14,16 +14,25 @@ export function startHealthMonitor(client) {
     if (drift < 1000) return;
     const cpuPct = ((used.user + used.system) / 1000) / (drift + 1000) * 100;
     const m = process.memoryUsage();
-    console.warn(`[health] 処理が ${Math.round(drift)}ms 止まりました (CPU ${cpuPct.toFixed(0)}% / メモリ ${Math.round(m.rss / 1048576)}MB / ヒープ ${Math.round(m.heapUsed / 1048576)}MB / Discordとの通信 ${ping()})`);
+    console.warn(`[health] 処理が ${Math.round(drift)}ms 止まりました (CPU ${cpuPct.toFixed(0)}% / メモリ ${Math.round(m.rss / 1048576)}MB / ヒープ ${Math.round(m.heapUsed / 1048576)}MB / Discordとの通信 ${ping()} / REST ${restMs === null ? '不明' : `${restMs}ms`})`);
   }, 1000);
   t.unref?.();
+  // 1分ごとに、通常の通信(REST)の速さを測る。ゲートウェイだけが遅いのか、通信全体が遅いのかを見分けるため
+  let restMs = null;
+  const probe = async () => {
+    try {
+      const t0 = performance.now(); await client.rest.get('/gateway'); restMs = Math.round(performance.now() - t0);
+      if (restMs > 1500) console.warn(`[health] Discordの通常の通信(REST)が遅いです (${restMs}ms)`);
+    } catch { restMs = null; }
+  };
+  if (client?.rest) { const r = setInterval(probe, 60_000); r.unref?.(); probe(); }
   // 30秒ごとに、Discordとの通信が遅くないか確認する(処理が止まっていないのに遅いなら、サーバーのネットワークが原因)
   const n = setInterval(() => { const p = client?.ws?.ping; if (typeof p === 'number' && p > 1500) console.warn(`[health] Discordとの通信が遅いです (往復 ${Math.round(p)}ms)`); }, 30_000);
   n.unref?.();
   // 5分ごとに、状況を1行(メモリの増え方を見るため)
   const s = setInterval(() => {
     const m = process.memoryUsage();
-    console.log(`[health] メモリ ${Math.round(m.rss / 1048576)}MB / ヒープ ${Math.round(m.heapUsed / 1048576)}MB / 通信 ${ping()} / 稼働 ${Math.round(process.uptime() / 60)}分`);
+    console.log(`[health] メモリ ${Math.round(m.rss / 1048576)}MB / ヒープ ${Math.round(m.heapUsed / 1048576)}MB / 通信 ${ping()} / REST ${restMs === null ? '不明' : `${restMs}ms`} / 稼働 ${Math.round(process.uptime() / 60)}分`);
   }, 5 * 60_000);
   s.unref?.();
 }
