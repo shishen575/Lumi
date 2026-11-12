@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Lumi 説明書</title>
+<meta name="description" content="Lumiの導入から、ルールの作り方、通知、過去ログの取り込み、コマンド、困ったときの対処までの説明書です。">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@400;500;700;900&family=Zen+Maru+Gothic:wght@500;700;900&display=swap">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="top"><div class="wrap">
+  <a class="brand" href="./"><img src="icon.svg" alt="">Lumi</a>
+  <nav aria-label="メイン"><a href="./">紹介</a><a href="docs.html" aria-current="page">説明書</a><a class="btn sm" data-invite href="#">BOTを招待</a></nav>
+</div></header>
+
+<div class="wrap doc">
+<aside class="toc" aria-label="目次">
+  <p>目次</p>
+  <a href="#about">Lumiとは</a>
+  <a href="#setup">1. 導入</a>
+  <a href="#dashboard">2. ダッシュボード</a>
+  <a href="#rules">3. ルールの作り方</a>
+  <a class="sub" href="#metrics">数える活動</a>
+  <a class="sub" href="#tiers">ランク(段階)</a>
+  <a href="#notify">4. 通知</a>
+  <a href="#backfill">5. 過去の発言を数える</a>
+  <a href="#commands">6. コマンド</a>
+  <a href="#counting">7. 数え方のルール</a>
+  <a href="#data">8. データの扱い</a>
+  <a href="#trouble">9. 困ったとき</a>
+</aside>
+
+<article>
+<h1>Lumi 説明書</h1>
+<p>Lumiの使い方を、導入から順に説明します。急ぐ場合は「1. 導入」と「3. ルールの作り方」だけ読めば使い始められます。</p>
+
+<h2 id="about">Lumiとは</h2>
+<p>サーバーでの活動量に応じて、ロールを自動で付与するDiscord BOTです。活動のたびに条件を判定するので、条件を満たした人には、その場でロールが付きます。</p>
+<ul>
+  <li>数える活動: 発言数、もらったリアクション数、つけたリアクション数、VC接続時間</li>
+  <li>条件とロールの組み合わせは、ダッシュボードで何パターンでも登録(1サーバー100件まで)</li>
+  <li>複数のサーバーで使えます。設定はサーバーごとに分かれています</li>
+</ul>
+
+<h2 id="setup">1. 導入</h2>
+<h3>BOTを招待する</h3>
+<p>ページ上の「BOTを招待」から、サーバーを選んで認可します。Lumiは管理者権限つきで招待します。</p>
+<h3>Lumiのロールを上に移動する</h3>
+<p>Lumiは、自分のロールより<b>下</b>にあるロールしか付けられません。サーバー設定の「ロール」で、Lumiのロールを、付与したいロールより上にドラッグしてください。管理者権限があっても、この制限は変わりません。</p>
+<div class="callout"><b class="t">ここが一番つまずきやすい点です</b><p>ロールが付かないときは、まずLumiのロールの位置を確認してください。</p></div>
+
+<h2 id="dashboard">2. ダッシュボード</h2>
+<p>ダッシュボードの画面(このサイトのトップではなく、BOTの管理画面)にDiscordでログインします。サーバー一覧に、設定できるサーバーが並びます。Lumiが入っているサーバーが上に表示されます。</p>
+<h3>誰が操作できるか</h3>
+<ul>
+  <li>サーバーのオーナー、管理者、または<b>「ロールの管理」権限を持つロール</b>を持つ人</li>
+  <li>権限は操作のたびに確認します。権限を外された人は、すぐに操作できなくなります</li>
+  <li>自分の最上位ロールより<b>上</b>のロールは、ルールに設定できません(オーナーと管理者は制限なし)。権限を勝手に引き上げられないための仕組みです</li>
+</ul>
+
+<h2 id="rules">3. ルールの作り方</h2>
+<p>ダッシュボードの「活動ロール」で、「条件」「回数」「ロール」を選んで追加します。</p>
+<pre><code>発言数  100 以上  →  見習い
+発言数  500 以上  →  常連
+VC接続時間(分)  600 以上  →  ボイス常連</code></pre>
+
+<h3 id="metrics">数える活動</h3>
+<div class="tbl"><table>
+  <tr><th>条件</th><th>数えるもの</th></tr>
+  <tr><td>発言数</td><td>メッセージを送った回数。短時間の連投は数えません(間隔は設定で変更できます)</td></tr>
+  <tr><td>もらったリアクション数</td><td>自分の投稿に付いたリアクションの数。自分で付けたものと、BOTのものは除きます</td></tr>
+  <tr><td>つけたリアクション数</td><td>自分が付けたリアクションの数</td></tr>
+  <tr><td>VC接続時間(分)</td><td>ボイスチャンネルにいた時間。AFKチャンネルと、スピーカーミュート中は数えません</td></tr>
+</table></div>
+
+<h3 id="tiers">ランク(段階)</h3>
+<p>同じ条件に、回数の違うルールを重ねると、ランクになります。</p>
+<pre><code>発言数  100 以上  →  Lv1
+発言数  500 以上  →  Lv2
+発言数 1000 以上  →  Lv3</code></pre>
+<p>「下位ランクのロールを外す」にチェックを入れると、上のランクに上がったとき、下のランクのロールが外れて置き換わります。チェックなしだと、ロールは積み重なります。</p>
+<h3 id="edit">ルールの編集と、ロールの剥奪</h3>
+<p>登録済みのルールは、「編集」で条件・回数・ロールを変更できます。変更後は、「更新」を押してください。</p>
+<p>ルールに「<b>条件を下回ったらロールを剥奪</b>」を付けると、条件を満たさなくなった人からロールを外します。たとえば、「VC接続時間 600分以上 → ボイス常連」に付けておくと、600分に届いていない人は、このロールを持てません。</p>
+<ul>
+  <li>外れるタイミングは、その人が活動したときと、「全メンバーに今すぐ適用」を押したときです。活動していない人も含めて外したいときは、後者を使ってください</li>
+  <li>同じロールが、別のルールで条件を満たしているときは、外れません</li>
+  <li>ルールを削除しても、すでに付いているロールは外れません。外したいときは、削除する前に、回数を大きくして「剥奪」を付けたうえで、「今すぐ適用」を押してください</li>
+  <li>過去の発言数を期間限定で取り込むと、数が減る人が出ます。「剥奪」つきのルールがあると、その人たちからロールが外れます</li>
+</ul>
+<div class="callout"><b class="t">ルールを追加した直後は</b><p>すでに条件を満たしている人にも、その人が次に活動したときにロールが付きます。すぐに全員へ反映したいときは、「全メンバーに今すぐ適用」を押してください。</p></div>
+
+<h3>設定</h3>
+<ul>
+  <li><b>発言カウントのクールダウン</b>: 初期値は5秒です。この間隔より短い連投は数えません。0にすると、すべて数えます</li>
+  <li><b>VCは2人以上いる時だけ計測</b>: 1人で入っているだけの時間を数えたくないときに使います</li>
+</ul>
+
+<h2 id="notify">4. 通知</h2>
+<p>「ロール付与の通知先」でチャンネルを選ぶと、ロールが付いたときに、そのチャンネルへ通知します。「通知しない」にすると、通知は出ません(初期値)。</p>
+<pre><code>🎉 @たろう さんが **常連** を獲得しました!(発言数 500以上)</code></pre>
+<p>通知メッセージは変更できます。次の変数が使えます。</p>
+<div class="tbl"><table>
+  <tr><th>変数</th><th>入る内容</th></tr>
+  <tr><td><code>{user}</code></td><td>ユーザーへのメンション</td></tr>
+  <tr><td><code>{name}</code></td><td>表示名</td></tr>
+  <tr><td><code>{role}</code></td><td>ロール名</td></tr>
+  <tr><td><code>{condition}</code></td><td>達成した条件(例: 発言数 500以上)</td></tr>
+</table></div>
+<ul>
+  <li>「テスト送信」で、設定した文面と送信先を確認できます</li>
+  <li>メンションされるのは本人だけです。ロールや <code>@everyone</code> には飛びません</li>
+  <li>「全メンバーに今すぐ適用」は、「通知も送る」にチェックを入れたときだけ通知します。過去ログ取り込み後の自動適用では通知しません</li>
+</ul>
+
+<h2 id="backfill">5. 過去の発言を数える</h2>
+<p>Lumiを入れる前の発言も、数に入れられます。対象は<b>発言数のみ</b>です。リアクションとVC時間の過去分は取り込めません。</p>
+<ol>
+  <li>「過去の発言数を取り込む」で、期間を選びます。開始日の初期値は、Lumiを入れた日です。空欄にすると全期間になります</li>
+  <li>「取り込み開始」を押します</li>
+  <li>進捗が%と残り時間で表示されます。完了すると、全員にロールが適用されます</li>
+</ol>
+<div class="callout"><b class="t">発言数は上書きされます</b><p>現在の発言数は、取り込んだ結果に置き換わります。期間を限定すると、その期間の数だけになります。全期間の累計を保ちたいときは、期間を空欄にしてください。</p></div>
+<ul>
+  <li>取り込み中の新しい発言は、終了日を空欄(現在まで)にしたときだけ足されます</li>
+  <li>残り時間は目安です。チャンネルごとの発言量に差があると、ぶれます</li>
+  <li>取り込みの途中で止まったときは、「続きから再開」で続けられます。止まっている間の発言は集計に入らないので、厳密にしたいときは最初からやり直してください</li>
+  <li>取り込みでは、Lumiが読めないチャンネルは対象外です</li>
+</ul>
+
+<h2 id="commands">6. コマンド</h2>
+<div class="tbl"><table>
+  <tr><th>コマンド</th><th>できること</th></tr>
+  <tr><td><code>/rank [user] [private]</code></td><td>数・順位・ランク・次のランクまでの必要数。<code>user</code>で他の人、<code>private</code>で自分だけに表示</td></tr>
+  <tr><td><code>/top [metric] [page] [private]</code></td><td>ランキングを10位ごとに表示。ボタンでページ送り。ボタンは、コマンドを使った本人だけが押せます</td></tr>
+  <tr><td><code>/help</code></td><td>コマンド一覧と、各機能の説明(自分にだけ表示)</td></tr>
+</table></div>
+<p>同じ数の人は、同じ順位で表示します。サーバーを抜けた人は、順位から外れます(再参加すると戻ります)。</p>
+
+<h2 id="counting">7. 数え方のルール</h2>
+<ul>
+  <li>BOTと、Webhookの発言は数えません</li>
+  <li>発言は、クールダウンの間隔内の連投を数えません。チャンネルをまたいでも、同じ人なら間隔は共通です</li>
+  <li>もらったリアクションは、自分で自分の投稿に付けたものを数えません。リアクションを外すと、数も減ります</li>
+  <li>VCは、1分ごとに、接続中の人へ加算します。AFKチャンネルと、スピーカーミュート中の人は数えません</li>
+</ul>
+
+<h2 id="data">8. データの扱い</h2>
+<p>保存するのは、次のものだけです。</p>
+<ul>
+  <li>サーバーID、ユーザーID</li>
+  <li>各カウント(発言数、リアクション数、VC秒数)</li>
+  <li>ルールと通知の設定</li>
+</ul>
+<p><b>メッセージの本文は保存しません。</b></p>
+
+<h2 id="trouble">9. 困ったとき</h2>
+<h3>ロールが付かない</h3>
+<ol>
+  <li>Lumiのロールが、付与したいロールより下になっていないか確認します</li>
+  <li>そのロールが「連携(BOT)用」の管理ロールではないか確認します。管理ロールは付与できません</li>
+  <li>ルールの条件を、本当に満たしているか、<code>/rank</code>で確認します</li>
+</ol>
+<h3>ダッシュボードにサーバーが出ない</h3>
+<p>「ロールの管理」権限を持つロールが、自分に付いているか確認します。権限を付けたあとは、いったんログアウトして、入り直してください。</p>
+<h3>コマンドが出ない</h3>
+<p>Discordを再読み込みします(<code>Ctrl+R</code>)。それでも出ないときは、招待リンクをもう一度開いて、同じサーバーを選び直してください。</p>
+<h3>通知が届かない</h3>
+<p>通知先が「通知しない」になっていないか、「テスト送信」で確認します。Lumiがそのチャンネルに投稿できる権限を持っているかも確認してください。</p>
+</article>
+</div>
+
+<footer><div class="wrap">
+  <a class="brand" href="./" style="font-size:16px"><img src="icon.svg" alt="" style="width:26px;height:26px">Lumi</a>
+  <a href="./">紹介</a><a data-invite href="#">BOTを招待</a><a href="/">ダッシュボード</a>
+</div></footer>
+<script>
+var INVITE = 'https://discord.com/oauth2/authorize?client_id=1570076671820693504&scope=bot+applications.commands&permissions=8&integration_type=0';
+function setInvite(u) { document.querySelectorAll('[data-invite]').forEach(function (a) { a.href = u; a.target = '_blank'; a.rel = 'noopener'; }); }
+setInvite(INVITE);
+fetch('/api/public').then(function (r) { return r.ok ? r.json() : null; }).then(function (j) { if (j && j.invite) setInvite(j.invite); }).catch(function () {});
+</script>
+</body>
+</html>

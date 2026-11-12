@@ -22,6 +22,13 @@ export function startWeb(client, features) {
   }));
   app.use(express.static(path.join(path.dirname(fileURLToPath(import.meta.url)), '../../public')));
 
+  // ---------- 紹介サイト・説明書(site/ を /about/ で配信) ----------
+  const siteDir = path.join(path.dirname(fileURLToPath(import.meta.url)), '../../site');
+  app.use('/about', express.static(siteDir));
+  const inviteUrl = () => `https://discord.com/oauth2/authorize?${new URLSearchParams({
+    client_id: process.env.DISCORD_CLIENT_ID, scope: 'bot applications.commands', permissions: '8', integration_type: '0' })}`;
+  app.get('/api/public', (req, res) => res.json({ invite: inviteUrl() })); // 未ログインでも取得可(招待リンクのみ)
+
   // ---------- OAuth2 ----------
   app.get('/auth/login', (req, res) => {
     req.session.state = crypto.randomBytes(16).toString('hex');

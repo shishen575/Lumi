@@ -13,7 +13,7 @@ export function mountApi(router) {
     const threshold = Number.parseInt(b.threshold, 10);
     if (!(b.metric in METRICS)) return { error: '不正な条件です' };
     if (!Number.isFinite(threshold) || threshold < 1 || threshold > 1e9) return { error: '回数/時間は1以上の整数にしてください' };
-    return { metric: b.metric, threshold, role_id: String(b.role_id), replace_lower: b.replace_lower ? 1 : 0 };
+    return { metric: b.metric, threshold, role_id: String(b.role_id), replace_lower: b.replace_lower ? 1 : 0, revoke: b.revoke ? 1 : 0 };
   };
   const roleOk = (req, id) => {
     const r = req.guild.roles.cache.get(id);
@@ -25,16 +25,16 @@ export function mountApi(router) {
     if (r.error) return res.status(400).json(r);
     if (!roleOk(req, r.role_id)) return res.status(400).json({ error: 'このロールは設定できません(自分の最上位ロールより下のロールだけ選べます)' });
     if (getRules(req.guild.id).length >= 100) return res.status(400).json({ error: 'ルール数の上限(100)です' });
-    const info = db.prepare('INSERT INTO rules (guild_id,metric,threshold,role_id,replace_lower) VALUES (?,?,?,?,?)')
-      .run(req.guild.id, r.metric, r.threshold, r.role_id, r.replace_lower);
+    const info = db.prepare('INSERT INTO rules (guild_id,metric,threshold,role_id,replace_lower,revoke) VALUES (?,?,?,?,?,?)')
+      .run(req.guild.id, r.metric, r.threshold, r.role_id, r.replace_lower, r.revoke);
     res.json({ id: Number(info.lastInsertRowid), ...r });
   });
   router.put('/rules/:rid', (req, res) => {
     const r = parseRule(req.body);
     if (r.error) return res.status(400).json(r);
     if (!roleOk(req, r.role_id)) return res.status(400).json({ error: 'このロールは設定できません(自分の最上位ロールより下のロールだけ選べます)' });
-    const info = db.prepare('UPDATE rules SET metric=?,threshold=?,role_id=?,replace_lower=? WHERE id=? AND guild_id=?')
-      .run(r.metric, r.threshold, r.role_id, r.replace_lower, req.params.rid, req.guild.id);
+    const info = db.prepare('UPDATE rules SET metric=?,threshold=?,role_id=?,replace_lower=?,revoke=? WHERE id=? AND guild_id=?')
+      .run(r.metric, r.threshold, r.role_id, r.replace_lower, r.revoke, req.params.rid, req.guild.id);
     res.json({ ok: info.changes > 0 });
   });
   router.delete('/rules/:rid', (req, res) => {

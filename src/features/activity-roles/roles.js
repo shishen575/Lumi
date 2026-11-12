@@ -22,6 +22,8 @@ async function evaluateOne(member, rules, { notify = true } = {}) {
   const byMetric = Map.groupBy(rules, (r) => r.metric);
   for (const group of byMetric.values()) {
     const ok = group.filter((r) => metricValue(stats, r.metric) >= r.threshold);
+    // 「条件を下回ったら剥奪」のルール: 条件未満の人が持っていれば外す
+    for (const r of group) if (r.revoke && metricValue(stats, r.metric) < r.threshold) remove.add(r.role_id);
     for (const r of ok) {
       // より高い段階で「下位ロールを置き換え」が有効なら、このロールは外す
       const superseded = ok.some((h) => h.threshold > r.threshold && h.replace_lower);
@@ -29,7 +31,7 @@ async function evaluateOne(member, rules, { notify = true } = {}) {
       else add.add(r.role_id);
     }
   }
-  // 同じロールが複数ルールに出る場合は付与を優先
+  // 同じロールが別のルールで条件を満たしている場合は、付与(維持)を優先
   for (const id of add) remove.delete(id);
 
   const usable = (id) => {

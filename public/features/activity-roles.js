@@ -4,16 +4,17 @@ Dash.registerTab({
     const [{ metrics, botJoinedAt }, roles] = await Promise.all([api('/meta'), getRoles()]);
     const roleName = (id) => roles.find((r) => r.id === id);
     el.innerHTML = `
-      <div class="card"><h2>ルール追加</h2>
+      <div class="card"><h2 id="addh">ルール追加</h2>
         <div class="row" id="add">
           <select id="m">${Object.entries(metrics).map(([k, v]) => `<option value="${k}">${esc(v)}</option>`).join('')}</select>
           <input id="t" type="number" min="1" placeholder="回数/分">
           <span>以上で</span>
           <select id="r">${roles.map((r) => `<option value="${r.id}" ${r.assignable ? '' : 'disabled'}>${esc(r.name)}${r.assignable ? '' : ' (BOTより上のため不可)'}</option>`).join('')}</select>
           <label class="mut"><input type="checkbox" id="rl"> 下位ランクのロールを外す</label>
-          <button id="go">追加</button>
+          <label class="mut"><input type="checkbox" id="rv"> 条件を下回ったらロールを剥奪</label>
+          <button id="go">追加</button><button class="sec" id="cancel" hidden>キャンセル</button>
         </div>
-        <p class="mut">同じ条件で複数登録すると段階(ランク)になります。例: 発言100→Lv1、500→Lv2、1000→Lv3</p>
+        <p class="mut">同じ条件で複数登録すると段階(ランク)になります。例: 発言100→Lv1、500→Lv2、1000→Lv3<br>「剥奪」を付けると、条件を満たさなくなった人からロールが外れます(その人が活動したとき、または「全メンバーに今すぐ適用」で反映)。</p>
       </div>
       <div class="card"><h2>登録済みルール</h2><div id="rules"></div>
         <div class="row" style="margin-top:12px"><button class="sec" id="sync">全メンバーに今すぐ適用</button><label class="mut"><input type="checkbox" id="syncn"> 通知も送る</label><span class="mut">※通常は活動時に自動判定されます</span></div></div>
@@ -33,19 +34,40 @@ Dash.registerTab({
       <div class="card"><h2>ランキング</h2><div class="row"><select id="lm">${Object.entries(metrics).map(([k, v]) => `<option value="${k}">${esc(v)}</option>`).join('')}</select></div><div id="lb"></div></div>`;
     const $ = (s) => el.querySelector(s);
 
+    let ruleCache = [], editing = null;
     async function loadRules() {
-      const rules = await api('/rules');
-      $('#rules').innerHTML = rules.length ? `<table><tr><th>条件</th><th>ロール</th><th></th></tr>${rules.map((r) => {
+      ruleCache = await api('/rules');
+      $('#rules').innerHTML = ruleCache.length ? `<table><tr><th>条件</th><th>ロール</th><th></th></tr>${ruleCache.map((r) => {
         const ro = roleName(r.role_id);
-        return `<tr><td>${esc(metrics[r.metric])} ${r.threshold} 以上${r.replace_lower ? ' <span class="mut">(下位を外す)</span>' : ''}</td>
+        const badges = `${r.replace_lower ? ' <span class="mut">(下位を外す)</span>' : ''}${r.revoke ? ' <span class="mut">(下回ったら剥奪)</span>' : ''}`;
+        return `<tr><td>${esc(metrics[r.metric])} ${r.threshold} 以上${badges}</td>
         <td>${ro ? `<span class="dot" style="background:${ro.color}"></span>${esc(ro.name)}` : '<span class="mut">削除済みロール</span>'}</td>
-        <td><button class="del" data-id="${r.id}">削除</button></td></tr>`;
+        <td style="white-space:nowrap"><button class="sec" data-edit="${r.id}">編集</button> <button class="del" data-id="${r.id}">削除</button></td></tr>`;
       }).join('')}</table>` : '<p class="mut">まだありません</p>';
     }
-    $('#rules').onclick = async (e) => { const id = e.target.dataset.id; if (id && confirm('削除しますか？')) { await api('/rules/' + id, { method: 'DELETE' }); loadRules(); } };
+    function setEditing(rule) {
+      editing = rule?.id ?? null;
+      $('#addh').textContent = rule ? 'ルールを編集' : 'ルール追加';
+      $('#go').textContent = rule ? '更新' : '追加';
+      $('#cancel').hidden = !rule;
+      $('#m').value = rule?.metric ?? Object.keys(metrics)[0];
+      $('#t').value = rule?.threshold ?? '';
+      if (rule && [...$('#r').options].some((o) => o.value === rule.role_id)) $('#r').value = rule.role_id;
+      $('#rl').checked = !!rule?.replace_lower; $('#rv').checked = !!rule?.revoke;
+      if (rule) $('#add').scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+    $('#cancel').onclick = () => setEditing(null);
+    $('#rules').onclick = async (e) => {
+      const ed = e.target.dataset.edit;
+      if (ed) return setEditing(ruleCache.find((r) => String(r.id) === ed));
+      const id = e.target.dataset.id;
+      if (id && confirm('削除しますか？(すでに付与済みのロールは外れません)')) { await api('/rules/' + id, { method: 'DELETE' }); if (String(editing) === id) setEditing(null); loadRules(); }
+    };
     $('#go').onclick = async () => {
-      await api('/rules', { method: 'POST', body: { metric: $('#m').value, threshold: $('#t').value, role_id: $('#r').value, replace_lower: $('#rl').checked } });
-      $('#t').value = ''; toast('追加しました'); loadRules();
+      const body = { metric: $('#m').value, threshold: $('#t').value, role_id: $('#r').value, replace_lower: $('#rl').checked, revoke: $('#rv').checked };
+      if (editing) { await api('/rules/' + editing, { method: 'PUT', body }); toast('更新しました。反映は「全メンバーに今すぐ適用」で'); }
+      else { await api('/rules', { method: 'POST', body }); toast('追加しました'); }
+      setEditing(null); loadRules();
     };
     $('#sync').onclick = async () => {
       const notify = $('#syncn').checked;

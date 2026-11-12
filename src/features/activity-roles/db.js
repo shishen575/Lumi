@@ -31,6 +31,9 @@ for (const col of ['notify_channel_id TEXT', 'notify_template TEXT']) {
   try { db.exec(`ALTER TABLE settings ADD COLUMN ${col}`); } catch { /* exists */ }
 }
 
+// ルールの「条件を下回ったらロールを剥奪」オプション(既存DBにも追加)
+try { db.exec('ALTER TABLE rules ADD COLUMN revoke INTEGER NOT NULL DEFAULT 0'); } catch { /* exists */ }
+
 // 退出したメンバーはランキングから除外する(統計は残すので、再参加すれば復活する)
 try { db.exec('ALTER TABLE stats ADD COLUMN is_left INTEGER NOT NULL DEFAULT 0'); } catch { /* exists */ }
 
