@@ -24,6 +24,7 @@ const ICONS = {
   back: '<path d="M15 6l-6 6 6 6"/>',
   chart: '<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>',
   speaker: '<path d="M11 5L6 9H3v6h3l5 4zM15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13"/>',
+  coin: '<circle cx="12" cy="12" r="9"/><path d="M9.5 9.5c.5-1 1.4-1.5 2.6-1.5 1.5 0 2.4.7 2.4 1.8 0 2.2-5 1.2-5 3.6 0 1.1 1 1.8 2.6 1.8 1.2 0 2.1-.5 2.5-1.4M12 6v2M12 16v2"/>',
   inbox: '<path d="M3 13l3-8h12l3 8v6H3zM3 13h5l1 3h6l1-3h5"/>',
 };
 const ic = (n, cls = '') => `<svg class="ic ${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[n] ?? ''}</svg>`;
