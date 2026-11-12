@@ -50,7 +50,7 @@ Node.js 22.13+ が必要(組み込みSQLite使用)。データは `data/bot.db`�
 export default {
   name: 'welcome',            // APIは /api/guilds/:gid/f/welcome/...
   title: '歓迎メッセージ',
-  ui: '/features/welcome.js', // 任意: ダッシュボードのタブ
+  ui: '/dashboard/features/welcome.js', // 任意: ダッシュボードのタブ
   register({ client, router, db, getKV, setKV }) {
     client.on('guildMemberAdd', (m) => { /* ... */ });
     router.get('/config', (req, res) => res.json(getKV(req.guild.id, 'welcome', {})));
@@ -87,6 +87,6 @@ export default {
 
 ## 紹介サイト・説明書
 `site/` に静的ページがあります: 紹介 `index.html` / 説明書 `docs.html` / 更新履歴 `changelog.html` / サポート `support.html` / プライバシーポリシー `privacy.html` / 利用規約 `terms.html`。
-(Developer Portal の「Terms of Service URL」「Privacy Policy URL」には、`/about/terms.html` と `/about/privacy.html` を設定できます)
-- BOTが `/about/` で配信します(例: `https://<BASE_URL>/about/`)。招待リンクは `/api/public` から自動で取得します
+(Developer Portal の「Terms of Service URL」「Privacy Policy URL」には、`/terms.html` と `/privacy.html` を設定できます)
+- BOTが `/` で配信します(例: `https://<BASE_URL>/`)。ダッシュボードは `/dashboard/` です(旧 `/about/` は `/` へ転送)。招待リンクは `/api/public` から自動で取得します
 - GitHub Pages など静的ホスティングにも、そのまま置けます(招待リンクは各HTML内の `INVITE` に既定値あり)

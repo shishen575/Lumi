@@ -8,7 +8,7 @@ import { rankCommand, topCommand } from './commands.js';
 export default {
   name: 'activity-roles',
   title: '活動ロール',
-  ui: '/features/activity-roles.js', // ダッシュボードのタブ
+  ui: '/dashboard/features/activity-roles.js', // ダッシュボードのタブ
   help: [
     'サーバーでの活動に応じて、ロールが自動で付与されます。',
     '・**発言数** … メッセージを送るたびにカウント(連投は一定時間カウントされません)',

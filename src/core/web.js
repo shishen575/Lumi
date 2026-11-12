@@ -20,11 +20,12 @@ export function startWeb(client, features) {
     secret: process.env.SESSION_SECRET, resave: false, saveUninitialized: false,
     cookie: { httpOnly: true, sameSite: 'lax', secure: BASE.startsWith('https'), maxAge: 7 * 864e5 },
   }));
-  app.use(express.static(path.join(path.dirname(fileURLToPath(import.meta.url)), '../../public')));
 
-  // ---------- 紹介サイト・説明書(site/ を /about/ で配信) ----------
-  const siteDir = path.join(path.dirname(fileURLToPath(import.meta.url)), '../../site');
-  app.use('/about', express.static(siteDir));
+  // ---------- 公式サイト(site/ を / で配信)とダッシュボード(public/ を /dashboard/ で配信) ----------
+  const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '../..');
+  app.use('/dashboard', express.static(path.join(root, 'public')));
+  app.use(express.static(path.join(root, 'site')));
+  app.use('/about', (req, res) => res.redirect(301, req.path === '/' ? '/' : req.path)); // 旧URL
   const inviteUrl = () => `https://discord.com/oauth2/authorize?${new URLSearchParams({
     client_id: process.env.DISCORD_CLIENT_ID, scope: 'bot applications.commands', permissions: '8', integration_type: '0' })}`;
   app.get('/api/public', (req, res) => res.json({ invite: inviteUrl(), servers: client.guilds.cache.size })); // 未ログインでも取得可(招待リンクと稼働数のみ)
@@ -57,7 +58,7 @@ export function startWeb(client, features) {
       req.session.guilds = guilds
         .filter((g) => g.owner || (BigInt(g.permissions) & (PERM_ADMIN | PERM_MANAGE_ROLES)) !== 0n)
         .map((g) => ({ id: g.id, name: g.name, icon: g.icon }));
-      res.redirect('/');
+      res.redirect('/dashboard/');
     } catch (e) { console.error(e); res.status(500).send('login failed'); }
   });
   app.post('/auth/logout', (req, res) => req.session.destroy(() => res.json({ ok: true })));

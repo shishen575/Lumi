@@ -58,7 +58,7 @@ function helpCommand(cmds, features) {
       for (const f of features) if (f.help) embed.addFields({ name: f.title ?? f.name, value: f.help });
       const base = process.env.BASE_URL;
       if (base && i.memberPermissions?.has('ManageRoles')) {
-        embed.addFields({ name: '設定(管理者向け)', value: `ダッシュボード: ${base}` });
+        embed.addFields({ name: '設定(管理者向け)', value: `ダッシュボード: ${base.replace(/\/$/, '')}/dashboard/` });
       }
       await i.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
     },
