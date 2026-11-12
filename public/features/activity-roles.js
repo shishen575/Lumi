@@ -185,12 +185,12 @@
             c.hidden = false; $('#bf').disabled = j.running;
             const span = `${j.from ? new Date(j.from).toLocaleDateString() : '最初'} 〜 ${j.to ? new Date(j.to - 1).toLocaleDateString() : '現在'}`;
             if (j.running) {
-              const status = j.phase === 'collect' ? 'チャンネル一覧を取得中…' : j.phase === 'apply' ? 'ロールを適用中…' : `残り${j.etaMs != null ? fmtT(j.etaMs) : '…(計算中)'}`;
+              const status = j.phase === 'collect' ? 'チャンネル一覧を取得中…' : j.phase === 'gap' ? '再起動中の発言を確認中…' : j.phase === 'apply' ? 'ロールを適用中…' : `残り${j.etaMs != null ? fmtT(j.etaMs) : '…(計算中)'}`;
               c.innerHTML = `<h2>実行中 <span class="badge">${span}</span></h2><div class="prog"><i style="width:${j.percent}%"></i></div>
                 <div class="inline small"><b style="font-size:18px">${j.percent}%</b><span class="mut">${status} ・ チャンネル ${j.done}/${j.total} ・ ${j.scanned.toLocaleString()}件確認${j.current ? ' ・ #' + esc(j.current) : ''}</span></div>`;
               timer = setTimeout(poll, 2000);
             } else if (j.status === 'interrupted') {
-              c.innerHTML = `<h2>中断されました <span class="badge warn">${j.percent}%まで完了</span></h2><p class="sub">BOTの再起動などで止まりました。続きから再開できます(止まっている間の発言は集計に入りません)。</p><button class="btn" id="bfr" type="button">続きから再開</button>`;
+              c.innerHTML = `<h2>中断されました <span class="badge warn">${j.percent}%まで完了</span></h2><p class="sub">BOTの再起動などで止まりました。ふだんは再起動後に自動で再開しますが、続けて失敗したため止まっています。続きから再開できます(止まっていた間の発言も、再開時に数えます)。</p><button class="btn" id="bfr" type="button">続きから再開</button>`;
               c.querySelector('#bfr').onclick = async () => { await api('/backfill/resume', { method: 'POST' }); poll(); };
             } else if (j.error) c.innerHTML = `<h2>エラー</h2><p class="mut">${esc(j.error)}</p>`;
             else c.innerHTML = `<h2>完了しました <span class="badge ok">${span}</span></h2><p class="mut" style="margin:0">${j.users.toLocaleString()}人 ・ ${j.scanned.toLocaleString()}件を確認 ・ ロール更新 ${j.rolesChanged ?? 0}件 ・ 所要時間 ${Math.max(1, Math.round(j.elapsedMs / 60000))}分</p>`;

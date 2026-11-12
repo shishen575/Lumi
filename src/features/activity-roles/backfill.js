@@ -27,11 +27,24 @@ CREATE TABLE IF NOT EXISTS backfill_channels (
 );
 `);
 
+// 自動再開・再起動中の発言の確認用の列(既存DBにも追加)
+for (const c of ['heartbeat_at INTEGER', 'gap_from INTEGER', 'gap_to INTEGER', 'auto_resumes INTEGER NOT NULL DEFAULT 0']) {
+  try { db.exec(`ALTER TABLE backfill_jobs ADD COLUMN ${c}`); } catch { /* exists */ }
+}
+const MAX_AUTO_RESUMES = 5; // 進捗がないまま自動再開が続いたら止める(再起動の繰り返し防止)
+
 const locks = new Set(); // 二重実行防止の鍵のみ(状態は持たない)
 
-/** BOT起動時: 前回の実行中ジョブは中断扱いにする */
+/** BOT起動時: 前回の実行中ジョブは中断扱いにして、そのサーバーIDを返す(起動後に自動で再開する) */
 export function markInterrupted() {
+  const ids = db.prepare("SELECT guild_id FROM backfill_jobs WHERE status='running'").all().map((r) => r.guild_id);
   db.prepare("UPDATE backfill_jobs SET status='interrupted' WHERE status='running'").run();
+  return ids;
+}
+
+/** 実行中のジョブが「ここまで生きていた」時刻を記録する。再起動中に届いた発言を、あとで拾うための基準 */
+export function startHeartbeat() {
+  setInterval(() => db.prepare("UPDATE backfill_jobs SET heartbeat_at=? WHERE status='running'").run(Date.now()), 10_000).unref?.();
 }
 
 export function getJob(guildId) {
@@ -53,6 +66,7 @@ export function noteLive(guildId, userId) {
   if (!j?.include_live) return;
   db.prepare(`INSERT INTO backfill_counts (guild_id,user_id,live) VALUES (?,?,1)
     ON CONFLICT(guild_id,user_id) DO UPDATE SET live=live+1`).run(guildId, userId);
+  db.prepare('UPDATE backfill_jobs SET heartbeat_at=? WHERE guild_id=?').run(Date.now(), guildId);
 }
 
 const canRead = (ch, me) =>
@@ -93,18 +107,22 @@ export function startBackfill(guild, { from = null, to = null } = {}) {
   const end = to == null ? T : Math.min(to, T);
   db.exec('BEGIN');
   for (const t of ['backfill_jobs', 'backfill_counts', 'backfill_channels']) db.prepare(`DELETE FROM ${t} WHERE guild_id=?`).run(guild.id);
-  db.prepare(`INSERT INTO backfill_jobs (guild_id,status,phase,from_ts,to_ts,end_ts,started_at,scan_start,include_live)
-    VALUES (?,?,?,?,?,?,?,?,?)`).run(guild.id, 'running', 'collect', from, to == null ? null : end, end, T, T, to == null || to >= T ? 1 : 0);
+  db.prepare(`INSERT INTO backfill_jobs (guild_id,status,phase,from_ts,to_ts,end_ts,started_at,scan_start,include_live,heartbeat_at)
+    VALUES (?,?,?,?,?,?,?,?,?,?)`).run(guild.id, 'running', 'collect', from, to == null ? null : end, end, T, T, to == null || to >= T ? 1 : 0, T);
   db.exec('COMMIT');
   launch(guild, true);
   return true;
 }
 
-/** 中断されたジョブを続きから再開 */
-export function resumeBackfill(guild) {
-  const j = db.prepare('SELECT status FROM backfill_jobs WHERE guild_id=?').get(guild.id);
+/** 中断されたジョブを続きから再開する。auto: 起動時の自動再開(進捗がないまま続くと止める) */
+export function resumeBackfill(guild, { auto = false } = {}) {
+  const j = db.prepare('SELECT status, auto_resumes FROM backfill_jobs WHERE guild_id=?').get(guild.id);
   if (locks.has(guild.id) || j?.status !== 'interrupted') return false;
-  db.prepare("UPDATE backfill_jobs SET status='running', error=NULL, scan_start=? WHERE guild_id=?").run(Date.now(), guild.id);
+  if (auto && j.auto_resumes >= MAX_AUTO_RESUMES) return false;
+  const now = Date.now();
+  // 止まっていた間(最後に生きていた時刻 〜 いま)の発言は、再開後に拾う。いま以降の発言は、リアルタイムで数える
+  db.prepare(`UPDATE backfill_jobs SET status='running', error=NULL, scan_start=?, gap_from=COALESCE(gap_from, heartbeat_at), gap_to=?,
+    heartbeat_at=?, auto_resumes=auto_resumes+? WHERE guild_id=?`).run(now, now, now, auto ? 1 : 0, guild.id);
   launch(guild, false);
   return true;
 }
@@ -130,7 +148,14 @@ async function run(guild, fresh) {
     const ins = db.prepare('INSERT OR IGNORE INTO backfill_channels (guild_id,channel_id,name) VALUES (?,?,?)');
     db.exec('BEGIN'); for (const c of targets) ins.run(gid, c.id, c.name); db.exec('COMMIT');
     setJob("phase='scan', total=?, scan_start=?", targets.length, Date.now());
-  } else setJob("phase='scan'");
+  } else {
+    const j2 = jobRow();
+    if (j2.include_live && j2.gap_from && j2.gap_to) { // 止まっていた間の発言を拾う
+      setJob("phase='gap'");
+      await scanGap(guild, gid, j2.gap_from, j2.gap_to);
+    }
+    setJob("phase='scan', gap_from=NULL, gap_to=NULL");
+  }
 
   const upto = SnowflakeUtil.generate({ timestamp: job.end_ts }).toString();
   const addCount = db.prepare(`INSERT INTO backfill_counts (guild_id,user_id,n) VALUES (?,?,?)
@@ -168,7 +193,7 @@ async function run(guild, fresh) {
       } catch (e) { console.warn(`[backfill] skip #${row.name}: ${e.message}`); }
     }
     db.prepare('UPDATE backfill_channels SET done=1 WHERE guild_id=? AND channel_id=?').run(gid, row.channel_id);
-    setJob('done=done+1, chfrac=0');
+    setJob('done=done+1, chfrac=0, auto_resumes=0'); // 進捗があったので、自動再開の回数をリセット
   }
 
   // 上書き: 過去分 + 取り込み中のリアルタイム分
@@ -186,4 +211,32 @@ async function run(guild, fresh) {
     counts.length, changed, Date.now(), cur.elapsed_ms + (Date.now() - cur.scan_start));
   db.prepare('DELETE FROM backfill_counts WHERE guild_id=?').run(gid); // 作業用データを掃除
   db.prepare('DELETE FROM backfill_channels WHERE guild_id=?').run(gid);
+}
+
+/** [from, to) の間に送られた発言を、全チャンネルから拾って、リアルタイム分(live)に足す */
+async function scanGap(guild, gid, from, to) {
+  const addLive = db.prepare(`INSERT INTO backfill_counts (guild_id,user_id,live) VALUES (?,?,?)
+    ON CONFLICT(guild_id,user_id) DO UPDATE SET live=live+excluded.live`);
+  for (const { channel_id } of db.prepare('SELECT channel_id FROM backfill_channels WHERE guild_id=?').all(gid)) {
+    const ch = await guild.channels.fetch(channel_id).catch(() => null);
+    if (!ch?.messages) continue;
+    let cursor = SnowflakeUtil.generate({ timestamp: from }).toString();
+    try {
+      for (;;) {
+        const batch = await ch.messages.fetch({ after: cursor, limit: 100 }); // cursorより新しい100件
+        if (!batch.size) break;
+        const per = new Map();
+        let maxId = cursor, passedEnd = false;
+        for (const m of batch.values()) {
+          if (BigInt(m.id) > BigInt(maxId)) maxId = m.id;
+          if (m.createdTimestamp >= to) { passedEnd = true; continue; } // 再開後の発言は、リアルタイムで数えている
+          if (m.author.bot || m.webhookId || m.system) continue;
+          per.set(m.author.id, (per.get(m.author.id) ?? 0) + 1);
+        }
+        db.exec('BEGIN'); for (const [u, n] of per) addLive.run(gid, u, n); db.exec('COMMIT');
+        if (passedEnd || batch.size < 100) break;
+        cursor = maxId;
+      }
+    } catch (e) { console.warn(`[backfill] gap scan skip ${channel_id}: ${e.message}`); }
+  }
 }

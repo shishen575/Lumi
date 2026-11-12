@@ -2,7 +2,7 @@ import { Events } from 'discord.js';
 import { addStat, getSettings, setLeft, reconcileMembers } from './db.js';
 import { evaluateUser } from './roles.js';
 import { mountApi } from './api.js';
-import { noteLive, markInterrupted } from './backfill.js';
+import { noteLive, markInterrupted, startHeartbeat, resumeBackfill } from './backfill.js';
 import { rankCommand, topCommand, rolesCommand } from './commands.js';
 
 export default {
@@ -22,7 +22,15 @@ export default {
 
   register({ client, router }) {
     mountApi(router, client);
-    markInterrupted();
+    // 再起動で止まった取り込みは、起動後に自動で再開する(止まっていた間の発言も拾う)
+    const interrupted = markInterrupted();
+    startHeartbeat();
+    client.once(Events.ClientReady, () => {
+      for (const gid of interrupted) {
+        const g = client.guilds.cache.get(gid);
+        if (g && resumeBackfill(g, { auto: true })) console.log(`[backfill] ${g.name}: 取り込みを自動で再開しました`);
+      }
+    });
 
     // 退出したメンバーはランキングから除外(再参加で復活)。停止中の出入りは起動時に合わせ直す
     client.on(Events.GuildMemberRemove, (m) => setLeft(m.guild.id, m.id, true));
