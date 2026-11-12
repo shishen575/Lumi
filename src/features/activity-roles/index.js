@@ -3,7 +3,7 @@ import { addStat, getSettings } from './db.js';
 import { evaluateUser } from './roles.js';
 import { mountApi } from './api.js';
 import { noteLive, markInterrupted } from './backfill.js';
-import { rankCommand } from './commands.js';
+import { rankCommand, topCommand } from './commands.js';
 
 export default {
   name: 'activity-roles',
@@ -15,8 +15,9 @@ export default {
     '・**リアクション** … 自分の投稿に付いた数 / 自分が付けた数(自分への反応は除く)',
     '・**VC時間** … ボイスチャンネルに接続している時間(AFK・スピーカーミュート中は除く)',
     '`/rank` で、自分の数・順位・ランク・次のランクまでの必要数を確認できます。',
+    '`/top` で、ランキングを10位ごとに見られます(ボタンでページ送り)。',
   ].join('\n'),
-  commands: [rankCommand],           // スラッシュコマンド(/rank)
+  commands: [rankCommand, topCommand], // スラッシュコマンド(/rank /top)
 
   register({ client, router }) {
     mountApi(router, client);
