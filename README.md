@@ -86,6 +86,7 @@ export default {
 機能に `commands: [...]` と `help: '説明文'` を書くと、登録と `/help` への掲載が自動で行われます(`src/core/commands.js`)。
 
 ## 紹介サイト・説明書
-`site/` に静的ページ(紹介 `index.html` / 説明書 `docs.html`)があります。
+`site/` に静的ページがあります: 紹介 `index.html` / 説明書 `docs.html` / 更新履歴 `changelog.html` / サポート `support.html` / プライバシーポリシー `privacy.html` / 利用規約 `terms.html`。
+(Developer Portal の「Terms of Service URL」「Privacy Policy URL」には、`/about/terms.html` と `/about/privacy.html` を設定できます)
 - BOTが `/about/` で配信します(例: `https://<BASE_URL>/about/`)。招待リンクは `/api/public` から自動で取得します
 - GitHub Pages など静的ホスティングにも、そのまま置けます(招待リンクは各HTML内の `INVITE` に既定値あり)

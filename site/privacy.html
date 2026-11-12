@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>プライバシーポリシー | Lumi</title>
+<meta name="description" content="Lumiが取得する情報と、その使い方、削除の方法についての説明です。">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@400;500;700;900&family=Zen+Maru+Gothic:wght@500;700;900&display=swap">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="top"><div class="wrap">
+  <a class="brand" href="index.html"><img src="icon.svg" alt="">Lumi</a>
+  <nav aria-label="メイン">
+    <a href="index.html#features">機能</a><a href="docs.html">説明書</a><a href="changelog.html">更新履歴</a><a href="support.html">サポート</a>
+    <a class="btn sm" data-invite href="#">BOTを招待</a>
+  </nav>
+</div></header>
+<main><div class="wrap page"><article>
+<h1>プライバシーポリシー</h1>
+<p class="updated">制定: 2026年11月12日</p>
+<p>Lumi(以下「本BOT」)の運営者(GitHub: <a href="https://github.com/shishen575" target="_blank" rel="noopener">shishen575</a>)は、本BOTで扱う情報について、次のとおり定めます。</p>
+
+<h2>1. 取得する情報</h2>
+<p>本BOTは、Discordのサーバー内で、次の情報を取得し保存します。</p>
+<ul>
+  <li>サーバーID、ユーザーID</li>
+  <li>ユーザーごとの、発言数、もらったリアクション数、つけたリアクション数、VC接続時間(秒)</li>
+  <li>サーバー管理者が設定した、ロールのルール、通知先のチャンネルID、通知メッセージの文面、各種の設定値</li>
+</ul>
+<p>ダッシュボードにログインするときは、Discordのアカウント(ユーザーID・表示名)と、参加しているサーバーの一覧(管理権限の有無を含む)を、一時的に取得します。これらはログインの確認にのみ使い、ログイン中のセッション情報としてのみ保持します。Discordのアクセストークンは保存しません。</p>
+
+<h2>2. 取得しない情報</h2>
+<ul>
+  <li><b>メッセージの本文は保存しません。</b>発言については、「誰が何回送ったか」の回数のみを記録します</li>
+  <li>メールアドレスやIPアドレスなど、上記以外の個人情報は取得しません</li>
+</ul>
+
+<h2>3. 利用目的</h2>
+<ul>
+  <li>活動量に応じた、ロールの自動付与と剥奪</li>
+  <li>ランキングや、個人の成績(<code>/rank</code>、<code>/top</code>)の表示</li>
+  <li>ダッシュボードでの設定と、本人確認</li>
+  <li>不具合の調査(エラーログの確認)</li>
+</ul>
+
+<h2>4. 第三者への提供</h2>
+<p>取得した情報を、第三者に販売・提供することはありません。ただし、本BOTのダッシュボードの通信は、Cloudflare, Inc. のサービス(Cloudflare Tunnel)を経由します。また、本BOTはDiscordのサービス上で動作します。</p>
+
+<h2>5. Cookie</h2>
+<p>ダッシュボードで、ログイン状態を保つためのセッションCookieのみを使用します。広告や、行動の追跡のためのCookieは使用しません。</p>
+
+<h2>6. 保存期間と削除</h2>
+<ul>
+  <li>保存した情報は、本BOTがサーバーから削除された後も、削除の依頼があるまで保存されます</li>
+  <li>サーバーまたはユーザーのデータの削除を希望する場合は、<a href="https://github.com/shishen575/Lumi/issues" target="_blank" rel="noopener">GitHubのIssues</a>で、サーバーIDまたはユーザーIDを添えて依頼してください。確認のうえ、削除します</li>
+  <li>サーバー管理者は、ダッシュボードでルールを削除できます。個人の統計の削除は、運営者が行います</li>
+</ul>
+
+<h2>7. 変更</h2>
+<p>本ポリシーを変更するときは、このページで告知します。重要な変更は、<a href="changelog.html">更新履歴</a>にも載せます。</p>
+
+<h2>8. 問い合わせ</h2>
+<p><a href="support.html">サポートページ</a>をご覧ください。</p>
+</article></div></main>
+<footer><div class="wrap">
+  <a class="brand" href="index.html" style="font-size:16px"><img src="icon.svg" alt="" style="width:26px;height:26px">Lumi</a>
+  <a href="docs.html">説明書</a><a href="changelog.html">更新履歴</a><a href="support.html">サポート</a><a href="privacy.html">プライバシーポリシー</a><a href="terms.html">利用規約</a><a href="https://github.com/shishen575/Lumi" target="_blank" rel="noopener">GitHub</a><a href="/">ダッシュボード</a>
+</div></footer>
+<script>
+var INVITE = 'https://discord.com/oauth2/authorize?client_id=1570076671820693504&scope=bot+applications.commands&permissions=8&integration_type=0';
+function setInvite(u) { document.querySelectorAll('[data-invite]').forEach(function (a) { a.href = u; a.target = '_blank'; a.rel = 'noopener'; }); }
+setInvite(INVITE);
+fetch('/api/public').then(function (r) { return r.ok ? r.json() : null; }).then(function (j) { if (j && j.invite) setInvite(j.invite); }).catch(function () {});
+</script>
+</body>
+</html>

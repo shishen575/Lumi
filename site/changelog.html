@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Lumi 更新履歴</title>
+<meta name="description" content="Lumiの機能追加と変更の履歴です。">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@400;500;700;900&family=Zen+Maru+Gothic:wght@500;700;900&display=swap">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="top"><div class="wrap">
+  <a class="brand" href="index.html"><img src="icon.svg" alt="">Lumi</a>
+  <nav aria-label="メイン">
+    <a href="index.html#features">機能</a><a href="docs.html">説明書</a><a href="changelog.html" aria-current="page">更新履歴</a><a href="support.html">サポート</a>
+    <a class="btn sm" data-invite href="#">BOTを招待</a>
+  </nav>
+</div></header>
+<main><div class="wrap page"><article>
+<h1>更新履歴</h1>
+<p>Lumiの機能追加と変更を、新しいものから順に載せています。</p>
+<div class="log">
+<section><div><h2>2026年11月(後半)</h2><p class="when">アップデート</p></div><ul>
+  <li><span class="tag2">追加</span>登録済みのルールを、ダッシュボードで編集できるようになりました</li>
+  <li><span class="tag2">追加</span>「条件を下回ったらロールを剥奪」のオプション</li>
+  <li><span class="tag2">追加</span>「全メンバーに今すぐ適用」で、通知も送るかどうかを選べるように</li>
+  <li><span class="tag2">追加</span>紹介サイト・説明書・サポート・プライバシーポリシー・利用規約</li>
+  <li><span class="tag2">変更</span>サーバーを抜けた人を、ランキングから除外するように(再参加すると戻ります)</li>
+  <li><span class="tag2">修正</span>同じ人の処理が重なったとき、ロールの付与と通知が二重になることがあった問題</li>
+  <li><span class="tag2">修正</span>コマンドが3秒以内に応答できなかったとき、原因が分かるログを出すように</li>
+</ul></section>
+<section><div><h2>2026年11月(前半)</h2><p class="when">公開</p></div><ul>
+  <li><span class="tag2">追加</span>発言数・リアクション数・VC接続時間に応じた、ロールの自動付与</li>
+  <li><span class="tag2">追加</span>Webダッシュボード(Discordでログイン、複数サーバー対応、ロールの管理権限で操作)</li>
+  <li><span class="tag2">追加</span>ランク(段階)と、下位ランクのロールを外すオプション</li>
+  <li><span class="tag2">追加</span>過去の発言数の取り込み(期間指定、進捗と残り時間の表示、中断からの再開)</li>
+  <li><span class="tag2">追加</span>ロール獲得の通知(通知チャンネルと文面の設定、テスト送信)</li>
+  <li><span class="tag2">追加</span>コマンド <code>/rank</code> <code>/top</code> <code>/help</code></li>
+  <li><span class="tag2">追加</span>GitHubへのpushによる自動更新</li>
+</ul></section>
+</div>
+<p style="margin-top:24px">不具合の報告や要望は、<a href="support.html">サポート</a>へどうぞ。</p>
+</article></div></main>
+<footer><div class="wrap">
+  <a class="brand" href="index.html" style="font-size:16px"><img src="icon.svg" alt="" style="width:26px;height:26px">Lumi</a>
+  <a href="docs.html">説明書</a><a href="changelog.html">更新履歴</a><a href="support.html">サポート</a><a href="privacy.html">プライバシーポリシー</a><a href="terms.html">利用規約</a><a href="https://github.com/shishen575/Lumi" target="_blank" rel="noopener">GitHub</a><a href="/">ダッシュボード</a>
+</div></footer>
+<script>
+var INVITE = 'https://discord.com/oauth2/authorize?client_id=1570076671820693504&scope=bot+applications.commands&permissions=8&integration_type=0';
+function setInvite(u) { document.querySelectorAll('[data-invite]').forEach(function (a) { a.href = u; a.target = '_blank'; a.rel = 'noopener'; }); }
+setInvite(INVITE);
+fetch('/api/public').then(function (r) { return r.ok ? r.json() : null; }).then(function (j) { if (j && j.invite) setInvite(j.invite); }).catch(function () {});
+</script>
+</body>
+</html>

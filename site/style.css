@@ -163,3 +163,20 @@ pre code { background: none; border: 0; padding: 0; }
   .top nav a:not(.btn) { display: none; }
 }
 @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+
+/* 単一カラムのページ(更新履歴・サポート・規約など) */
+.page { padding-block: 44px 88px; }
+.page article { max-width: 44em; }
+.page .updated { color: var(--mut); font-size: 14px; margin: 0 0 28px; }
+.stat { display: inline-block; margin: 18px 0 0; padding: 4px 14px; border-radius: 999px; background: var(--accent-soft); border: 1px solid var(--line); font-size: 14px; font-weight: 700; color: var(--fg); }
+.stat[hidden] { display: none; }
+.log { border-top: 1px solid var(--line); margin-top: 28px; }
+.log section { padding: 26px 0; border-bottom: 1px solid var(--line); display: grid; grid-template-columns: 150px minmax(0, 1fr); gap: 8px 32px; }
+.log h2 { font-size: 20px; margin: 0; padding: 0; }
+.log .when { color: var(--mut); font-size: 14px; margin: 2px 0 0; }
+.log ul { margin: 0; padding-left: 1.2em; }
+.log li { margin: 6px 0; }
+.log .tag2 { font-size: 12px; font-weight: 700; padding: 1px 8px; border-radius: 999px; margin-right: 8px; border: 1px solid var(--line); background: var(--accent-soft); white-space: nowrap; }
+.contact { display: flex; flex-wrap: wrap; gap: 12px; margin: 16px 0 6px; }
+footer .wrap { row-gap: 8px; }
+@media (max-width: 860px) { .log section { grid-template-columns: minmax(0, 1fr); } }

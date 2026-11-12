@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Lumi サポート</title>
+<meta name="description" content="Lumiで困ったときの対処と、問い合わせ先です。">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@400;500;700;900&family=Zen+Maru+Gothic:wght@500;700;900&display=swap">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="top"><div class="wrap">
+  <a class="brand" href="index.html"><img src="icon.svg" alt="">Lumi</a>
+  <nav aria-label="メイン">
+    <a href="index.html#features">機能</a><a href="docs.html">説明書</a><a href="changelog.html">更新履歴</a><a href="support.html" aria-current="page">サポート</a>
+    <a class="btn sm" data-invite href="#">BOTを招待</a>
+  </nav>
+</div></header>
+<main><div class="wrap page"><article>
+<h1>サポート</h1>
+<p>困ったときは、まず次の順に確認してください。多くの場合、これで解決します。</p>
+<h2>まず確認すること</h2>
+<ul>
+  <li><b>ロールが付かない</b>: Lumiのロールが、付与したいロールより下にないか確認します。サーバー設定の「ロール」で、Lumiのロールを上へ移動してください</li>
+  <li><b>ダッシュボードにサーバーが出ない</b>: 「ロールの管理」権限を持つロールが付いているか確認し、ログアウトして入り直します</li>
+  <li><b>コマンドが出ない</b>: Discordを再読み込み(<code>Ctrl+R</code>)します。それでも出ないときは、招待リンクをもう一度開いて、同じサーバーを選び直します</li>
+  <li><b>通知が届かない</b>: 通知先が「通知しない」になっていないか、「テスト送信」で確認します</li>
+</ul>
+<p>詳しい手順は、<a href="docs.html#trouble">説明書の「困ったとき」</a>にあります。</p>
+
+<h2>問い合わせ・不具合の報告</h2>
+<p>GitHubの Issues で受け付けています。</p>
+<div class="contact"><a class="btn" href="https://github.com/shishen575/Lumi/issues" target="_blank" rel="noopener">Issuesで報告する</a></div>
+<div class="callout"><b class="t">書き込む前に</b><p>Issuesは誰でも読める公開の場です。BOTのトークンやパスワードなどの秘密情報は、絶対に書かないでください。</p></div>
+<p>不具合の報告には、次の情報があると原因を調べやすくなります。</p>
+<ul>
+  <li>何をしたら、どうなったか(エラーの文面や、表示された画面)</li>
+  <li>起きた日時と、使ったコマンドまたは操作</li>
+  <li>期待していた動き</li>
+</ul>
+
+<h2>データの削除を依頼する</h2>
+<p>自分のデータや、サーバーのデータの削除を希望するときは、Issuesで依頼してください。サーバーIDまたはユーザーIDを書いてもらえれば、対応します。詳しくは<a href="privacy.html">プライバシーポリシー</a>をご覧ください。</p>
+</article></div></main>
+<footer><div class="wrap">
+  <a class="brand" href="index.html" style="font-size:16px"><img src="icon.svg" alt="" style="width:26px;height:26px">Lumi</a>
+  <a href="docs.html">説明書</a><a href="changelog.html">更新履歴</a><a href="support.html">サポート</a><a href="privacy.html">プライバシーポリシー</a><a href="terms.html">利用規約</a><a href="https://github.com/shishen575/Lumi" target="_blank" rel="noopener">GitHub</a><a href="/">ダッシュボード</a>
+</div></footer>
+<script>
+var INVITE = 'https://discord.com/oauth2/authorize?client_id=1570076671820693504&scope=bot+applications.commands&permissions=8&integration_type=0';
+function setInvite(u) { document.querySelectorAll('[data-invite]').forEach(function (a) { a.href = u; a.target = '_blank'; a.rel = 'noopener'; }); }
+setInvite(INVITE);
+fetch('/api/public').then(function (r) { return r.ok ? r.json() : null; }).then(function (j) { if (j && j.invite) setInvite(j.invite); }).catch(function () {});
+</script>
+</body>
+</html>

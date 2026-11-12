@@ -27,7 +27,7 @@ export function startWeb(client, features) {
   app.use('/about', express.static(siteDir));
   const inviteUrl = () => `https://discord.com/oauth2/authorize?${new URLSearchParams({
     client_id: process.env.DISCORD_CLIENT_ID, scope: 'bot applications.commands', permissions: '8', integration_type: '0' })}`;
-  app.get('/api/public', (req, res) => res.json({ invite: inviteUrl() })); // 未ログインでも取得可(招待リンクのみ)
+  app.get('/api/public', (req, res) => res.json({ invite: inviteUrl(), servers: client.guilds.cache.size })); // 未ログインでも取得可(招待リンクと稼働数のみ)
 
   // ---------- OAuth2 ----------
   app.get('/auth/login', (req, res) => {
