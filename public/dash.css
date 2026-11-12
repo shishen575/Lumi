@@ -63,7 +63,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .btn.danger { background: transparent; color: var(--err); border-color: color-mix(in srgb, var(--err) 50%, transparent); }
 .btn.sm { min-height: 32px; padding: 0 13px; font-size: 13px; }
 .btn.icon { padding: 0; width: 34px; min-height: 34px; }
-input[type=text], input[type=number], input[type=date], select, textarea { width: 100%; min-height: 42px; padding: 8px 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg2); }
+input[type=text], input[type=password], input[type=number], input[type=date], select, textarea { width: 100%; min-height: 42px; padding: 8px 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg2); }
 input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent); outline-offset: 0; border-color: transparent; }
 select option:disabled { color: var(--mut); }
 label.f { display: block; font-size: 13px; font-weight: 700; color: var(--mut); margin-bottom: 6px; }

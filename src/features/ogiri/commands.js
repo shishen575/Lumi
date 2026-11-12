@@ -6,6 +6,7 @@ import {
 } from './db.js';
 import { toReaction, toDisplay, parseEmojiInput } from './emoji.js';
 import { odaiContent, answerRow, commandLink, bumpRound, NO_MENTIONS, ANSWER_BUTTON } from './round.js';
+import { speakFor } from './tts.js';
 
 const EPH = { flags: MessageFlags.Ephemeral }; // 本人にだけ表示
 const MEDAL = ['🥇', '🥈', '🥉'];
@@ -37,6 +38,7 @@ export const odaiCommand = {
     await i.reply({ content: odaiContent(i.guildId, odai), components: [answerRow()], allowedMentions: NO_MENTIONS });
     const msg = await i.fetchReply();
     createRound({ guildId: i.guildId, channelId: i.channelId, odai, msgId: msg.id }); // 進行中のお題があれば、終了扱いになる
+    speakFor('odai', i.guildId, i.channelId, [{ text: `お題。${odai}` }], `odai:${msg.id}`); // 読み上げ連携(オンのサーバーのみ。送りっぱなし)
   },
 };
 
@@ -77,6 +79,7 @@ export const kaitouCommand = {
         allowedMentions: NO_MENTIONS,
       });
       addPost({ msgId: msg.id, guildId: i.guildId, channelId: i.channelId, roundId: round.round_id, uid: i.user.id, name, odai: round.odai, text, emoji });
+      speakFor('answer', i.guildId, i.channelId, [{ text, user_id: i.user.id, say_name: true }], `answer:${msg.id}`); // 回答者本人の声・速度で読む
       await msg.react(toReaction(emoji)).catch((e) => console.warn('[ogiri] 草のリアクションを付けられませんでした:', e.message)); // 付けられなくても、回答は有効
       const every = bumpEvery();
       if (every > 0 && countAnswer(round.round_id) >= every) bumpRound(i.client, round.round_id).catch((e) => console.error('[ogiri] 再掲に失敗:', e.message));
@@ -105,6 +108,10 @@ export const kekkaCommand = {
     const more = posts.length > 10 ? `\n-# 全${posts.length}件中 TOP10 を表示` : '';
     await i.editReply({ content: `🏆 **結果** お題: ${cut(oneLine(odai), 200)}\n\n${lines.join('\n')}${more}`, allowedMentions: NO_MENTIONS });
     if (round) endRound(round.round_id); // 結果を送れてから終了する(送信に失敗したら、ここには来ない)
+    // 結果の読み上げ(TOP3): 「結果発表」→ 各順位「N位、草○人。」→ 回答を、回答者の声で
+    const items = [{ text: '結果発表。' }];
+    posts.slice(0, 3).forEach((p, n) => items.push({ text: `${n + 1}位、草${p.votes}人。` }, { text: p.text, user_id: p.uid, say_name: true }));
+    speakFor('result', i.guildId, i.channelId, items, `kekka:${round?.round_id ?? posts[0].round_id}`);
   },
 };
 

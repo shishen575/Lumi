@@ -4,11 +4,13 @@ import { commands, answerButton } from './commands.js';
 import { postByMsg, queueVote, flush } from './db.js';
 import { sameEmoji } from './emoji.js';
 import { bumpRound } from './round.js';
+import { mountApi } from './api.js';
 
 /** 大喜利: お題を出し、回答を投稿し、リアクションの草で投票する。環境変数 BUMP_EVERY(既定5) / BUMP_MINUTES(既定0=無効) */
 export default {
   name: 'ogiri',
   title: '大喜利',
+  ui: '/dashboard/features/ogiri.js', // ダッシュボードのタブ(読み上げ連携)
   commands,
   components: [answerButton],
   help: [
@@ -17,7 +19,8 @@ export default {
     '`/kusaemoji` で、草の絵文字を変えられます(管理者のみ)。',
   ].join('\n'),
 
-  register({ client }) {
+  register({ client, router }) {
+    mountApi(router);
     // 草: 回答に付いた「投稿時の絵文字」と同じリアクションだけ数える。再起動前の回答も、Partialsで受け取れる
     const onReaction = async (reaction, user, add) => {
       try {
