@@ -5,6 +5,13 @@
  *   CPU が低い  → ディスクや外部の待ち、または、サーバーのCPU制限で、処理が進められていない
  */
 export function startHealthMonitor(client) {
+  // ゲートウェイの切断・再接続を記録する。遅れの前後で切れているなら、通信の取りこぼし(回線・機器・MTUなど)の証拠になる
+  if (client?.on) {
+    client.on('shardDisconnect', (ev, id) => console.warn(`[health] ゲートウェイが切断されました (シャード${id} / コード ${ev?.code ?? '?'})`));
+    client.on('shardReconnecting', (id) => console.warn(`[health] ゲートウェイに再接続しています (シャード${id})`));
+    client.on('shardResume', (id, replayed) => console.warn(`[health] ゲートウェイを再開しました (シャード${id} / 取り戻したイベント ${replayed ?? '?'}件)`));
+    client.on('shardError', (err, id) => console.warn(`[health] ゲートウェイのエラー (シャード${id}): ${err?.message ?? err}`));
+  }
   // Discordとの通信の遅さ(ゲートウェイのハートビートの往復時間)。処理が止まっていないのに遅いときは、通信が原因
   const ping = () => { const p = client?.ws?.ping; return typeof p === 'number' && p >= 0 ? `${Math.round(p)}ms` : '不明'; };
   let last = performance.now(), cpu = process.cpuUsage();
