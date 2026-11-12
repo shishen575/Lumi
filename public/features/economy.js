@@ -43,6 +43,27 @@ Dash.registerTab({
         };
       } },
 
+    /* ===== 留置場 ===== */
+    { id: 'jail', title: '留置場', icon: 'alert',
+      async render(el, { api, esc, ic, toast, confirm, pageHeader }) {
+        const dur = (ms) => { const t = Math.ceil(ms / 1000), m = Math.floor(t / 60), r = t % 60; return m ? `${m}分${r ? `${r}秒` : ''}` : `${r}秒`; };
+        const draw = async () => {
+          const rows = await api('/jail');
+          el.innerHTML = `${pageHeader('留置場', '犯罪に失敗して、留置場に入っている人です。管理者は、ここから釈放できます(Discordでは <code>/release</code> でも釈放できます)。',
+            rows.length ? '<button class="btn danger" id="all" type="button">全員を釈放</button>' : '')}
+            ${rows.length ? `<div class="card flush"><div class="card-h"><h2>留置場にいる人</h2><span class="badge">${rows.length}人</span></div>
+              <ol class="lb">${rows.map((r) => `<li style="grid-template-columns:minmax(0,1fr) auto auto"><span class="nm">🚔 ${esc(r.name)}</span><span class="val mut">あと ${dur(r.left)}</span><button class="btn ghost sm" type="button" data-u="${r.user_id}">釈放</button></li>`).join('')}</ol></div>`
+              : `<div class="card empty">${ic('check')}<h2>留置場は、空です</h2><p>犯罪に失敗した人が、ここに表示されます。</p></div>`}`;
+          const q = (x) => el.querySelector(x);
+          el.querySelectorAll('[data-u]').forEach((b) => (b.onclick = async () => { await api('/release', { method: 'POST', body: { user_id: b.dataset.u } }); toast('釈放しました'); draw(); }));
+          if (q('#all')) q('#all').onclick = async () => {
+            if (!await confirm({ title: '全員を釈放', message: `留置場にいる ${rows.length}人 を、全員釈放します。`, ok: '釈放する', danger: true })) return;
+            const r = await api('/release', { method: 'POST', body: { all: true } }); toast(`${r.released}人を釈放しました`); draw();
+          };
+        };
+        await draw();
+      } },
+
     /* ===== 予算 ===== */
     { id: 'budget', title: '予算', icon: 'shield',
       async render(el, { api, esc, ic, toast, confirm, pageHeader }) {

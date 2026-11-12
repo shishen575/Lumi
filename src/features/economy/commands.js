@@ -1,7 +1,8 @@
 import { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, MessageFlags } from 'discord.js';
 import { getSettings, money } from './settings.js';
-import { peek, deposit, withdraw, cooldownLeft, setCooldown, jailLeft, jail, release, richest, getBj, saveBj, deleteBj, getHeist, saveHeist, claimHeist, expiredHeists, setHeistDeadline } from './db.js';
+import { peek, deposit, withdraw, cooldownLeft, setCooldown, jailLeft, jail, release, richest, getBj, saveBj, deleteBj, getHeist, saveHeist, claimHeist, expiredHeists, setHeistDeadline, releaseAll } from './db.js';
 import { ensureAccount, pay, collect, fine, treasury } from './ledger.js';
+import { hasAccessSync } from '../../core/access.js';
 import {
   rnd, roundProb, chinchiroPlay, chinchiroCompare, chinchiroScale, slotSpin, slotPayout, slotMultiplier,
   bjDeal, bjHit, bjStand, bjDouble, handValue, cardText, bjScale,
@@ -165,6 +166,26 @@ export const bailCommand = {
     if (!collect(i.guildId, i.user.id, cost, s)) return refuse(i, `保釈金が足りません。(必要 ${money(s, cost)} / 手持ち ${money(s, wallet(i))})`);
     release(i.guildId, i.user.id);
     await i.reply({ embeds: [card(i, s, BLUE, '🔓 保釈', `保釈金 **- ${money(s, cost)}** を払って、留置場から出ました。`)] });
+  },
+};
+
+/** 管理者が、留置場の人を釈放する(サーバー側の操作)。ダッシュボードを操作できる人(オーナー・管理者・管理ロール・運営)だけ */
+export const releaseCommand = {
+  data: guildOnly(new SlashCommandBuilder().setName('release').setDescription('【管理者向け】留置場にいる人を釈放します')
+    .addUserOption((o) => o.setName('user').setDescription('釈放する人'))
+    .addBooleanOption((o) => o.setName('all').setDescription('留置場にいる全員を釈放する'))),
+  async execute(i) {
+    const s = await open(i); if (!s) return;
+    if (!hasAccessSync(i.guild, i.member, i.user.id)) return refuse(i, '釈放できるのは、サーバーの管理者(または管理ロールを持つ人)だけです。');
+    if (i.options.getBoolean('all')) {
+      const n = releaseAll(i.guildId);
+      return i.reply({ content: n ? `🔓 留置場にいた ${n}人 を、全員釈放しました。` : '留置場には、だれもいません。', allowedMentions: NO_MENTIONS, ...(n ? {} : EPH) });
+    }
+    const u = i.options.getUser('user');
+    if (!u) return refuse(i, '釈放する人(user)を選ぶか、all を選んでください。');
+    if (!jailLeft(i.guildId, u.id)) return refuse(i, `${u.displayName ?? u.username} さんは、留置場にいません。`);
+    release(i.guildId, u.id);
+    await i.reply({ content: `🔓 <@${u.id}> を釈放しました。`, allowedMentions: NO_MENTIONS });
   },
 };
 
@@ -376,4 +397,4 @@ export async function resolveExpiredHeists(client, now = Date.now()) {
   }
 }
 
-export const commands = [balanceCommand, depositCommand, withdrawCommand, richestCommand, crimeCommand, workCommand, begCommand, bailCommand, chinchiroCommand, slotCommand, blackjackCommand, heistCommand];
+export const commands = [balanceCommand, depositCommand, withdrawCommand, richestCommand, crimeCommand, workCommand, begCommand, bailCommand, chinchiroCommand, slotCommand, blackjackCommand, heistCommand, releaseCommand];

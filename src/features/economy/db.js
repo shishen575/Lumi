@@ -80,6 +80,10 @@ export const setCooldown = (g, u, key, ms) => db.prepare(`INSERT INTO eco_cooldo
 export const jailLeft = (g, u) => Math.max(0, (db.prepare('SELECT jail_until FROM eco_accounts WHERE guild_id=? AND user_id=?').get(g, u)?.jail_until ?? 0) - Date.now());
 export const jail = (g, u, ms) => db.prepare('UPDATE eco_accounts SET jail_until=? WHERE guild_id=? AND user_id=?').run(Date.now() + ms, g, u);
 export const release = (g, u) => db.prepare('UPDATE eco_accounts SET jail_until=0 WHERE guild_id=? AND user_id=?').run(g, u);
+/** いま留置場にいる人(残り時間が長い順) */
+export const jailed = (g, now = Date.now()) => db.prepare('SELECT user_id, jail_until FROM eco_accounts WHERE guild_id=? AND jail_until > ? ORDER BY jail_until DESC').all(g, now);
+/** 全員を釈放する。釈放した人数を返す */
+export const releaseAll = (g, now = Date.now()) => Number(db.prepare('UPDATE eco_accounts SET jail_until=0 WHERE guild_id=? AND jail_until > ?').run(g, now).changes);
 
 /* ---------- ランキング(手持ち + 銀行) ---------- */
 export const richest = (guildId, limit = 10) =>

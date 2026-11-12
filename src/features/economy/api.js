@@ -1,6 +1,6 @@
 import { canEditAccess } from '../../core/access.js';
 import { getSettings, saveSettings } from './settings.js';
-import { richest } from './db.js';
+import { richest, jailed, release, jailLeft, releaseAll } from './db.js';
 import { treasury, setTreasury, addTreasury, circulation } from './ledger.js';
 import { SLOT_SYMBOLS, CHERRY_TWO, CHERRY_ONE, slotRtp, slotScale, chinchiroScale, bjScale, bjStats } from './games.js';
 
@@ -38,6 +38,23 @@ export function mountApi(router) {
       const m = req.guild.members.cache.get(r.user_id) ?? (await req.guild.members.fetch(r.user_id).catch(() => null));
       return { user_id: r.user_id, name: m?.displayName ?? r.user_id, total: r.total, wallet: r.wallet, bank: r.bank };
     })));
+  });
+
+  // 留置場: いま入っている人の一覧と、釈放(サーバー側で、管理者が行う)
+  router.get('/jail', async (req, res) => {
+    const now = Date.now();
+    res.json(await Promise.all(jailed(req.guild.id, now).map(async (r) => {
+      const m = req.guild.members.cache.get(r.user_id) ?? (await req.guild.members.fetch(r.user_id).catch(() => null));
+      return { user_id: r.user_id, name: m?.displayName ?? r.user_id, left: r.jail_until - now };
+    })));
+  });
+  router.post('/release', (req, res) => {
+    const g = req.guild.id;
+    if (req.body?.all) return res.json({ released: releaseAll(g) });
+    const uid = String(req.body?.user_id ?? '');
+    if (!/^\d{5,25}$/.test(uid)) return res.status(400).json({ error: 'ユーザーが不正です' });
+    if (!jailLeft(g, uid)) return res.status(404).json({ error: 'その人は、留置場にいません' });
+    release(g, uid); res.json({ released: 1 });
   });
 
   // 還元率(%)を変えたときの、配当表のプレビュー
