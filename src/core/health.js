@@ -1,3 +1,14 @@
+// 止まった記録(/ping で表示する)。直近1時間ぶん
+const stalls = [];
+export function healthSnapshot(now = Date.now()) {
+  while (stalls.length && now - stalls[0].at > 3600_000) stalls.shift();
+  return { count: stalls.length, maxMs: stalls.reduce((a, s) => Math.max(a, s.ms), 0), lastMs: stalls.at(-1)?.ms ?? 0, lastAt: stalls.at(-1)?.at ?? 0 };
+}
+/** 通常の通信(REST)の速さを測る。失敗したら null */
+export async function measureRest(client) {
+  try { const t0 = performance.now(); await client.rest.get('/gateway'); return Math.round(performance.now() - t0); } catch { return null; }
+}
+
 /**
  * BOTの動きが止まったことを検知して、そのときの状況をログに出す(原因調べ用)。
  * 1秒ごとに時刻を確認して、予定より遅れていたら、その間、BOTの処理が止まっていたことになる。
@@ -19,6 +30,7 @@ export function startHealthMonitor(client) {
     const now = performance.now(), drift = now - last - 1000; last = now;
     const used = process.cpuUsage(cpu); cpu = process.cpuUsage();
     if (drift < 1000) return;
+    stalls.push({ at: Date.now(), ms: Math.round(drift) });
     const cpuPct = ((used.user + used.system) / 1000) / (drift + 1000) * 100;
     const m = process.memoryUsage();
     console.warn(`[health] 処理が ${Math.round(drift)}ms 止まりました (CPU ${cpuPct.toFixed(0)}% / メモリ ${Math.round(m.rss / 1048576)}MB / ヒープ ${Math.round(m.heapUsed / 1048576)}MB / Discordとの通信 ${ping()} / REST ${restMs === null ? '不明' : `${restMs}ms`})`);

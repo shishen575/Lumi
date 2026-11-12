@@ -1,8 +1,9 @@
 import { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, MessageFlags } from 'discord.js';
 import { getSettings, money } from './settings.js';
-import { audit, peek, deposit, withdraw, cooldownLeft, setCooldown, jailLeft, jail, release, richest, getBj, saveBj, deleteBj, getHeist, saveHeist, claimHeist, expiredHeists, setHeistDeadline, releaseAll } from './db.js';
+import { adjustBalance, audit, peek, deposit, withdraw, cooldownLeft, setCooldown, jailLeft, jail, release, richest, getBj, saveBj, deleteBj, getHeist, saveHeist, claimHeist, expiredHeists, setHeistDeadline, releaseAll } from './db.js';
 import { ensureAccount, pay, collect, fine, treasury } from './ledger.js';
-import { hasAccessSync } from '../../core/access.js';
+import { hasAccessSync, isOperator } from '../../core/access.js';
+import { PermissionFlagsBits } from 'discord.js';
 import {
   rnd, roundProb, chinchiroPlay, chinchiroCompare, chinchiroScale, slotSpin, slotPayout, slotMultiplier,
   bjDeal, bjHit, bjStand, bjDouble, handValue, cardText, bjScale,
@@ -397,4 +398,28 @@ export async function resolveExpiredHeists(client, now = Date.now()) {
   }
 }
 
-export const commands = [balanceCommand, depositCommand, withdrawCommand, richestCommand, crimeCommand, workCommand, begCommand, bailCommand, chinchiroCommand, slotCommand, blackjackCommand, heistCommand, releaseCommand];
+/** 残高の編集は、ダッシュボードと同じく、オーナー・管理者・運営だけ(管理ロールは不可) */
+const canEditBalance = (i) => isOperator(i.user.id) || i.guild?.ownerId === i.user.id || !!i.member?.permissions?.has?.(PermissionFlagsBits.Administrator);
+const MODE_LABEL = { add: '増やす', subtract: '減らす', set: '指定額にする' };
+export const balanceEditCommand = {
+  data: guildOnly(new SlashCommandBuilder().setName('balance-edit').setDescription('【管理者向け】メンバーの残高を編集します')
+    .addUserOption((o) => o.setName('user').setDescription('対象の人').setRequired(true))
+    .addStringOption((o) => o.setName('mode').setDescription('操作').setRequired(true).addChoices({ name: '増やす', value: 'add' }, { name: '減らす', value: 'subtract' }, { name: '指定額にする', value: 'set' }))
+    .addIntegerOption((o) => o.setName('amount').setDescription('金額(0以上)').setRequired(true).setMinValue(0).setMaxValue(1_000_000_000))
+    .addStringOption((o) => o.setName('target').setDescription('対象の残高(省略すると手持ち)').addChoices({ name: '手持ち', value: 'wallet' }, { name: '銀行', value: 'bank' }))
+    .addStringOption((o) => o.setName('note').setDescription('メモ(操作履歴に残ります)').setMaxLength(100))),
+  async execute(i) {
+    const s = getSettings(i.guildId);
+    if (!canEditBalance(i)) return refuse(i, '残高を編集できるのは、サーバーのオーナー・管理者だけです。');
+    const u = i.options.getUser('user');
+    if (u.bot) return refuse(i, 'BOTの残高は編集できません。');
+    const mode = i.options.getString('mode'), target = i.options.getString('target') ?? 'wallet', amount = i.options.getInteger('amount'), note = i.options.getString('note');
+    const col = target === 'bank' ? 'bank' : 'wallet';
+    const before = peek(i.guildId, u.id);
+    const after = adjustBalance(i.guildId, u.id, { target, mode, amount, allowDebt: s.allowDebt });
+    audit(i.guildId, { id: i.user.id, name: i.member?.displayName ?? i.user.username }, u.id, `${target === 'bank' ? '銀行' : '手持ち'}を${MODE_LABEL[mode]}`, amount, `${before[col]} → ${after[col]}${note ? ` / ${note}` : ''} / /balance-edit`);
+    await i.reply({ content: `✅ <@${u.id}> の${target === 'bank' ? '銀行' : '手持ち'}を${MODE_LABEL[mode]}(${Number(amount).toLocaleString()})\n${money(s, before[col])} → **${money(s, after[col])}**`, allowedMentions: NO_MENTIONS, ...EPH });
+  },
+};
+
+export const commands = [balanceCommand, depositCommand, withdrawCommand, richestCommand, crimeCommand, workCommand, begCommand, bailCommand, chinchiroCommand, slotCommand, blackjackCommand, heistCommand, releaseCommand, balanceEditCommand];
