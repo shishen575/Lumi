@@ -3,12 +3,12 @@ import session from 'express-session';
 import crypto from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { PermissionFlagsBits } from 'discord.js';
+import { guildAccess, mountAccessRoutes, resolveAccess, isOperator } from './access.js';
 import { getKV, setKV, db } from './db.js';
 import { mountGithubWebhook } from './webhook.js';
 
 const API = 'https://discord.com/api/v10';
-const PERM_ADMIN = 0x8n, PERM_MANAGE_ROLES = 0x10000000n; // 管理者 / ロールの管理
+const PERM_ADMIN = 0x8n; // 管理者(BOTを招待できるかの判定に使う)
 
 export function startWeb(client, features) {
   const app = express();
@@ -52,12 +52,13 @@ export function startWeb(client, features) {
         fetch(`${API}/users/@me`, { headers: h }).then((r) => r.json()),
         fetch(`${API}/users/@me/guilds`, { headers: h }).then((r) => r.json()),
       ]);
-      // ロールの管理(または管理者)権限のあるサーバーだけ一覧に出す(アクセストークンは保存しない)。
-      // 実際の操作可否は、API側で毎回ライブに確認する
+      // サーバー一覧は保持するが、アクセストークンは保存しない。
+      // 操作できるかどうかは、API側で毎回ライブに確認する(権限が変わったら即反映される)
       req.session.user = { id: user.id, name: user.global_name || user.username };
-      req.session.guilds = guilds
-        .filter((g) => g.owner || (BigInt(g.permissions) & (PERM_ADMIN | PERM_MANAGE_ROLES)) !== 0n)
-        .map((g) => ({ id: g.id, name: g.name, icon: g.icon }));
+      req.session.guilds = guilds.map((g) => ({
+        id: g.id, name: g.name, icon: g.icon,
+        canInvite: g.owner || (BigInt(g.permissions) & PERM_ADMIN) !== 0n, // BOT未導入のサーバーに招待できる人
+      }));
       res.redirect('/dashboard/');
     } catch (e) { console.error(e); res.status(500).send('login failed'); }
   });
@@ -69,28 +70,25 @@ export function startWeb(client, features) {
 
   api.get('/me', (req, res) => res.json({ user: req.session.user }));
   api.get('/features', (req, res) => res.json(features.map((f) => ({ name: f.name, title: f.title, ui: f.ui }))));
-  api.get('/guilds', (req, res) => res.json({
-    guilds: req.session.guilds.map((g) => ({ ...g, botIn: client.guilds.cache.has(g.id) })),
-    invite: `https://discord.com/oauth2/authorize?${new URLSearchParams({
-      client_id: process.env.DISCORD_CLIENT_ID, scope: 'bot applications.commands', permissions: '8', integration_type: '0' })}`, // 管理者権限
-  }));
-
-  // /api/guilds/:gid/... は管理権限チェック済み。req.guild が使える
-  const guildApi = express.Router({ mergeParams: true });
-  guildApi.use(async (req, res, next) => {
-    if (!req.session.guilds?.some((g) => g.id === req.params.gid)) return res.status(403).json({ error: 'forbidden' });
-    const guild = client.guilds.cache.get(req.params.gid);
-    if (!guild) return res.status(404).json({ error: 'bot is not in this server' });
-    // 毎回、今の権限を確認(ロールの管理を外された人は即座に操作不可になる)
-    const member = await guild.members.fetch(req.session.user.id).catch(() => null);
-    if (!member?.permissions.has(PermissionFlagsBits.ManageRoles)) return res.status(403).json({ error: 'ロールの管理権限が必要です' });
-    req.guild = guild;
-    req.member = member;
-    // 自分の最上位ロールより下のロールだけ付与対象にできる(オーナー・管理者は制限なし)。権限昇格の防止
-    const unrestricted = guild.ownerId === member.id || member.permissions.has(PermissionFlagsBits.Administrator);
-    req.canAssign = (role) => unrestricted || role.position < member.roles.highest.position;
-    next();
+  const invite = () => `https://discord.com/oauth2/authorize?${new URLSearchParams({
+    client_id: process.env.DISCORD_CLIENT_ID, scope: 'bot applications.commands', permissions: '8', integration_type: '0' })}`; // 管理者権限
+  api.get('/guilds', async (req, res) => {
+    const uid = req.session.user.id, op = isOperator(uid), seen = new Set();
+    const rows = await Promise.all(req.session.guilds.map(async (g) => {
+      seen.add(g.id);
+      const guild = client.guilds.cache.get(g.id);
+      if (guild) { const { level } = await resolveAccess(guild, uid); return level ? { id: g.id, name: g.name, icon: g.icon, botIn: true, level } : null; }
+      return g.canInvite ? { id: g.id, name: g.name, icon: g.icon, botIn: false } : null; // 未導入: 招待ボタン用
+    }));
+    const guilds = rows.filter(Boolean);
+    if (op) for (const g of client.guilds.cache.values()) if (!seen.has(g.id)) guilds.push({ id: g.id, name: g.name, icon: g.icon, botIn: true, level: 'operator' });
+    res.json({ guilds, invite: invite(), operator: op });
   });
+
+  // /api/guilds/:gid/... は権限チェック済み。req.guild / req.access / req.actor / req.canAssign が使える
+  const guildApi = express.Router({ mergeParams: true });
+  guildApi.use(guildAccess(client));
+  mountAccessRoutes(guildApi);
   guildApi.get('/roles', (req, res) => {
     const me = req.guild.members.me;
     res.json(req.guild.roles.cache

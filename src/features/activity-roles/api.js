@@ -57,7 +57,7 @@ export function mountApi(router) {
   });
   router.post('/notify-test', async (req, res) => {
     try {
-      const ok = await sendTest(req.guild, req.member);
+      const ok = await sendTest(req.guild, req.actor);
       res.status(ok ? 200 : 400).json(ok ? { ok: true } : { error: '通知チャンネルが未設定、または送信できません(保存してから試してください)' });
     } catch (e) { res.status(400).json({ error: '送信に失敗: ' + e.message }); }
   });

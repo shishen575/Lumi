@@ -2,6 +2,7 @@
 const $ = (s, el = document) => el.querySelector(s);
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const tabs = {};
+const LEVEL = { operator: '運営', owner: 'オーナー', admin: '管理者', role: '管理ロール' };
 window.Dash = { registerTab: (t) => { tabs[t.name] = t; }, esc, $ };
 
 function toast(msg) { const t = $('#toast'); t.textContent = msg; t.style.display = 'block'; clearTimeout(toast.t); toast.t = setTimeout(() => (t.style.display = 'none'), 2500); }
@@ -34,7 +35,7 @@ window.onhashchange = () => location.reload();
 async function guildList() {
   const { guilds: all, invite } = await req('/guilds');
   const guilds = [...all].sort((a, b) => b.botIn - a.botIn || a.name.localeCompare(b.name, 'ja')); // BOT導入済みを上に
-  app.innerHTML = `<div class="card"><h2>サーバーを選択</h2>${guilds.map((g) => `<div class="guild"><span>${esc(g.name)}</span>${g.botIn ? `<a href="#${g.id}"><button>設定</button></a>` : `<a href="${invite}&guild_id=${g.id}&disable_guild_select=true" target="_blank"><button class="sec">BOTを招待</button></a>`}</div>`).join('') || '<p class="mut">管理権限のあるサーバーがありません</p>'}</div>`;
+  app.innerHTML = `<div class="card"><h2>サーバーを選択</h2>${guilds.map((g) => `<div class="guild"><span>${esc(g.name)}</span>${g.botIn ? `<span class="mut">${LEVEL[g.level] ?? ''}</span> <a href="#${g.id}"><button>設定</button></a>` : `<a href="${invite}&guild_id=${g.id}&disable_guild_select=true" target="_blank"><button class="sec">BOTを招待</button></a>`}</div>`).join('') || '<p class="mut">管理権限のあるサーバーがありません</p>'}</div>`;
 }
 
 async function guildView(gid) {
@@ -49,12 +50,12 @@ async function guildView(gid) {
     roles: () => (ctx._roles ??= req(`/guilds/${gid}/roles`)),
     channels: () => (ctx._ch ??= req(`/guilds/${gid}/channels`)),
   };
-  const list = features.filter((f) => tabs[f.name]);
+  const list = [...features.filter((f) => tabs[f.name]), ...Object.values(tabs).filter((t) => t.core)];
   app.innerHTML = '<div class="tabs"></div><div id="tab"></div>';
   const open = (name) => {
     for (const b of app.querySelectorAll('.tabs button')) b.classList.toggle('on', b.dataset.n === name);
     const el = $('#tab'); el.innerHTML = '';
-    tabs[name].render(el, { ...ctx, api: ctx.feature(name) });
+    tabs[name].render(el, { ...ctx, api: tabs[name].core ? ctx.api : ctx.feature(name) }); // コアのタブはサーバー直下のAPI
   };
   $('.tabs').innerHTML = list.map((f) => `<button data-n="${f.name}">${esc(f.title)}</button>`).join('');
   $('.tabs').onclick = (e) => e.target.dataset.n && open(e.target.dataset.n);

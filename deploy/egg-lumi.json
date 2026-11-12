@@ -137,6 +137,16 @@
       "user_editable": true,
       "rules": "nullable|string",
       "field_type": "text"
+    },
+    {
+      "name": "Operator IDs",
+      "description": "運営のDiscordユーザーID(カンマ区切り)。BOTが入っている全サーバーのダッシュボードを操作できる",
+      "env_variable": "OPERATOR_IDS",
+      "default_value": "",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": "nullable|string",
+      "field_type": "text"
     }
   ]
 }

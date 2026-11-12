@@ -1,4 +1,5 @@
 import { Events, SlashCommandBuilder, EmbedBuilder, MessageFlags } from 'discord.js';
+import { hasAccessSync } from './access.js';
 
 /**
  * 各機能の `commands: [{ data: SlashCommandBuilder, execute(interaction) }]` を集めて登録・実行する。
@@ -57,7 +58,7 @@ function helpCommand(cmds, features) {
           .map((d) => `\`/${d.name}\` — ${d.description}`).join('\n') });
       for (const f of features) if (f.help) embed.addFields({ name: f.title ?? f.name, value: f.help });
       const base = process.env.BASE_URL;
-      if (base && i.memberPermissions?.has('ManageRoles')) {
+      if (base && hasAccessSync(i.guild, i.member, i.user.id)) { // ダッシュボードを操作できる人にだけ案内
         embed.addFields({ name: '設定(管理者向け)', value: `ダッシュボード: ${base.replace(/\/$/, '')}/dashboard/` });
       }
       await i.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
