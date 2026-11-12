@@ -11,7 +11,7 @@ for (const k of ['DISCORD_TOKEN', 'DISCORD_CLIENT_ID', 'DISCORD_CLIENT_SECRET', 
 }
 const client = createClient();
 const features = await loadFeatures();
-startHealthMonitor();
+startHealthMonitor(client);
 setupCommands(client, features);
 startWeb(client, features);
 startTunnel();
