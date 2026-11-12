@@ -1,5 +1,6 @@
 import { SlashCommandBuilder, EmbedBuilder, MessageFlags } from 'discord.js';
 import { spawnSync } from 'node:child_process';
+import { latencySummary } from '../../core/latency.js';
 import { healthSnapshot, measureRest } from '../../core/health.js';
 
 const GREEN = 0x57f287, YELLOW = 0xfee75c, RED = 0xed4245;
@@ -26,6 +27,7 @@ export const pingCommand = {
     const color = w < 500 ? GREEN : w < 1500 ? YELLOW : RED;
     const verdict = w < 500 ? '🟢 良好です' : w < 1500 ? '🟡 やや遅いです' : '🔴 遅いです。サーバーのネットワークや負荷を、確認してください';
     const mem = process.memoryUsage();
+    let hist = null; try { hist = latencySummary(1); } catch { /* 記録がなくても動く */ }
     const embed = new EmbedBuilder().setColor(color).setTitle('🏓 Pong!').setDescription(verdict)
       .addFields(
         { name: '🌐 ゲートウェイ(往復)', value: ms(gw >= 0 ? gw : null), inline: true },
@@ -33,6 +35,7 @@ export const pingCommand = {
         { name: '📨 コマンドが届くまで', value: ms(received), inline: true },
         { name: '💬 返信にかかった時間', value: ms(replied), inline: true },
         { name: '⚙️ 処理の止まり(直近1時間)', value: st.count ? `${st.count}回 / 最大 ${(st.maxMs / 1000).toFixed(1)}秒` : 'なし', inline: true },
+        ...(hist?.n >= 3 ? [{ name: '📈 直近1時間(1分ごとの記録)', value: `ゲートウェイ 平均 ${ms(hist.gwAvg)} / 最大 ${ms(hist.gwMax)}\nREST 平均 ${ms(hist.restAvg)} / 最大 ${ms(hist.restMax)}`, inline: false }] : []),
         { name: '🖥️ BOT', value: `稼働 ${up(process.uptime())} ・ メモリ ${Math.round(mem.rss / 1048576)}MB ・ ${i.client.guilds.cache.size}サーバー`, inline: false },
       );
     if (version) embed.setFooter({ text: `バージョン ${version}` });

@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>通信の記録 - Lumi</title>
+<style>
+:root{--bg:#14121f;--fg:#ece9f7;--mut:#9a95b5;--card:#1e1b2e;--gw:#7c8cff;--rest:#3ddc97;--stall:#ff6b6b;--grid:#ffffff1f}
+@media (prefers-color-scheme:light){:root{--bg:#f6f5fb;--fg:#1b1830;--mut:#6a6685;--card:#fff;--grid:#0000001a}}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.6 system-ui,"Hiragino Sans","Noto Sans JP",sans-serif;padding:16px}
+main{max-width:980px;margin:0 auto}h1{font-size:20px}a{color:var(--gw)}
+.card{background:var(--card);border-radius:12px;padding:14px;margin:12px 0}
+.sel button{background:none;border:1px solid var(--grid);color:var(--fg);border-radius:8px;padding:4px 12px;cursor:pointer;margin-right:6px}
+.sel button.on{background:var(--gw);color:#fff;border-color:var(--gw)}
+canvas{width:100%;height:300px;display:block}
+.sum{display:flex;flex-wrap:wrap;gap:16px;color:var(--mut)}.sum b{color:var(--fg)}
+.leg span{margin-right:14px}.leg i{display:inline-block;width:12px;height:3px;margin-right:4px;vertical-align:middle}
+</style></head><body><main>
+<h1>📈 通信の記録 <small style="font-weight:400"><a href="/dashboard/">← ダッシュボード</a></small></h1>
+<div class="card sel" id="sel"></div>
+<div class="card"><div class="leg"><span><i style="background:var(--gw)"></i>ゲートウェイ(往復)</span><span><i style="background:var(--rest)"></i>REST</span><span><i style="background:var(--stall)"></i>処理の止まり(ms)</span></div>
+<canvas id="c"></canvas><div class="sum" id="sum"></div></div>
+<p style="color:var(--mut)">1分ごとに記録し、14日ぶんを残します。長い期間は、遅い瞬間を見逃さないよう、区間ごとの最大値で表示します。</p>
+<script>
+const HOURS=[1,6,24,72,168];let hours=6,data=null;
+const sel=document.getElementById('sel');
+sel.innerHTML=HOURS.map(h=>`<button data-h="${h}">${h<24?h+'時間':h/24+'日'}</button>`).join('');
+sel.onclick=e=>{const h=+e.target.dataset.h;if(h){hours=h;load();}};
+async function load(){
+  [...sel.children].forEach(b=>b.classList.toggle('on',+b.dataset.h===hours));
+  const r=await fetch('/api/ops/latency?hours='+hours);
+  if(r.status===401){location.href='/auth/login';return}
+  if(r.status===403){document.getElementById('sum').textContent='運営だけが見られます';return}
+  data=await r.json();draw();
+}
+function draw(){
+  const cv=document.getElementById('c'),dpr=devicePixelRatio||1,W=cv.clientWidth,H=cv.clientHeight;cv.width=W*dpr;cv.height=H*dpr;
+  const g=cv.getContext('2d');g.scale(dpr,dpr);g.clearRect(0,0,W,H);
+  const css=n=>getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+  const rows=data.rows,s=data.summary,sm=document.getElementById('sum');
+  const f=v=>v==null?'—':v+'ms';
+  sm.innerHTML=s.n?`<span>ゲートウェイ 平均 <b>${f(s.gwAvg)}</b> / 最大 <b>${f(s.gwMax)}</b></span><span>REST 平均 <b>${f(s.restAvg)}</b> / 最大 <b>${f(s.restMax)}</b></span><span>記録 ${s.n}件</span>`:'まだ記録がありません(BOT起動後1分ごとに記録されます)';
+  if(rows.length<2)return;
+  const L=48,B=24,T=8,R=8,w=W-L-R,h=H-T-B;
+  const vals=rows.flatMap(r=>[r.gateway,r.rest,r.stall]).filter(v=>v!=null);
+  let max=Math.max(100,...vals);const step=[100,200,500,1000,2000,5000,10000,20000].find(x=>x*4>=max)||max/4;max=Math.ceil(max/step)*step;
+  const t0=rows[0].at,t1=rows.at(-1).at,X=t=>L+(t-t0)/(t1-t0||1)*w,Y=v=>T+h-v/max*h;
+  g.font='11px system-ui';g.fillStyle=css('--mut');g.strokeStyle=css('--grid');g.lineWidth=1;
+  for(let v=0;v<=max;v+=step){g.beginPath();g.moveTo(L,Y(v));g.lineTo(W-R,Y(v));g.stroke();g.textAlign='right';g.fillText(v,L-6,Y(v)+4)}
+  g.textAlign='center';for(let i=0;i<=4;i++){const t=t0+(t1-t0)*i/4,d=new Date(t);g.fillText((hours>24?(d.getMonth()+1)+'/'+d.getDate()+' ':'')+String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0'),L+w*i/4,H-6)}
+  const line=(k,c,wd)=>{g.strokeStyle=css(c);g.lineWidth=wd;g.beginPath();let on=false;for(const r of rows){if(r[k]==null){on=false;continue}const x=X(r.at),y=Y(r[k]);on?g.lineTo(x,y):g.moveTo(x,y);on=true}g.stroke()};
+  line('stall','--stall',1.5);line('rest','--rest',2);line('gateway','--gw',2);
+}
+addEventListener('resize',()=>data&&draw());load();setInterval(load,60000);
+</script></main></body></html>

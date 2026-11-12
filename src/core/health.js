@@ -1,5 +1,8 @@
+import { recordLatency, pruneLatency } from './latency.js';
+
 // 止まった記録(/ping で表示する)。直近1時間ぶん
 const stalls = [];
+let stallSinceRecord = 0; // 前回の記録から、いちばん長かった止まり(ms)
 export function healthSnapshot(now = Date.now()) {
   while (stalls.length && now - stalls[0].at > 3600_000) stalls.shift();
   return { count: stalls.length, maxMs: stalls.reduce((a, s) => Math.max(a, s.ms), 0), lastMs: stalls.at(-1)?.ms ?? 0, lastAt: stalls.at(-1)?.at ?? 0 };
@@ -31,6 +34,7 @@ export function startHealthMonitor(client) {
     const used = process.cpuUsage(cpu); cpu = process.cpuUsage();
     if (drift < 1000) return;
     stalls.push({ at: Date.now(), ms: Math.round(drift) });
+    stallSinceRecord = Math.max(stallSinceRecord, Math.round(drift));
     const cpuPct = ((used.user + used.system) / 1000) / (drift + 1000) * 100;
     const m = process.memoryUsage();
     console.warn(`[health] 処理が ${Math.round(drift)}ms 止まりました (CPU ${cpuPct.toFixed(0)}% / メモリ ${Math.round(m.rss / 1048576)}MB / ヒープ ${Math.round(m.heapUsed / 1048576)}MB / Discordとの通信 ${ping()} / REST ${restMs === null ? '不明' : `${restMs}ms`})`);
@@ -43,8 +47,11 @@ export function startHealthMonitor(client) {
       const t0 = performance.now(); await client.rest.get('/gateway'); restMs = Math.round(performance.now() - t0);
       if (restMs > 1500) console.warn(`[health] Discordの通常の通信(REST)が遅いです (${restMs}ms)`);
     } catch { restMs = null; }
+    // 1分ごとに、ゲートウェイ・REST・処理の止まりを、データベースに記録する(ダッシュボードのグラフ用)
+    try { recordLatency({ gateway: client?.ws?.ping, rest: restMs, stall: stallSinceRecord }); stallSinceRecord = 0; } catch (e) { console.warn('[health] 通信の記録に失敗:', e.message); }
   };
   if (client?.rest) { const r = setInterval(probe, 60_000); r.unref?.(); probe(); }
+  const pr = setInterval(() => { try { pruneLatency(); } catch { /* 次の機会に */ } }, 3600_000); pr.unref?.();
   // 30秒ごとに、Discordとの通信が遅くないか確認する(処理が止まっていないのに遅いなら、サーバーのネットワークが原因)
   const n = setInterval(() => { const p = client?.ws?.ping; if (typeof p === 'number' && p > 1500) console.warn(`[health] Discordとの通信が遅いです (往復 ${Math.round(p)}ms)`); }, 30_000);
   n.unref?.();

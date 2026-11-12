@@ -4,6 +4,7 @@ import crypto from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { SqliteStore } from './session-store.js';
+import { latencyRows, latencySummary } from './latency.js';
 import { guildAccess, mountAccessRoutes, resolveAccess, isOperator } from './access.js';
 import { getKV, setKV, db } from './db.js';
 import { mountGithubWebhook } from './webhook.js';
@@ -69,6 +70,12 @@ export function startWeb(client, features) {
   const api = express.Router();
   api.use((req, res, next) => (req.session.user ? next() : res.status(401).json({ error: 'login required' })));
 
+  // 通信の速さの記録(運営だけ)。ゲートウェイ・REST・処理の止まりの推移
+  api.get('/ops/latency', (req, res) => {
+    if (!isOperator(req.session.user.id)) return res.status(403).json({ error: '運営だけが見られます' });
+    const hours = Math.min(336, Math.max(1, Number(req.query.hours) || 6));
+    res.json({ hours, rows: latencyRows(hours), summary: latencySummary(hours) });
+  });
   api.get('/me', (req, res) => res.json({ user: req.session.user }));
   api.get('/features', (req, res) => res.json(features.map((f) => ({ name: f.name, title: f.title, ui: f.ui }))));
   const invite = () => `https://discord.com/oauth2/authorize?${new URLSearchParams({
