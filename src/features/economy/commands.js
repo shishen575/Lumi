@@ -1,6 +1,6 @@
 import { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, MessageFlags } from 'discord.js';
 import { getSettings, money } from './settings.js';
-import { adjustBalance, clearCooldowns, audit, peek, deposit, withdraw, cooldownLeft, setCooldown, jailLeft, jail, release, richest, getBj, saveBj, deleteBj, getHeist, saveHeist, claimHeist, expiredHeists, setHeistDeadline, releaseAll } from './db.js';
+import { transfer, adjustBalance, clearCooldowns, audit, peek, deposit, withdraw, cooldownLeft, setCooldown, jailLeft, jail, release, richest, getBj, saveBj, deleteBj, getHeist, saveHeist, claimHeist, expiredHeists, setHeistDeadline, releaseAll } from './db.js';
 import { ensureAccount, pay, collect, fine, treasury } from './ledger.js';
 import { hasAccessSync, isOperator } from '../../core/access.js';
 import { PermissionFlagsBits } from 'discord.js';
@@ -436,4 +436,22 @@ export const cooldownResetCommand = {
   },
 };
 
-export const commands = [balanceCommand, depositCommand, withdrawCommand, richestCommand, crimeCommand, workCommand, begCommand, bailCommand, chinchiroCommand, slotCommand, blackjackCommand, heistCommand, releaseCommand, balanceEditCommand, cooldownResetCommand];
+export const payCommand = {
+  data: guildOnly(new SlashCommandBuilder().setName('pay').setDescription('手持ちのお金を、他のメンバーに送金します')
+    .addUserOption((o) => o.setName('user').setDescription('送る相手').setRequired(true))
+    .addIntegerOption((o) => o.setName('amount').setDescription('金額').setRequired(true).setMinValue(1).setMaxValue(1_000_000_000))),
+  async execute(i) {
+    const s = await open(i); if (!s) return;
+    const to = i.options.getUser('user'), amount = i.options.getInteger('amount');
+    if (to.bot) return refuse(i, 'BOTには送金できません。');
+    if (to.id === i.user.id) return refuse(i, '自分自身には送金できません。');
+    if (jailLeft(i.guildId, i.user.id)) return refuse(i, '留置場にいる間は、送金できません。');
+    const w = wallet(i);
+    if (w < amount) return refuse(i, `手持ちが足りません。(手持ち ${money(s, Math.max(0, w))})\n-# 銀行にあるお金は、/withdraw で引き出せます`);
+    if (!transfer(i.guildId, i.user.id, to.id, amount)) return refuse(i, '手持ちが足りません。');
+    audit(i.guildId, { id: i.user.id, name: i.member?.displayName ?? i.user.username }, to.id, '送金', amount, '/pay');
+    await i.reply({ content: `💸 <@${i.user.id}> が <@${to.id}> に **${money(s, amount)}** を送金しました。\n-# あなたの手持ち: ${money(s, wallet(i))}`, allowedMentions: { users: [to.id] } });
+  },
+};
+
+export const commands = [balanceCommand, depositCommand, withdrawCommand, richestCommand, crimeCommand, workCommand, begCommand, bailCommand, chinchiroCommand, slotCommand, blackjackCommand, heistCommand, releaseCommand, payCommand, balanceEditCommand, cooldownResetCommand];

@@ -66,6 +66,17 @@ export function takeUpTo(guildId, userId, amount) {
   if (take > 0) addWallet(guildId, userId, -take);
   return take;
 }
+/** 手持ちを、他の人に送る。足りなければ false(同期処理+トランザクションで、二重に送られたり、片方だけ動いたりしない) */
+export function transfer(g, from, to, amount) {
+  db.exec('BEGIN');
+  try {
+    db.prepare('INSERT OR IGNORE INTO eco_accounts (guild_id,user_id,wallet,created_at) VALUES (?,?,0,?)').run(g, to, Date.now());
+    if (!addWallet(g, from, -amount)) { db.exec('ROLLBACK'); return false; }
+    addWallet(g, to, amount);
+    db.exec('COMMIT');
+    return true;
+  } catch (e) { db.exec('ROLLBACK'); throw e; }
+}
 export function deposit(guildId, userId, amount) {
   db.exec('BEGIN');
   try {
