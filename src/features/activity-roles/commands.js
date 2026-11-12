@@ -1,4 +1,6 @@
-import { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } from 'discord.js';
+import { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, MessageFlags } from 'discord.js';
+
+const eph = (on = true) => (on ? { flags: MessageFlags.Ephemeral } : {}); // 自分だけに表示
 import { db } from '../../core/db.js';
 import { METRICS, getRules, getStats, metricValue } from './db.js';
 
@@ -31,7 +33,7 @@ export const rankCommand = {
 
   async execute(i) {
     const user = i.options.getUser('user') ?? i.user;
-    if (user.bot) return i.reply({ content: 'BOTは集計対象外です。', ephemeral: true });
+    if (user.bot) return i.reply({ content: 'BOTは集計対象外です。', ...eph() });
     const gid = i.guildId;
     const stats = getStats(gid, user.id);
     const rules = getRules(gid);
@@ -60,7 +62,7 @@ export const rankCommand = {
       .setAuthor({ name: (i.options.getMember('user') ?? i.member)?.displayName ?? user.username, iconURL: user.displayAvatarURL() })
       .setColor(0x6d5dfc)
       .addFields(fields);
-    await i.reply({ embeds: [embed], ephemeral: i.options.getBoolean('private') ?? false });
+    await i.reply({ embeds: [embed], ...eph(i.options.getBoolean('private') ?? false) });
   },
 };
 
@@ -122,13 +124,13 @@ export const topCommand = {
     const view = await renderTop(i, metric, page);
     page = view.page;
     const msg = await i.reply({ embeds: view.embeds, components: view.components,
-      ephemeral: i.options.getBoolean('private') ?? false, fetchReply: true });
+      ...eph(i.options.getBoolean('private') ?? false), fetchReply: true });
     if (!view.components.length) return;
 
     // ボタンは実行した本人だけが操作できる(2分操作がなければ無効化)
     const collector = msg.createMessageComponentCollector({ idle: 120_000, time: 600_000 });
     collector.on('collect', async (b) => {
-      if (b.user.id !== i.user.id) return b.reply({ content: 'コマンドを実行した人だけがページを切り替えられます。`/top` で自分用に開けます。', ephemeral: true });
+      if (b.user.id !== i.user.id) return b.reply({ content: 'コマンドを実行した人だけがページを切り替えられます。`/top` で自分用に開けます。', ...eph() });
       const cur = await renderTop(i, metric, page);
       const to = { 'top:first': 1, 'top:prev': page - 1, 'top:next': page + 1, 'top:last': cur.pages }[b.customId] ?? page;
       const next = await renderTop(i, metric, to);

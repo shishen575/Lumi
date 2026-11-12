@@ -1,4 +1,4 @@
-import { Events, SlashCommandBuilder, EmbedBuilder } from 'discord.js';
+import { Events, SlashCommandBuilder, EmbedBuilder, MessageFlags } from 'discord.js';
 
 /**
  * 各機能の `commands: [{ data: SlashCommandBuilder, execute(interaction) }]` を集めて登録・実行する。
@@ -25,11 +25,20 @@ export function setupCommands(client, features) {
     if (!i.isChatInputCommand()) return;
     const cmd = byName.get(i.commandName);
     if (!cmd) return;
+    const t0 = Date.now();
+    const lag = t0 - i.createdTimestamp; // コマンドが送られてから、BOTが処理を始めるまで
     try { await cmd.execute(i); }
     catch (e) {
+      if (e.code === 10062) { // 3秒以内に応答できなかった。再試行しても無効なので、要点だけ記録する
+        console.warn(`[commands] /${i.commandName}: 3秒以内に応答できませんでした (受信まで ${lag}ms / 処理 ${Date.now() - t0}ms)`);
+        return;
+      }
       console.error(`[commands] /${i.commandName}:`, e);
-      const msg = { content: 'エラーが発生しました。', ephemeral: true };
+      const msg = { content: 'エラーが発生しました。', flags: MessageFlags.Ephemeral };
       if (i.deferred || i.replied) await i.followUp(msg).catch(() => {}); else await i.reply(msg).catch(() => {});
+    }
+    if (lag > 1500 || Date.now() - t0 > 1500) {
+      console.warn(`[commands] /${i.commandName} が遅れています (受信まで ${lag}ms / 処理 ${Date.now() - t0}ms)`);
     }
   });
   console.log(`[commands] ${cmds.length} 個のコマンドを登録します: ${[...byName.keys()].map((n) => '/' + n).join(' ')}`);
@@ -51,7 +60,7 @@ function helpCommand(cmds, features) {
       if (base && i.memberPermissions?.has('ManageRoles')) {
         embed.addFields({ name: '設定(管理者向け)', value: `ダッシュボード: ${base}` });
       }
-      await i.reply({ embeds: [embed], ephemeral: true });
+      await i.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
     },
   };
 }
