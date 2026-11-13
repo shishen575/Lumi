@@ -1,6 +1,6 @@
 import { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, MessageFlags } from 'discord.js';
 import { getSettings, money } from './settings.js';
-import { shiftsOf, allShifts, addShift, getHeat, addHeat, clearHeat, topWanted, itemQty, allItems, addItem, useItem, transfer, adjustBalance, clearCooldowns, audit, peek, deposit, withdraw, cooldownLeft, setCooldown, jailLeft, jail, release, richest, getBj, saveBj, deleteBj, allBj, claimBj, getHeist, saveHeist, claimHeist, expiredHeists, setHeistDeadline, releaseAll } from './db.js';
+import { shiftsOf, allShifts, addShift, getHeat, addHeat, clearHeat, topWanted, itemQty, allItems, addItem, useItem, transfer, adjustBalance, clearCooldowns, audit, peek, deposit, withdraw, cooldownLeft, setCooldown, jailLeft, jail, release, richest, getBj, saveBj, deleteBj, allBj, claimBj, getRamen, saveRamen, claimRamen, getHeist, saveHeist, claimHeist, expiredHeists, setHeistDeadline, releaseAll } from './db.js';
 import { ensureAccount, pay, collect, fine, treasury } from './ledger.js';
 import { hasAccessSync, isOperator } from '../../core/access.js';
 import { PermissionFlagsBits } from 'discord.js';
@@ -9,8 +9,9 @@ import {
   bjDeal, bjHit, bjStand, bjDouble, handValue, cardText, bjScale,
 } from './games.js';
 import { rankFor, scalePay } from './ranks.js';
+import { RAMEN, makeOrder, gradeRamen, GRADES } from './ramen.js';
 import { POLICE_BONUS_CAP } from './wanted.js';
-import { crimeOf, jobOf, begOf, heistOf, itemOf, marketCfg, wantedCfg, bailPerMin } from './balance.js';
+import { ramenCfg, crimeOf, jobOf, begOf, heistOf, itemOf, marketCfg, wantedCfg, bailPerMin } from './balance.js';
 import { starsOf, stars as starText, bountyOf, chanceDelta } from './wanted.js';
 import { ITEMS, itemById, toolFor, priceOf, marketRate } from './market.js';
 import { CRIMES, JOBS, resolveCrime, resolveWork, resolveBeg } from './jobs.js';
@@ -164,6 +165,7 @@ export const workCommand = {
     const jl = jailLeft(i.guildId, i.user.id); if (jl) return refuse(i, `🚔 留置場にいる間は、バイトはできません。(あと ${dur(jl)})`);
     const cd = cooldownLeft(i.guildId, i.user.id, `work:${key}`); if (cd) return refuse(i, `${j.emoji} ${j.name}のシフトは、あと ${dur(cd)} 後です。`);
     if (budgetEmpty(s, i.guildId)) return refuse(i, BUDGET_EMPTY);
+    if (j.game === 'ramen') return startRamen(i, s, key, j, rng); // ラーメン屋は、ミニゲーム(給料は、出来栄えで決まる)
     // 警察のバイト: 指名手配中の人が多いほど、ボーナス(犯人逮捕の特別手当)が出やすい
     const wantedCount = key === 'police' && s.wantedEnabled ? topWanted(i.guildId, s.wantedDecayMin, 5, 1000).length : 0;
     const policeBase = jobOf(s, 'police').bonus.chance;
@@ -351,6 +353,73 @@ export const blackjackButton = {
     if (st.done) return safeUpdate(i, bjFinish(i, s, st));
     saveBj(i.guildId, uid, g.msg_id, st);
     await safeUpdate(i, { embeds: [bjEmbed(i, s, st, false)], components: bjButtons(i, st, s) });
+  },
+};
+
+/* ================= ラーメン屋のバイト(ミニゲーム) ================= */
+const STEP_LABEL = { soup: 'スープ', noodle: '麺の茹で時間', topping: 'トッピング', fire: '火加減', spice: '辛さ' };
+const stepLabel = (s) => (s.bonus ? '替え玉' : STEP_LABEL[s.kind] ?? s.kind);
+const rmColor = { gold: GOLD, green: GREEN, gray: GRAY, red: RED };
+function rmBody(st, deadline, uid, note = '') {
+  const T = RAMEN[st.order.type], step = st.order.steps[st.idx], total = st.order.steps.length;
+  const done = st.results.map((ok, n) => `${ok ? '✅' : '❌'} ${stepLabel(st.order.steps[n])}`).join('  ');
+  const e = new EmbedBuilder().setColor(BLUE).setTitle(`🍜 ラーメン屋のバイト — ${T.emoji} ${T.name}`).setAuthor({ name: st.name, iconURL: st.avatar })
+    .setDescription(`**${T.gimmick}**: ${T.gimmickText}\n制限時間: <t:${Math.floor(deadline / 1000)}:R> まで ・ 工程 **${st.idx + 1} / ${total}**${done ? `\n${done}` : ''}${note ? `\n${note}` : ''}\n\n${step.prompt}`);
+  const row = new ActionRowBuilder().addComponents(step.options.map((label, k) => new ButtonBuilder().setCustomId(`eco:rm:${uid}:${st.idx}:${k}`).setLabel(label).setStyle(ButtonStyle.Secondary)));
+  return { embeds: [e], components: [row] };
+}
+async function startRamen(i, s, key, j, rng) {
+  const g = i.guildId, u = i.user.id, rc = ramenCfg(s);
+  const old = getRamen(g, u);
+  if (old) { if (Date.now() <= old.deadline + 30_000) return refuse(i, '進行中のラーメンがあります。先に、そちらを仕上げてください。'); claimRamen(g, u); } // 放置されたものは、給料なしで片付ける
+  const st = { order: makeOrder(rng), idx: 0, results: [], base: j.pay[0] + Math.floor(rng() * (j.pay[1] - j.pay[0] + 1)), name: i.member?.displayName ?? i.user.username, avatar: i.user.displayAvatarURL?.() };
+  const deadline = (i.createdTimestamp ?? Date.now()) + rc.timeMs; // コマンドを打った時刻から数える(BOTの処理の遅れで、短くならない)
+  setCooldown(g, u, `work:${key}`, j.cd);
+  saveRamen(g, u, st, deadline); // 先に保存してから返信する
+  try { await i.reply(rmBody(st, deadline, u)); }
+  catch (e) { claimRamen(g, u); setCooldown(g, u, `work:${key}`, 0); throw e; } // 画面を出せなかったときは、働いていないので、待ち時間もなし
+}
+export const ramenButton = {
+  id: 'eco:rm',
+  async execute(i) {
+    const [, , uid, idxS, kS] = i.customId.split(':');
+    if (i.user.id !== uid) return i.reply({ content: 'これは、あなたの注文ではありません。`/work job:ラーメン屋` で、自分のお店を始められます。', ...EPH });
+    const g = i.guildId, s = getSettings(g);
+    const game = getRamen(g, uid);
+    if (!game) return safeUpdate(i, { content: 'このバイトは、すでに終了しています。', embeds: [], components: [] });
+    const st = game.state, now = i.createdTimestamp ?? Date.now();
+    const expired = now > game.deadline + CLICK_GRACE; // 制限時間を過ぎてから押された → いまの出来で、仕上げる
+    let note = '';
+    if (!expired) {
+      if (Number(idxS) !== st.idx) return i.reply({ content: 'その工程は、すでに終わっています。', ...EPH });
+      const step = st.order.steps[st.idx], ok = Number(kS) === step.answer;
+      st.results[st.idx] = ok; if (!ok) st.wrongs = [...(st.wrongs ?? []), { n: st.idx, answer: step.options[step.answer] }];
+      note = ok ? '✅ 正解!' : `❌ 違った… 正解は **${step.options[step.answer]}**`;
+      st.idx++;
+    }
+    if (expired || st.idx >= st.order.steps.length) {
+      const claimed = claimRamen(g, uid); // 取れたときだけ精算する(二重に給料が出ない)
+      if (!claimed) return safeUpdate(i, { content: 'このバイトは、すでに終了しています。', embeds: [], components: [] });
+      const rc = ramenCfg(s), j = jobOf(s, 'ramen'), T = RAMEN[st.order.type];
+      const res = gradeRamen(st.order, st.results, st.base, Math.max(0, game.deadline - now), rc), grade = GRADES[res.grade];
+      const before = s.promotionEnabled ? rankFor(s.jobRanks.ramen, shiftsOf(g, uid, 'ramen')) : null, pct = before?.rank.pct ?? 100;
+      const amount = scalePay(res.amount, pct), p = pay(g, uid, amount, s);
+      let extra = '';
+      if (p.paid > 0) {
+        const n = addShift(g, uid, 'ramen');
+        if (s.promotionEnabled) {
+          const after = rankFor(s.jobRanks.ramen, n);
+          extra = after.index > before.index ? `\n\n🎉 **昇進!** 「${after.rank.name}」になりました!(給料 ×${after.rank.pct / 100})` : `\n-# ${j.emoji} ${after.rank.name} ・ 出勤 ${n}回${after.next ? `(「${after.next.name}」まで あと ${after.left}回)` : '(最高の階級です)'}`;
+        }
+      }
+      const lines = st.order.steps.map((s2, n) => `${st.results[n] ? '✅' : '❌'} ${stepLabel(s2)}${!st.results[n] && s2.options ? `(正解: ${s2.options[s2.answer]})` : ''}`).join('\n');
+      const e = new EmbedBuilder().setColor(rmColor[grade.color]).setTitle(`${T.emoji} ${T.name} — ${grade.label}`).setAuthor({ name: st.name, iconURL: st.avatar })
+        .setDescription(`${expired ? '⏰ 時間切れ! 答えていない工程は、不正解です。\n\n' : ''}${lines}\n\n給料 **+ ${money(s, amount)}**${pct !== 100 ? ` (階級ボーナス ×${pct / 100})` : ''}${res.notes.length ? `\n${res.notes.map((x) => `✨ ${x}`).join('\n')}` : ''}${shortNote(s, p)}${extra}`)
+        .setFooter({ text: `所持金 ${money(s, peek(g, uid).wallet)}` });
+      return safeUpdate(i, { embeds: [e], components: [] });
+    }
+    saveRamen(g, uid, st, game.deadline);
+    await safeUpdate(i, rmBody(st, game.deadline, uid, note));
   },
 };
 

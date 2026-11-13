@@ -28,6 +28,10 @@ export const JOBS = {
     bonus: { chance: 0.2, amount: [300, 800], text: '犯人を逮捕して、特別手当をもらった!' } },
   fastfood: { name: 'ファーストフード', emoji: '🍔', pay: [200, 450], cd: 15 * M, text: ['ハンバーガーを、笑顔で次々と作った。', 'ドライブスルーを、さばき切った。', 'ポテトを揚げ続けて、汗だくになった。'],
     bonus: { chance: 0.25, amount: [100, 300], text: 'ランチタイムが大入りで、チップをもらった!' } },
+
+
+  // ラーメン屋: ミニゲーム(game: 'ramen')。pay は、「大成功」のときの基本の給料。出来栄えで増減する
+  ramen: { name: 'ラーメン屋', emoji: '🍜', pay: [250, 900], cd: 20 * M, game: 'ramen', text: ['注文どおりの一杯を、仕上げた。'] },
 };
 
 export const BEG = {

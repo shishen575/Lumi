@@ -34,6 +34,11 @@ function buildSchema() {
       L.push(p(pre + 'bonusMax', 'バイト', g, 'ボーナス(最大)', j.bonus.amount[1], 0, 1e9, '$', { pair: pre + 'bonusMin', side: 'max' }));
     }
   }
+  const rg = '🍜 ラーメン屋(ミニゲーム)';
+  L.push(p('ramen.timeSec', 'バイト', rg, '制限時間', 120, 20, 600, '秒'));
+  L.push(p('ramen.perfectBonus', 'バイト', rg, '満点(大成功)のボーナス', 20, 0, 300, '%'));
+  L.push(p('ramen.speedBonus', 'バイト', rg, '醤油ラーメン: 早く出したときの最大チップ', 25, 0, 300, '%'));
+  L.push(p('ramen.kaedamaBonus', 'バイト', rg, '豚骨ラーメン: 替え玉を完璧に出したときのチップ', 30, 0, 300, '%'));
   const bg = '🙏 乞食';
   L.push(p('beg.cd', '乞食', bg, '次にできるまでの時間', BEG.cd / MIN, 0, 10080, '分'));
   L.push(p('beg.richPct', '乞食', bg, '大金をもらえる確率', 5, 0, 100, '%'));
@@ -101,6 +106,7 @@ export const jobOf = (s, k) => {
   return { ...j, pay: range(s, pre + 'payMin', pre + 'payMax'), cd: val(s, pre + 'cd') * MIN,
     ...(j.bonus ? { bonus: { ...j.bonus, chance: val(s, pre + 'bonusChance') / 100, amount: range(s, pre + 'bonusMin', pre + 'bonusMax') } } : {}) };
 };
+export const ramenCfg = (s) => ({ timeMs: val(s, 'ramen.timeSec') * 1000, perfectBonus: val(s, 'ramen.perfectBonus'), speedBonus: val(s, 'ramen.speedBonus'), kaedamaBonus: val(s, 'ramen.kaedamaBonus') });
 export const begOf = (s) => ({ ...BEG, cd: val(s, 'beg.cd') * MIN, richPct: val(s, 'beg.richPct'), okPct: val(s, 'beg.okPct'), rich: range(s, 'beg.richMin', 'beg.richMax'), okRange: range(s, 'beg.okMin', 'beg.okMax') });
 export const heistOf = (s, id) => {
   const T = HEISTS[id] ?? HEISTS.bank, pre = `heist.${T.id}.`;

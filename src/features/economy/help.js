@@ -1,7 +1,8 @@
 import { getSettings, money } from './settings.js';
 import { CRIMES, JOBS } from './jobs.js';
 import { POLICE_BONUS_CAP } from './wanted.js';
-import { crimeOf, jobOf, heistOf, itemOf, marketCfg, wantedCfg, bailPerMin } from './balance.js';
+import { RAMEN, GRADES } from './ramen.js';
+import { ramenCfg, crimeOf, jobOf, heistOf, itemOf, marketCfg, wantedCfg, bailPerMin } from './balance.js';
 import { HEISTS } from './heist.js';
 import { ITEMS, toolFor, priceOf, marketRate } from './market.js';
 
@@ -67,6 +68,13 @@ export function jobHelp({ guildId }) {
     '',
     ...Object.keys(JOBS).map((k) => jobOf(s, k)).map((j) => `${j.emoji} **${j.name}** — 給料 ${range(s, j.pay)} ・ 待ち時間 ${dur(j.cd)}${j.bonus ? ` ・ ボーナス ${Math.round(j.bonus.chance * 100)}%(+${range(s, j.bonus.amount)})` : ''}`),
   ].join('\n') });
+  { const rc = ramenCfg(s); sections.push({ name: '🍜 ラーメン屋(ミニゲーム)', value: [
+    `\`/work job:ラーメン屋\` は、**ラーメンを作るミニゲーム**です。お客さんの注文(スープ・麺の茹で時間・トッピング)に、ボタンで答えて作ります。制限時間は **${rc.timeMs / 1000}秒**。出来栄えで、給料が変わります。`,
+    `**大成功**(全問正解)×${GRADES.perfect.mult}(さらに +${rc.perfectBonus}%)/ **成功** ×${GRADES.good.mult} / **まあまあ** ×${GRADES.soso.mult} / **失敗** ×${GRADES.bad.mult}`,
+    '',
+    '**ラーメンごとの、ギミック**',
+    ...Object.values(RAMEN).map((r) => `${r.emoji} **${r.name}** — ${r.gimmick}: ${r.gimmickText}`),
+  ].join('\n') }); }
   if (s.promotionEnabled) {
     sections.push({ name: '📈 昇進', value: ['出勤を重ねると昇進して、給料(ボーナスも)の倍率が上がります。', '',
       ...Object.entries(JOBS).map(([k, j]) => `${j.emoji} **${j.name}**: ${s.jobRanks[k].map((r) => `${r.name}${r.shifts ? `(${r.shifts}回〜)` : ''} ×${r.pct / 100}`).join(' → ')}`)].join('\n') });

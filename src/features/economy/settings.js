@@ -20,7 +20,11 @@ export const DEFAULTS = {
 };
 const clamp = (v, lo, hi, def) => { const n = Math.floor(Number(v)); return Number.isFinite(n) ? Math.min(hi, Math.max(lo, n)) : def; };
 
-export const getSettings = (guildId) => ({ ...DEFAULTS, ...getKV(guildId, 'economy', {}) });
+export const getSettings = (guildId) => {
+  const s = { ...DEFAULTS, ...getKV(guildId, 'economy', {}) };
+  s.jobRanks = { ...DEFAULT_RANKS, ...s.jobRanks }; // あとから増えた職業(ラーメン屋など)の階級は、初期値で補う
+  return s;
+};
 export function saveSettings(guildId, s) {
   const cur = getSettings(guildId);
   const next = {

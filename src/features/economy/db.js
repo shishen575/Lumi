@@ -40,6 +40,10 @@ CREATE TABLE IF NOT EXISTS eco_wanted (           -- 指名手配の手配度(�
   guild_id TEXT NOT NULL, user_id TEXT NOT NULL, heat INTEGER NOT NULL DEFAULT 0, at INTEGER NOT NULL,
   PRIMARY KEY (guild_id, user_id)
 );
+CREATE TABLE IF NOT EXISTS eco_ramen (            -- 進行中のラーメン屋のバイト(1人1ゲーム)。再起動しても続けられる
+  guild_id TEXT NOT NULL, user_id TEXT NOT NULL, state TEXT NOT NULL, deadline INTEGER NOT NULL, started_at INTEGER NOT NULL,
+  PRIMARY KEY (guild_id, user_id)
+);
 CREATE TABLE IF NOT EXISTS eco_audit (            -- 管理者の操作の記録(だれが・だれに・何を・いくら)
   id INTEGER PRIMARY KEY AUTOINCREMENT, guild_id TEXT NOT NULL, actor_id TEXT NOT NULL, actor_name TEXT NOT NULL,
   target_id TEXT, action TEXT NOT NULL, amount INTEGER, note TEXT, at INTEGER NOT NULL
@@ -180,6 +184,13 @@ export const topWanted = (g, decayMin = 30, minHeat = 5, limit = 10, now = Date.
   db.prepare('SELECT user_id, heat, at FROM eco_wanted WHERE guild_id=?').all(g)
     .map((r) => ({ user_id: r.user_id, heat: decayed(r, decayMin, now) })).filter((r) => r.heat >= minHeat)
     .sort((a, b) => b.heat - a.heat).slice(0, limit);
+/* ---------- ラーメン屋のバイトの進行状況 ---------- */
+const ramenRow = (r) => r && { ...r, state: JSON.parse(r.state) };
+export const getRamen = (g, u) => ramenRow(db.prepare('SELECT * FROM eco_ramen WHERE guild_id=? AND user_id=?').get(g, u));
+export const saveRamen = (g, u, state, deadline) => db.prepare(`INSERT INTO eco_ramen (guild_id,user_id,state,deadline,started_at) VALUES (?,?,?,?,?)
+  ON CONFLICT(guild_id,user_id) DO UPDATE SET state=excluded.state`).run(g, u, JSON.stringify(state), deadline, Date.now());
+/** ゲームを終わらせる。取れたら、そのゲームを返す(同時に2か所から終わらせても、片方しか取れない=二重に給料が出ない) */
+export const claimRamen = (g, u) => ramenRow(db.prepare('DELETE FROM eco_ramen WHERE guild_id=? AND user_id=? RETURNING *').get(g, u));
 export const setHeistDeadline = (g, u, deadline) => db.prepare('UPDATE eco_heist SET deadline=? WHERE guild_id=? AND user_id=?').run(deadline, g, u);
 /** ゲームを終わらせる。取れたら、そのゲームを返す(同時に2か所から終わらせても、片方しか取れない=二重に精算されない) */
 export const claimHeist = (g, u) => heistRow(db.prepare('DELETE FROM eco_heist WHERE guild_id=? AND user_id=? RETURNING *').get(g, u));
