@@ -1,5 +1,6 @@
 import { getKV, setKV } from '../../core/db.js';
 import { DEFAULT_RANKS, sanitizeRanks } from './ranks.js';
+import { sanitizeBalance } from './balance.js';
 
 // サーバーごとの設定。既定はオフ(管理者がダッシュボードでオンにする)
 export const DEFAULTS = {
@@ -14,6 +15,7 @@ export const DEFAULTS = {
   bountyPerStar: 1000,     // 星1つぶんの懸賞金
   policeBonusPerWanted: 5, // 指名手配中の人が1人いるごとに、警察のバイトのボーナス確率が上がる量(%)
   arrestMinShifts: 5,      // /arrest を使うのに必要な、警察のバイトの出勤回数
+  balance: {},             // ゲームバランスの上書き({ キー: 数値 })。ダッシュボードの「ゲームバランス」で変える。なければ初期値
   allowDebt: true,       // 借金を許可するか。許可すると、罰金などで、所持金が0より下になる(0以下の間は、犯罪ができない)
 };
 const clamp = (v, lo, hi, def) => { const n = Math.floor(Number(v)); return Number.isFinite(n) ? Math.min(hi, Math.max(lo, n)) : def; };
@@ -31,6 +33,7 @@ export function saveSettings(guildId, s) {
     budgetEnabled: s.budgetEnabled === undefined ? cur.budgetEnabled : !!s.budgetEnabled,
     allowDebt: s.allowDebt === undefined ? cur.allowDebt : !!s.allowDebt,
     blackMarket: s.blackMarket === undefined ? cur.blackMarket : !!s.blackMarket,
+    balance: s.balance === undefined ? cur.balance : sanitizeBalance(s.balance, cur.balance),
     promotionEnabled: s.promotionEnabled === undefined ? cur.promotionEnabled : !!s.promotionEnabled,
     jobRanks: s.jobRanks === undefined ? cur.jobRanks : sanitizeRanks(s.jobRanks, cur.jobRanks),
     wantedEnabled: s.wantedEnabled === undefined ? cur.wantedEnabled : !!s.wantedEnabled,

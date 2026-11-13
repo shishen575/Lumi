@@ -5,19 +5,33 @@ import { treasury, setTreasury, addTreasury, circulation, pay } from './ledger.j
 import { JOBS, CRIMES } from './jobs.js';
 import { HEISTS } from './heist.js';
 import { DEFAULT_RANKS, MAX_RANKS } from './ranks.js';
-import { HEAT, HEAT_PER_STAR, CHANCE_PENALTY_PER_STAR, ARREST, POLICE_BONUS_CAP } from './wanted.js';
+import { POLICE_BONUS_CAP } from './wanted.js';
+import { SCHEMA, jobOf, wantedCfg } from './balance.js';
 import { SLOT_SYMBOLS, CHERRY_TWO, CHERRY_ONE, slotRtp, slotScale, chinchiroScale, bjScale, bjStats } from './games.js';
 
 /** router は /api/guilds/:gid/f/economy に載っていて、req.guild / req.access が使える */
 export function mountApi(router) {
   const view = (req) => ({ ...getSettings(req.guild.id), treasury: treasury(req.guild.id), circulation: circulation(req.guild.id), canEditBudget: canEditAccess(req.access) });
 
-  // 職業の昇進・指名手配の設定画面に必要な、固定の情報
-  router.get('/jobs-meta', (req, res) => res.json({
-    jobs: Object.entries(JOBS).map(([key, j]) => ({ key, name: j.name, emoji: j.emoji })), defaults: DEFAULT_RANKS, maxRanks: MAX_RANKS,
-    heat: [...Object.entries(CRIMES).map(([k, c]) => ({ name: `${c.emoji} ${c.name}`, heat: HEAT.crime[k] ?? 1 })), ...Object.values(HEISTS).map((T) => ({ name: `${T.emoji} ${T.name}`, heat: HEAT.heist[T.id] ?? 4 }))],
-    heatPerStar: HEAT_PER_STAR, penaltyPerStar: Math.round(CHANCE_PENALTY_PER_STAR * 100), arrestChance: Math.round(ARREST.chance * 100), arrestCdMin: ARREST.cd / 60000, bonusBase: Math.round(JOBS.police.bonus.chance * 100), bonusCap: Math.round(POLICE_BONUS_CAP * 100),
-  }));
+  // 職業の昇進・指名手配の設定画面に必要な情報(数字は、このサーバーの設定を反映)
+  router.get('/jobs-meta', (req, res) => {
+    const s = getSettings(req.guild.id), wc = wantedCfg(s);
+    res.json({
+      jobs: Object.entries(JOBS).map(([key, j]) => ({ key, name: j.name, emoji: j.emoji })), defaults: DEFAULT_RANKS, maxRanks: MAX_RANKS,
+      heat: [...Object.entries(CRIMES).map(([k, c]) => ({ name: `${c.emoji} ${c.name}`, heat: wc.heatCrime(k) })), ...Object.values(HEISTS).map((T) => ({ name: `${T.emoji} ${T.name}`, heat: wc.heatHeist(T.id) }))],
+      heatPerStar: wc.heatPerStar, penaltyPerStar: Math.round(wc.penalty * 100), arrestChance: Math.round(wc.arrestChance * 100), arrestCdMin: wc.arrestCd / 60000,
+      bonusBase: Math.round(jobOf(s, 'police').bonus.chance * 100), bonusCap: Math.round(POLICE_BONUS_CAP * 100),
+    });
+  });
+  // ゲームバランス: 変えられる数字の一覧(初期値・いまの値)と、保存
+  router.get('/balance', (req, res) => {
+    const s = getSettings(req.guild.id);
+    res.json({ currencyEmoji: s.currencyEmoji, params: SCHEMA.map((x) => ({ ...x, value: s.balance?.[x.key] ?? null })) });
+  });
+  router.put('/balance', (req, res) => {
+    const s = saveSettings(req.guild.id, { balance: req.body?.values ?? {} }); // { キー: 数値 | null(初期値に戻す) }
+    res.json({ overrides: s.balance, count: Object.keys(s.balance).length });
+  });
   router.get('/settings', (req, res) => res.json(view(req)));
   router.put('/settings', (req, res) => {
     const b = req.body ?? {};

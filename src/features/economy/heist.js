@@ -11,27 +11,27 @@ const shuffle = (rng, arr) => { const a = [...arr]; for (let i = a.length - 1; i
 const ALL = ['arithmetic', 'sequence', 'oddOne', 'wire', 'largest', 'countIcons'];
 export const HEISTS = {
   bank: {
-    id: 'bank', name: '大型銀行強盗', short: '大型銀行', emoji: '🏦', blurb: '標準。5問・60秒',
+    id: 'bank', name: '大型銀行強盗', short: '大型銀行', emoji: '🏦', blurb: '標準',
     steps: 5, timeMs: 60_000, maxMistakes: 2, win: [6000, 15000], speedBonus: 0.25, fine: [3000, 6000], jail: 30 * M, cd: 180 * M,
     makers: ['arithmetic', 'sequence', 'oddOne', 'wire'], success: '金庫を開けて、大金を持ち出した!', caught: '警備員に見つかった。',
   },
   armored: {
-    id: 'armored', name: '現金輸送車の襲撃', short: '現金輸送車', emoji: '🚚', blurb: '易しい。4問・45秒',
+    id: 'armored', name: '現金輸送車の襲撃', short: '現金輸送車', emoji: '🚚', blurb: '易しい',
     steps: 4, timeMs: 45_000, maxMistakes: 2, win: [3500, 8000], speedBonus: 0.25, fine: [1800, 3500], jail: 20 * M, cd: 120 * M,
     makers: ['arithmetic', 'wire', 'largest', 'countIcons'], success: '輸送車の荷台から、現金のケースを奪って逃げた!', caught: '護衛に取り押さえられた。',
   },
   museum: {
-    id: 'museum', name: '美術館の名画', short: '美術館', emoji: '🖼️', blurb: '慎重に。5問・1回しか間違えられない',
+    id: 'museum', name: '美術館の名画', short: '美術館', emoji: '🖼️', blurb: '慎重に',
     steps: 5, timeMs: 60_000, maxMistakes: 1, win: [8000, 18000], speedBonus: 0.25, fine: [4500, 8500], jail: 40 * M, cd: 240 * M,
     makers: ['oddOne', 'wire', 'countIcons', 'sequence'], success: '名画を額縁ごと盗み出し、闇市場に売りさばいた!', caught: 'センサーが反応して、警備隊に囲まれた。',
   },
   casino: {
-    id: 'casino', name: 'カジノの金庫', short: 'カジノ', emoji: '🎰', blurb: '長丁場。6問・60秒',
+    id: 'casino', name: 'カジノの金庫', short: 'カジノ', emoji: '🎰', blurb: '長丁場',
     steps: 6, timeMs: 60_000, maxMistakes: 2, win: [10000, 24000], speedBonus: 0.25, fine: [6000, 11000], jail: 50 * M, cd: 300 * M,
     makers: ALL, success: '一晩の売り上げを、まるごと持ち出した!', caught: '監視室に気づかれた。',
   },
   vault: {
-    id: 'vault', name: '国立宝物庫', short: '宝物庫', emoji: '💎', blurb: '最難関。8問・75秒',
+    id: 'vault', name: '国立宝物庫', short: '宝物庫', emoji: '💎', blurb: '最難関',
     steps: 8, timeMs: 75_000, maxMistakes: 2, win: [26000, 60000], speedBonus: 0.25, fine: [14000, 24000], jail: 90 * M, cd: 600 * M,
     makers: ALL, success: '国の宝を、ごっそり持ち出した!', caught: '特殊部隊に包囲された。',
   },

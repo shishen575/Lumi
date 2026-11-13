@@ -98,6 +98,48 @@ Dash.registerTab({
         const q = (x) => el.querySelector(x);
         q('#save').onclick = async () => { await api('/settings', { method: 'PUT', body: { wantedEnabled: q('#we').checked, wantedDecayMin: q('#wd').value, bountyPerStar: q('#wb').value, arrestMinShifts: q('#wa').value, policeBonusPerWanted: q('#wp').value } }); toast('保存しました'); };
       } },
+    /* ===== ゲームバランス(ゲームの数字を、すべて変えられる) ===== */
+    { id: 'balance', title: 'ゲームバランス', icon: 'shield',
+      async render(el, { api, esc, toast, pageHeader, confirm }) {
+        const data = await api('/balance');
+        const unit = (u) => (u === '$' ? esc(data.currencyEmoji) : esc(u));
+        const sections = [];
+        for (const p of data.params) {
+          let s = sections.find((x) => x.name === p.section); if (!s) sections.push((s = { name: p.section, groups: [] }));
+          let g = s.groups.find((x) => x.name === p.group); if (!g) s.groups.push((g = { name: p.group, params: [] }));
+          g.params.push(p);
+        }
+        el.innerHTML = `${pageHeader('ゲームバランス', '犯罪・バイト・乞食・大型犯罪・道具の値段・指名手配・保釈金の数字を、すべて変えられます。空欄のままの項目は、初期値のままです(灰色の文字が、初期値)。')}
+          <div class="card"><div class="field" style="margin:0"><label class="f" for="bf">項目を探す</label><input id="bf" type="search" style="width:100%" placeholder="例: 成功率 / 銀行 / 警察 / 罰金"></div>
+            <p class="hint" style="margin:8px 0 0">変えた項目には <b>●</b> が付きます。「保存」を押すまで、反映されません。報酬の「最小」が「最大」より大きいときは、保存時に入れ替わります。</p></div>
+          ${sections.map((s) => `<h2 class="sec" style="margin:22px 0 8px">${esc(s.name)}</h2>${s.groups.map((g) => `<details class="card" data-g="${esc(g.name)}"><summary style="cursor:pointer;font-weight:700">${esc(g.name)} <span class="badge mut" data-cnt></span></summary>
+            <div class="bl" style="margin-top:10px">${g.params.map((p) => `<div class="br" data-k="${p.key}" data-t="${esc(p.label + ' ' + g.name + ' ' + s.name)}" style="display:grid;grid-template-columns:minmax(0,1fr) 130px 52px;gap:8px;align-items:center;margin-bottom:6px">
+              <label for="p-${p.key}" style="min-width:0">${esc(p.label)} <span class="mut small" data-dot></span></label>
+              <input id="p-${p.key}" type="number" min="${p.min}" max="${p.max}" value="${p.value ?? ''}" placeholder="${p.def}" data-def="${p.def}" data-init="${p.value ?? ''}">
+              <span class="mut small">${unit(p.unit)}</span></div>`).join('')}
+              <div class="acts" style="margin-top:8px"><button class="btn ghost" type="button" data-reset-g>このグループを初期値に戻す</button></div></div></details>`).join('')}`).join('')}
+          <div class="acts" style="margin-top:18px"><button class="btn" id="save" type="button">保存</button><button class="btn ghost" id="resetall" type="button">すべて初期値に戻す</button></div>`;
+        const inputs = () => [...el.querySelectorAll('.br input')];
+        const refresh = () => {
+          el.querySelectorAll('.br').forEach((row) => { const i = row.querySelector('input'); row.querySelector('[data-dot]').textContent = i.value !== '' && i.value !== i.dataset.def ? '●' : ''; });
+          el.querySelectorAll('details[data-g]').forEach((d) => { const n = [...d.querySelectorAll('.br input')].filter((i) => i.value !== '' && i.value !== i.dataset.def).length; const c = d.querySelector('[data-cnt]'); c.textContent = n ? `${n}件 変更` : ''; c.hidden = !n; });
+        };
+        el.addEventListener('input', refresh); refresh();
+        el.querySelector('#bf').oninput = (e) => {
+          const q = e.target.value.trim().toLowerCase();
+          el.querySelectorAll('.br').forEach((r) => { r.style.display = !q || r.dataset.t.toLowerCase().includes(q) ? '' : 'none'; });
+          el.querySelectorAll('details[data-g]').forEach((d) => { const any = [...d.querySelectorAll('.br')].some((r) => r.style.display !== 'none'); d.style.display = any ? '' : 'none'; if (q && any) d.open = true; });
+        };
+        el.querySelectorAll('[data-reset-g]').forEach((b) => (b.onclick = () => { b.closest('details').querySelectorAll('.br input').forEach((i) => (i.value = '')); refresh(); }));
+        el.querySelector('#resetall').onclick = async () => { if (await confirm({ title: 'すべて初期値に戻す', message: 'ゲームバランスの数字を、すべて初期値に戻します(保存を押すまで反映されません)。', ok: '戻す', danger: true })) { inputs().forEach((i) => (i.value = '')); refresh(); } };
+        el.querySelector('#save').onclick = async () => {
+          const values = {}; inputs().forEach((i) => { values[i.closest('.br').dataset.k] = i.value === '' ? null : Number(i.value); });
+          const r = await api('/balance', { method: 'PUT', body: { values } });
+          toast(r.count ? `保存しました(${r.count}件を変更中)` : '保存しました(すべて初期値です)');
+          const fresh = await api('/balance'); const byKey = new Map(fresh.params.map((p) => [p.key, p.value]));
+          inputs().forEach((i) => { const v = byKey.get(i.closest('.br').dataset.k); i.value = v ?? ''; i.dataset.init = v ?? ''; }); refresh();
+        };
+      } },
     /* ===== 留置場 ===== */
     { id: 'jail', title: '留置場', icon: 'alert',
       async render(el, { api, esc, ic, toast, confirm, pageHeader }) {

@@ -1,15 +1,16 @@
 import { getSettings, money } from './settings.js';
 import { CRIMES, JOBS } from './jobs.js';
-import { HEAT, HEAT_PER_STAR, CHANCE_PENALTY_PER_STAR, ARREST, POLICE_BONUS_CAP } from './wanted.js';
+import { POLICE_BONUS_CAP } from './wanted.js';
+import { crimeOf, jobOf, heistOf, itemOf, marketCfg, wantedCfg, bailPerMin } from './balance.js';
 import { HEISTS } from './heist.js';
-import { ITEMS, MAX_STACK, toolFor, priceOf, marketRate } from './market.js';
+import { ITEMS, toolFor, priceOf, marketRate } from './market.js';
 
 const dur = (ms) => { const m = Math.round(ms / 60_000); return m >= 60 ? (m % 60 ? `${Math.floor(m / 60)}時間${m % 60}分` : `${Math.floor(m / 60)}時間`) : `${m}分`; };
 const range = (s, [a, b]) => `${money(s, a)}〜${money(s, b)}`;
 
 /** /help topic:犯罪 の中身。数字は、ゲームの設定から作るので、いつも実際の値と合う。各欄は1024字以内 */
 export function crimeHelp({ guildId }) {
-  const s = getSettings(guildId), mk = s.blackMarket;
+  const s = getSettings(guildId), mk = s.blackMarket, wc = wantedCfg(s), mc = marketCfg(s); // 数字は、サーバーの設定(ゲームバランス)を反映
   const toolNote = (kind, key) => { const t = toolFor(kind, key); return mk && t ? ` ・ 必要な道具: ${t.emoji} ${t.name}` : ''; };
   const sections = [];
 
@@ -22,30 +23,30 @@ export function crimeHelp({ guildId }) {
     mk ? '・このサーバーでは**闇マーケット**がオンです。犯罪には、専用の**道具**が必要です(1回の挑戦で1つ使います)' : '・このサーバーでは、道具なしで挑戦できます(管理者が闇マーケットをオンにすると、道具が必要になります)',
   ].join('\n') });
 
-  sections.push({ name: '🚨 犯罪 `/crime`(運で決まります)', value: Object.entries(CRIMES).map(([k, c]) =>
+  sections.push({ name: '🚨 犯罪 `/crime`(運で決まります)', value: Object.keys(CRIMES).map((k) => [k, crimeOf(s, k)]).map(([k, c]) =>
     `${c.emoji} **${c.name}** — 成功率 **${Math.round(c.chance * 100)}%**\n　成功 ${range(s, c.win)} ・ 失敗 罰金 ${range(s, c.fine)}・留置場 ${dur(c.jail)} ・ 待ち時間 ${dur(c.cd)}${toolNote('crime', k)}`).join('\n') });
 
   sections.push({ name: '🏦 大型犯罪 `/heist target:場所`(腕で決まります)', value: [
     '制限時間内に、ボタンで問題(計算・数列・仲間はずれ・配線・暗証番号・監視カメラの数え上げ)に答えます。全部解ければ成功。間違えられる回数を超えるか、時間切れで失敗です。早く終えるほど、報酬は**最大+25%**。待ち時間は、場所ごとです。',
     '',
-    ...Object.values(HEISTS).map((T) =>
+    ...Object.keys(HEISTS).map((id) => heistOf(s, id)).map((T) =>
       `${T.emoji} **${T.short}** — ${T.steps}問・${T.timeMs / 1000}秒・間違いは${T.maxMistakes}回まで\n　成功 ${range(s, T.win)} ・ 失敗 罰金 ${range(s, T.fine)}・留置場 ${dur(T.jail)} ・ 待ち時間 ${dur(T.cd)}${toolNote('heist', T.id)}`),
   ].join('\n') });
 
   if (mk) {
     sections.push({ name: '🕶️ 闇マーケット `/market`(今日の相場)', value: [
-      '`/market list` で相場と所持数、`/market buy` で購入。値段は毎日少し変わります(基本の0.8〜1.3倍)。1種類につき、最大' + MAX_STACK + '個まで。',
+      '`/market list` で相場と所持数、`/market buy` で購入。値段は毎日少し変わります(基本の' + mc.range[0] + '〜' + mc.range[1] + '倍)。1種類につき、最大' + mc.maxStack + '個まで。',
       '',
-      ...ITEMS.map((x) => { const r = marketRate(guildId, x.id); return `${x.emoji} **${x.name}** ${money(s, priceOf(guildId, x))}${r < 0.95 ? ' 📉' : r > 1.15 ? ' 📈' : ''} — ${x.desc}`; }),
+      ...ITEMS.map((x) => { const r = marketRate(guildId, x.id, undefined, mc.range); return `${x.emoji} **${x.name}** ${money(s, priceOf(guildId, itemOf(s, x), undefined, mc.range))}${r < 0.95 ? ' 📉' : r > 1.15 ? ' 📈' : ''} — ${x.desc}`; }),
     ].join('\n') });
   } else {
     sections.push({ name: '🕶️ 闇マーケット', value: 'このサーバーでは、**オフ**です。管理者が、ダッシュボードの「通貨」でオンにすると、犯罪に道具が必要になり、`/market` で買えるようになります。' });
   }
 
-  if (s.wantedEnabled) sections.push({ name: '🚨 指名手配', value: `犯罪・大型犯罪に成功すると、手配度が溜まり、星(⭐)が付きます。星1つにつき、犯罪の成功率が ${Math.round(CHANCE_PENALTY_PER_STAR * 100)}% 下がります。警察のバイトを重ねた人に、\`/arrest\` で逮捕されると、留置場に入り、懸賞金を取られます(手配書は \`/wanted\`)。捕まる(失敗する)と、手配は解除されます。詳しくは \`/help topic:職業\`` });
+  if (s.wantedEnabled) sections.push({ name: '🚨 指名手配', value: `犯罪・大型犯罪に成功すると、手配度が溜まり、星(⭐)が付きます。星1つにつき、犯罪の成功率が ${Math.round(wc.penalty * 100)}% 下がります。警察のバイトを重ねた人に、\`/arrest\` で逮捕されると、留置場に入り、懸賞金を取られます(手配書は \`/wanted\`)。捕まる(失敗する)と、手配は解除されます。詳しくは \`/help topic:職業\`` });
   sections.push({ name: '🔓 留置場と保釈', value: [
     '犯罪に失敗すると、留置場に入ります。入っている間は、犯罪ができません。',
-    '・`/bail` — 保釈金を払って出ます(残り**1分につき ' + money(s, 100) + '**)',
+    '・`/bail` — 保釈金を払って出ます(残り**1分につき ' + money(s, bailPerMin(s)) + '**)',
     '・管理者は、`/release` や、ダッシュボードの「留置場」から、釈放できます',
     '・罰金は、管理者が、ダッシュボードの「残高の調整」から、1つの罰金につき1回だけ返金できます',
   ].join('\n') });
@@ -60,11 +61,11 @@ export function crimeHelp({ guildId }) {
 
 /** /help topic:職業 の中身(バイト・昇進・指名手配) */
 export function jobHelp({ guildId }) {
-  const s = getSettings(guildId), sections = [];
+  const s = getSettings(guildId), wc = wantedCfg(s), sections = [];
   sections.push({ name: '💼 バイト `/work`', value: [
     '安全に稼げます(失敗はありません)。種類ごとに、待ち時間があります。`/job` で、自分の階級と出勤回数を見られます。',
     '',
-    ...Object.values(JOBS).map((j) => `${j.emoji} **${j.name}** — 給料 ${range(s, j.pay)} ・ 待ち時間 ${dur(j.cd)}${j.bonus ? ` ・ ボーナス ${Math.round(j.bonus.chance * 100)}%(+${range(s, j.bonus.amount)})` : ''}`),
+    ...Object.keys(JOBS).map((k) => jobOf(s, k)).map((j) => `${j.emoji} **${j.name}** — 給料 ${range(s, j.pay)} ・ 待ち時間 ${dur(j.cd)}${j.bonus ? ` ・ ボーナス ${Math.round(j.bonus.chance * 100)}%(+${range(s, j.bonus.amount)})` : ''}`),
   ].join('\n') });
   if (s.promotionEnabled) {
     sections.push({ name: '📈 昇進', value: ['出勤を重ねると昇進して、給料(ボーナスも)の倍率が上がります。', '',
@@ -74,12 +75,12 @@ export function jobHelp({ guildId }) {
   }
   if (s.wantedEnabled) {
     sections.push({ name: '🚨 指名手配', value: [
-      `犯罪・大型犯罪に**成功**すると、**手配度**が溜まります。手配度が ${HEAT_PER_STAR} 増えるごとに、星(⭐)が1つ(最大5つ)。星1つにつき、犯罪の成功率が **${Math.round(CHANCE_PENALTY_PER_STAR * 100)}%** 下がります。手配度は、**${s.wantedDecayMin}分ごとに1** 下がります。捕まる(失敗する)と、手配は解除されます。`,
+      `犯罪・大型犯罪に**成功**すると、**手配度**が溜まります。手配度が ${wc.heatPerStar} 増えるごとに、星(⭐)が1つ(最大5つ)。星1つにつき、犯罪の成功率が **${Math.round(wc.penalty * 100)}%** 下がります。手配度は、**${s.wantedDecayMin}分ごとに1** 下がります。捕まる(失敗する)と、手配は解除されます。`,
       '・`/wanted` — 手配書(手配中の人と、懸賞金)。`user` で、1人を調べられます',
-      `・\`/arrest\` — 指名手配中の人を逮捕。**警察のバイトを ${s.arrestMinShifts}回 以上**した人だけ。成功率 ${Math.round(ARREST.chance * 100)}%、待ち時間 ${dur(ARREST.cd)}。成功すると、**懸賞金**(星1つ ${money(s, s.bountyPerStar)})がもらえて、相手は留置場に入ります`,
-      `・**警察のバイトのボーナス**は、手配中の人が1人増えるごとに **+${s.policeBonusPerWanted}%**(基本 ${Math.round(JOBS.police.bonus.chance * 100)}% → 上限 ${Math.round(POLICE_BONUS_CAP * 100)}%)`,
+      `・\`/arrest\` — 指名手配中の人を逮捕。**警察のバイトを ${s.arrestMinShifts}回 以上**した人だけ。成功率 ${Math.round(wc.arrestChance * 100)}%、待ち時間 ${dur(wc.arrestCd)}。成功すると、**懸賞金**(星1つ ${money(s, s.bountyPerStar)})がもらえて、相手は留置場に入ります`,
+      `・**警察のバイトのボーナス**は、手配中の人が1人増えるごとに **+${s.policeBonusPerWanted}%**(基本 ${Math.round(jobOf(s, 'police').bonus.chance * 100)}% → 上限 ${Math.round(POLICE_BONUS_CAP * 100)}%)`,
       '',
-      '手配度の上がり方: ' + [...Object.entries(CRIMES).map(([k, c]) => `${c.emoji}+${HEAT.crime[k] ?? 1}`), ...Object.values(HEISTS).map((T) => `${T.emoji}+${HEAT.heist[T.id] ?? 4}`)].join(' '),
+      '手配度の上がり方: ' + [...Object.entries(CRIMES).map(([k, c]) => `${c.emoji}+${wc.heatCrime(k)}`), ...Object.values(HEISTS).map((T) => `${T.emoji}+${wc.heatHeist(T.id)}`)].join(' '),
     ].join('\n') });
   } else {
     sections.push({ name: '🚨 指名手配', value: 'このサーバーでは、**オフ**です。管理者が、ダッシュボードの「通貨 → 指名手配」でオンにすると、犯罪で手配度が溜まり、警察のバイトを重ねた人が `/arrest` で逮捕して、懸賞金をもらえます。' });

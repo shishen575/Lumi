@@ -133,6 +133,10 @@ export const richest = (guildId, limit = 10) =>
 export const getBj = (g, u) => { const r = db.prepare('SELECT * FROM eco_bj WHERE guild_id=? AND user_id=?').get(g, u); return r && { ...r, state: JSON.parse(r.state) }; };
 export const saveBj = (g, u, msgId, state) => db.prepare(`INSERT INTO eco_bj (guild_id,user_id,msg_id,state,started_at) VALUES (?,?,?,?,?)
   ON CONFLICT(guild_id,user_id) DO UPDATE SET msg_id=excluded.msg_id, state=excluded.state`).run(g, u, msgId, JSON.stringify(state), Date.now());
+/** 進行中のブラックジャックを、すべて(サーバー単位) */
+export const allBj = (g) => db.prepare('SELECT * FROM eco_bj WHERE guild_id=?').all(g).map((r) => ({ ...r, state: JSON.parse(r.state) }));
+/** ゲームを終わらせる。取れたら、そのゲームを返す(同時に2か所から終わらせても、片方しか取れない=二重に返金されない) */
+export const claimBj = (g, u) => { const r = db.prepare('DELETE FROM eco_bj WHERE guild_id=? AND user_id=? RETURNING *').get(g, u); return r && { ...r, state: JSON.parse(r.state) }; };
 export const deleteBj = (g, u) => db.prepare('DELETE FROM eco_bj WHERE guild_id=? AND user_id=?').run(g, u);
 
 /* ---------- 大型銀行強盗の進行状況 ---------- */

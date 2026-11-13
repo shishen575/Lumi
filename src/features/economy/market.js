@@ -29,9 +29,9 @@ export const missingTools = () => [
 ];
 
 /** 闇相場: サーバー・日・道具ごとに決まる倍率(0.8〜1.3)。同じ日は、同じ値段 */
-export function marketRate(guildId, itemId, day = Math.floor(Date.now() / 86400000)) {
+export function marketRate(guildId, itemId, day = Math.floor(Date.now() / 86400000), [lo, hi] = [0.8, 1.3]) {
   let h = 2166136261;
   for (const ch of `${guildId}:${itemId}:${day}`) { h ^= ch.charCodeAt(0); h = Math.imul(h, 16777619) >>> 0; }
-  return 0.8 + (h % 51) / 100; // 0.80 〜 1.30
+  return lo + (h % 1001) / 1000 * (hi - lo); // 下限〜上限(初期値は 0.80〜1.30)
 }
-export const priceOf = (guildId, item, day) => Math.max(1, Math.round(item.price * marketRate(guildId, item.id, day)));
+export const priceOf = (guildId, item, day, range) => Math.max(1, Math.round(item.price * marketRate(guildId, item.id, day, range)));

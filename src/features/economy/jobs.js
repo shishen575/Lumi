@@ -38,17 +38,18 @@ export const BEG = {
 };
 
 export function resolveCrime(key, rng = Math.random, chanceDelta = 0) {
-  const c = CRIMES[key]; const success = rng() < Math.min(0.95, Math.max(0.05, c.chance + chanceDelta)); // 指名手配の星で、成功率が下がる
+  const c = typeof key === 'string' ? CRIMES[key] : key; // 文字(種類)でも、サーバーの設定を反映した値(オブジェクト)でも渡せる
+  const success = rng() < Math.min(0.95, Math.max(0.05, c.chance + chanceDelta)); // 指名手配の星で、成功率が下がる
   return success ? { success, amount: ri(rng, c.win), text: pick(rng, c.ok) } : { success, amount: ri(rng, c.fine), text: pick(rng, c.ng) };
 }
 export function resolveWork(key, rng = Math.random, bonusBoost = 0) {
-  const j = JOBS[key]; const pay = ri(rng, j.pay);
+  const j = typeof key === 'string' ? JOBS[key] : key; const pay = ri(rng, j.pay);
   const bonus = j.bonus && rng() < Math.min(0.95, j.bonus.chance + bonusBoost) ? { amount: ri(rng, j.bonus.amount), text: j.bonus.text } : null;
   return { pay, bonus, text: pick(rng, j.text) };
 }
-export function resolveBeg(rng = Math.random) {
-  const r = rng();
-  if (r < 0.05) return { amount: ri(rng, [200, 500]), text: pick(rng, BEG.rich) };
-  if (r < 0.70) return { amount: ri(rng, [10, 80]), text: pick(rng, BEG.ok) };
+export function resolveBeg(rng = Math.random, cfg = null) {
+  const r = rng(), rich = (cfg?.richPct ?? 5) / 100, ok = rich + (cfg?.okPct ?? 65) / 100; // 大金 → 小銭 → 何ももらえない、の順
+  if (r < rich) return { amount: ri(rng, cfg?.rich ?? [200, 500]), text: pick(rng, BEG.rich) };
+  if (r < ok) return { amount: ri(rng, cfg?.okRange ?? [10, 80]), text: pick(rng, BEG.ok) };
   return { amount: 0, text: pick(rng, BEG.none) };
 }

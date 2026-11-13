@@ -8,9 +8,9 @@ export const HEAT = {
 export const ARREST = { chance: 0.5, cd: 10 * 60_000, jailPerStar: 5 * 60_000, jailMax: 30 * 60_000 };
 export const CHANCE_PENALTY_PER_STAR = 0.03; // 星1つにつき、犯罪の成功率が 3% 下がる(最大 -15%)
 
-export const starsOf = (heat) => Math.min(5, Math.floor(heat / HEAT_PER_STAR));
+export const starsOf = (heat, perStar = HEAT_PER_STAR) => Math.min(5, Math.floor(heat / perStar));
 export const stars = (n) => '⭐'.repeat(n);
 /** 懸賞金: 手配度に比例(星1つぶん = perStar) */
-export const bountyOf = (heat, perStar) => Math.round(perStar * Math.min(heat, MAX_HEAT) / HEAT_PER_STAR);
-export const chanceDelta = (starCount) => -CHANCE_PENALTY_PER_STAR * starCount;
+export const bountyOf = (heat, bountyPerStar, heatPerStar = HEAT_PER_STAR) => Math.round(bountyPerStar * Math.min(heat, heatPerStar * 6) / heatPerStar);
+export const chanceDelta = (starCount, penalty = CHANCE_PENALTY_PER_STAR) => -penalty * starCount;
 export const POLICE_BONUS_CAP = 0.9; // 警察のバイトのボーナス確率の上限(指名手配中の人数で上がる)
