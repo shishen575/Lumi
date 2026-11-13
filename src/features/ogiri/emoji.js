@@ -1,4 +1,4 @@
-// 草の絵文字の扱い。Unicodeの絵文字1つ、または「このサーバーの」カスタム絵文字だけ使える
+// 草の絵文字の扱い。Unicodeの絵文字1つ、または「Lumiが入っているサーバーの」カスタム絵文字が使える
 const norm = (s) => (s ?? '').replace(/️/g, ''); // 異体字セレクタ(U+FE0F)の有無は無視して比べる
 
 /** ボットがリアクションに使う形(カスタムはID、Unicodeはそのまま) */
@@ -17,7 +17,11 @@ const UNICODE_EMOJI = /^(?:\p{Extended_Pictographic}|\p{Regional_Indicator}{2}|[
 export function parseEmojiInput(input, guild) {
   const t = String(input ?? '').trim();
   const custom = /^<(a?):(\w{2,32}):(\d{17,20})>$/.exec(t);
-  if (custom) return guild.emojis.cache.has(custom[3]) ? { id: custom[3], name: custom[2], animated: custom[1] === 'a' } : null;
+  if (custom) {
+    // このサーバーの絵文字のほか、Lumiが入っている別のサーバーの絵文字も使える(リアクションはID一致で数える)
+    const known = guild.emojis.cache.has(custom[3]) || guild.client?.emojis?.cache?.has(custom[3]);
+    return known ? { id: custom[3], name: custom[2], animated: custom[1] === 'a' } : null;
+  }
   const graphemes = [...new Intl.Segmenter('ja', { granularity: 'grapheme' }).segment(t)];
   if (graphemes.length !== 1 || !UNICODE_EMOJI.test(t)) return null;
   return { id: null, name: t, animated: false };

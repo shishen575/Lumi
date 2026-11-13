@@ -150,7 +150,7 @@ export const kusaemojiCommand = {
     }
     const input = i.options.getString('emoji');
     const emoji = input === null ? DEFAULT_EMOJI : parseEmojiInput(input, i.guild);
-    if (!emoji) return i.reply({ content: '絵文字を1つだけ入力してね(カスタム絵文字はこのサーバーのものだけ使えます)', ...EPH });
+    if (!emoji) return i.reply({ content: '絵文字を1つだけ入力してね(カスタム絵文字は、このサーバー、またはLumiが入っているサーバーのものが使えます。Lumiが入っていないサーバーの絵文字は使えません)', ...EPH });
     setKusaEmoji(i.guildId, emoji);
     await i.reply(`草の絵文字を ${toDisplay(emoji)} にしました。これ以降の回答から、この絵文字のリアクションで草を数えます`);
   },
