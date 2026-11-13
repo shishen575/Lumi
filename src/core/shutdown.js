@@ -11,6 +11,8 @@ export const onShutdown = (fn) => hooks.push(fn);
 export const onShutdownCleanup = (fn) => cleanups.push(fn);
 
 let running = false;
+/** 停止の準備に入っているか。入っているあいだは、新しいスラッシュコマンドを受け付けない(途中で終了して、お金だけ動くのを防ぐ) */
+export const isShuttingDown = () => running;
 /**
  * お知らせを出して、5秒待ってから終了する(待ち時間は SHUTDOWN_WAIT_SECONDS で変えられる)。
  * お知らせの送信は、待ち時間の中で並行して行う(送信が遅くても、待ち時間より長引かせない)

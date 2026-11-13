@@ -1,6 +1,8 @@
 import { Events } from 'discord.js';
 import { commands, blackjackButton, heistButton, resolveExpiredHeists, holdHeistSweep } from './commands.js';
 import { mountApi } from './api.js';
+import { pauseHeists, resumeHeists } from './db.js';
+import { onShutdownCleanup } from '../../core/shutdown.js';
 
 /** 通貨: 犯罪・バイト・乞食・ギャンブル(チンチロ・スロット・ブラックジャック)。既定はオフ(ダッシュボードで有効にする) */
 export default {
@@ -16,6 +18,10 @@ export default {
   ].join('\n'),
   register({ client, router }) {
     mountApi(router);
+    // 再起動をまたぐ大型銀行強盗: 止まる直前に残り時間を記録し、起動したときに、その残り時間から数え直す
+    const resumed = resumeHeists();
+    if (resumed) console.log(`[economy] 再起動前の大型銀行強盗 ${resumed}件の制限時間を、数え直しました`);
+    onShutdownCleanup(() => { const n = pauseHeists(); if (n) console.log(`[economy] 進行中の大型銀行強盗 ${n}件の残り時間を記録しました`); });
     // 制限時間を過ぎて放置された大型銀行強盗を、15秒ごとに失敗として精算する(放置で罰を逃れられないように)
     // 起動した直後の30秒は、保留する(BOTが止まっていた間に、制限時間が過ぎた強盗を、すぐ失敗にしない)
     client.once(Events.ClientReady, () => { holdHeistSweep(30_000); setInterval(() => resolveExpiredHeists(client), 15_000).unref?.(); });

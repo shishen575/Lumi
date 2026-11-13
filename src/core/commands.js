@@ -1,4 +1,5 @@
 import { Events, SlashCommandBuilder, EmbedBuilder, MessageFlags } from 'discord.js';
+import { isShuttingDown } from './shutdown.js';
 import { hasAccessSync } from './access.js';
 
 /** サーバーごとの、登録済みコマンドのID(押せるコマンド表記 </名前:ID> を作るのに使う) */
@@ -51,6 +52,7 @@ export function setupCommands(client, features) {
   client.on(Events.InteractionCreate, (i) => {
     if (i.isChatInputCommand()) {
       const cmd = byName.get(i.commandName);
+      if (cmd && isShuttingDown()) return void i.reply({ content: '🔄 Lumi は、再起動の準備中です。数十秒後に、もう一度お試しください。', flags: MessageFlags.Ephemeral }).catch(() => {});
       if (cmd) run(`/${i.commandName}`, i, (x) => cmd.execute(x));
     } else if (i.isButton()) {
       const c = comps.find((x) => x.id === i.customId || i.customId.startsWith(`${x.id}:`));

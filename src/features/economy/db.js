@@ -128,6 +128,12 @@ const heistRow = (r) => r && { ...r, state: JSON.parse(r.state) };
 export const getHeist = (g, u) => heistRow(db.prepare('SELECT * FROM eco_heist WHERE guild_id=? AND user_id=?').get(g, u));
 export const saveHeist = (g, u, { channelId, msgId, state, deadline }) => db.prepare(`INSERT INTO eco_heist (guild_id,user_id,channel_id,msg_id,state,deadline,started_at) VALUES (?,?,?,?,?,?,?)
   ON CONFLICT(guild_id,user_id) DO UPDATE SET channel_id=COALESCE(excluded.channel_id, channel_id), msg_id=COALESCE(excluded.msg_id, msg_id), state=excluded.state`).run(g, u, channelId ?? null, msgId ?? null, JSON.stringify(state), deadline, Date.now());
+// 再起動で止まっている間は、大型銀行の制限時間を進めない(再起動をまたいだ人が、時間切れで罰金にならないように)
+try { db.exec('ALTER TABLE eco_heist ADD COLUMN paused_left INTEGER'); } catch { /* exists */ }
+/** 止まる直前: 進行中の強盗の「残り時間」を記録する */
+export const pauseHeists = (now = Date.now()) => Number(db.prepare('UPDATE eco_heist SET paused_left = MAX(0, deadline - ?)').run(now).changes);
+/** 起動したとき: 記録した残り時間から、制限時間を数え直す(最低でも minMs は残す)。数え直した件数を返す */
+export const resumeHeists = (now = Date.now(), minMs = 10_000) => Number(db.prepare('UPDATE eco_heist SET deadline = ? + MAX(paused_left, ?), paused_left = NULL WHERE paused_left IS NOT NULL').run(now, minMs).changes);
 export const setHeistDeadline = (g, u, deadline) => db.prepare('UPDATE eco_heist SET deadline=? WHERE guild_id=? AND user_id=?').run(deadline, g, u);
 /** ゲームを終わらせる。取れたら、そのゲームを返す(同時に2か所から終わらせても、片方しか取れない=二重に精算されない) */
 export const claimHeist = (g, u) => heistRow(db.prepare('DELETE FROM eco_heist WHERE guild_id=? AND user_id=? RETURNING *').get(g, u));
