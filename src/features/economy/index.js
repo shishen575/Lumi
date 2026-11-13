@@ -1,6 +1,7 @@
 import { Events } from 'discord.js';
 import { commands, blackjackButton, heistButton, resolveExpiredHeists, holdHeistSweep } from './commands.js';
 import { mountApi } from './api.js';
+import { crimeHelp } from './help.js';
 import { pauseHeists, resumeHeists } from './db.js';
 import { onShutdownCleanup } from '../../core/shutdown.js';
 
@@ -11,6 +12,7 @@ export default {
   ui: '/dashboard/features/economy.js',
   commands,
   components: [blackjackButton, heistButton],
+  helpTopics: [{ id: 'crime', label: '犯罪(犯罪・大型犯罪・闇マーケット)', sections: crimeHelp }], // /help topic:犯罪 で、犯罪系の説明を全部表示
   help: [
     '管理者が有効にしたサーバーで使えます。`/balance` で残高、`/deposit` `/withdraw` で銀行、`/richest` でランキング。',
     '稼ぐ: `/work`(バイト: コンビニ・警察・ファーストフード)、`/beg`(乞食)、`/crime`(犯罪: コンビニ・ATM・銀行・宝石・海賊。失敗すると罰金と留置場。`/bail` で保釈)。',

@@ -63,12 +63,43 @@ export function setupCommands(client, features) {
 }
 
 /** 登録済みコマンドと各機能の `help` 文から、ヘルプを自動生成する */
+/** 欄(各1024字以内)を、Discordの上限(1つの埋め込みは合計6000字・25欄、1メッセージは埋め込み10個・合計6000字)に収まるように、メッセージごとに分ける */
+export function packEmbeds(title, sections) {
+  const batches = []; let cur = [], len = 0, n = 0;
+  const flush = () => { if (cur.length) { batches.push(cur); cur = []; len = 0; n = 0; } };
+  let emb = null;
+  const newEmbed = () => { emb = new EmbedBuilder().setColor(0x6d5dfc).setTitle(batches.length || cur.length ? `${title}(続き)` : title); cur.push(emb); n = 0; len += emb.data.title.length; };
+  for (const sec of sections) {
+    const size = sec.name.length + sec.value.length;
+    if (cur.length && len + size > 5500) { flush(); emb = null; }
+    if (!emb || n >= 20) newEmbed();
+    emb.addFields({ name: sec.name.slice(0, 256), value: sec.value.slice(0, 1024) }); n++; len += size;
+  }
+  flush();
+  return batches.length ? batches : [[new EmbedBuilder().setColor(0x6d5dfc).setTitle(title).setDescription('(内容がありません)')]];
+}
+
 function helpCommand(cmds, features) {
   const all = [...cmds.map((c) => c.data), { name: 'help', description: 'このヘルプを表示します' }];
+  // 機能が持つ「詳しい説明」(helpTopics)。/help topic:… で、その説明だけを全部表示する
+  const topics = features.flatMap((f) => (f.helpTopics ?? []).map((t) => ({ ...t, feature: f }))).slice(0, 25);
+  const builder = new SlashCommandBuilder().setName('help').setDescription('Lumiの使い方とコマンド一覧を表示します').setDMPermission(false)
+    .addBooleanOption((o) => o.setName('public').setDescription('全員に表示する(省略すると自分だけに表示)'));
+  if (topics.length) builder.addStringOption((o) => o.setName('topic').setDescription('詳しい説明を見たい分野(省略すると、全体のヘルプ)')
+    .addChoices(...topics.map((t) => ({ name: t.label, value: t.id }))));
   return {
-    data: new SlashCommandBuilder().setName('help').setDescription('Lumiの使い方とコマンド一覧を表示します').setDMPermission(false)
-      .addBooleanOption((o) => o.setName('public').setDescription('全員に表示する(省略すると自分だけに表示)')),
+    data: builder,
     async execute(i) {
+      const topicId = i.options.getString?.('topic');
+      const topic = topicId ? topics.find((t) => t.id === topicId) : null;
+      if (topic) {
+        const pub = i.options.getBoolean('public') ?? false;
+        const batches = packEmbeds(topic.label, topic.sections({ guildId: i.guildId }));
+        const opt = pub ? {} : { flags: MessageFlags.Ephemeral };
+        await i.reply({ embeds: batches[0], ...opt });
+        for (const b of batches.slice(1)) await i.followUp({ embeds: b, ...opt });
+        return;
+      }
       const embed = new EmbedBuilder().setColor(0x6d5dfc).setTitle('Lumi ヘルプ');
       // コマンドが増えても、Discordの上限(1フィールド1024字)を超えないよう、分けて出す
       const lines = [...new Map(all.map((d) => [d.name, d])).values()].map((d) => `\`/${d.name}\` — ${d.description}`);
@@ -77,6 +108,7 @@ function helpCommand(cmds, features) {
       for (const line of lines) { if (chunk && chunk.length + line.length + 1 > 1000) pushChunk(); chunk += (chunk ? '\n' : '') + line; }
       if (chunk) pushChunk();
       for (const f of features) if (f.help) embed.addFields({ name: f.title ?? f.name, value: f.help });
+      if (topics.length) embed.addFields({ name: '詳しい説明', value: '`/help` の `topic` で選べます:\n' + topics.map((tp) => `・${tp.label}`).join('\n') });
       const base = process.env.BASE_URL;
       const pub = i.options.getBoolean('public') ?? false;
       if (!pub && base && hasAccessSync(i.guild, i.member, i.user.id)) { // ダッシュボードを操作できる人にだけ案内(全員に表示するときは出さない)
