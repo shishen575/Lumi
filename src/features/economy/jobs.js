@@ -37,13 +37,13 @@ export const BEG = {
   rich: ['お金持ちが現れて、気前よく札を数枚くれた!', '通りすがりの社長が、「頑張れよ」と大金をくれた!'],
 };
 
-export function resolveCrime(key, rng = Math.random) {
-  const c = CRIMES[key]; const success = rng() < c.chance;
+export function resolveCrime(key, rng = Math.random, chanceDelta = 0) {
+  const c = CRIMES[key]; const success = rng() < Math.min(0.95, Math.max(0.05, c.chance + chanceDelta)); // 指名手配の星で、成功率が下がる
   return success ? { success, amount: ri(rng, c.win), text: pick(rng, c.ok) } : { success, amount: ri(rng, c.fine), text: pick(rng, c.ng) };
 }
-export function resolveWork(key, rng = Math.random) {
+export function resolveWork(key, rng = Math.random, bonusBoost = 0) {
   const j = JOBS[key]; const pay = ri(rng, j.pay);
-  const bonus = j.bonus && rng() < j.bonus.chance ? { amount: ri(rng, j.bonus.amount), text: j.bonus.text } : null;
+  const bonus = j.bonus && rng() < Math.min(0.95, j.bonus.chance + bonusBoost) ? { amount: ri(rng, j.bonus.amount), text: j.bonus.text } : null;
   return { pay, bonus, text: pick(rng, j.text) };
 }
 export function resolveBeg(rng = Math.random) {

@@ -1,6 +1,6 @@
 import { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, MessageFlags } from 'discord.js';
 import { getSettings, money } from './settings.js';
-import { itemQty, allItems, addItem, useItem, transfer, adjustBalance, clearCooldowns, audit, peek, deposit, withdraw, cooldownLeft, setCooldown, jailLeft, jail, release, richest, getBj, saveBj, deleteBj, getHeist, saveHeist, claimHeist, expiredHeists, setHeistDeadline, releaseAll } from './db.js';
+import { shiftsOf, allShifts, addShift, getHeat, addHeat, clearHeat, topWanted, itemQty, allItems, addItem, useItem, transfer, adjustBalance, clearCooldowns, audit, peek, deposit, withdraw, cooldownLeft, setCooldown, jailLeft, jail, release, richest, getBj, saveBj, deleteBj, getHeist, saveHeist, claimHeist, expiredHeists, setHeistDeadline, releaseAll } from './db.js';
 import { ensureAccount, pay, collect, fine, treasury } from './ledger.js';
 import { hasAccessSync, isOperator } from '../../core/access.js';
 import { PermissionFlagsBits } from 'discord.js';
@@ -8,6 +8,9 @@ import {
   rnd, roundProb, chinchiroPlay, chinchiroCompare, chinchiroScale, slotSpin, slotPayout, slotMultiplier,
   bjDeal, bjHit, bjStand, bjDouble, handValue, cardText, bjScale,
 } from './games.js';
+import { rankFor, scalePay } from './ranks.js';
+import { POLICE_BONUS_CAP } from './wanted.js';
+import { HEAT, ARREST, MAX_HEAT, starsOf, stars as starText, bountyOf, chanceDelta } from './wanted.js';
 import { ITEMS, MAX_STACK, itemById, toolFor, priceOf, marketRate } from './market.js';
 import { CRIMES, JOBS, resolveCrime, resolveWork, resolveBeg, BEG } from './jobs.js';
 import { HEISTS, heistTarget, heistKey, makeSteps, heistReward, heistBase, heistFine } from './heist.js';
@@ -111,6 +114,12 @@ export const richestCommand = {
 const crimeChoices = Object.entries(CRIMES).map(([value, c]) => ({ name: `${c.emoji} ${c.name}`, value }));
 const jobChoices = Object.entries(JOBS).map(([value, j]) => ({ name: `${j.emoji} ${j.name}`, value }));
 
+/** 犯罪・強盗に成功したとき: 手配度を上げて、指名手配の案内の文を返す(オフのサーバーでは、空) */
+function wantedLine(s, g, u, gain) {
+  if (!s.wantedEnabled) return '';
+  const heat = addHeat(g, u, gain, s.wantedDecayMin, MAX_HEAT), n = starsOf(heat);
+  return n ? `\n\n${starText(n)} **指名手配 Lv${n}**(懸賞金 ${money(s, bountyOf(heat, s.bountyPerStar))})\n-# 警察に逮捕されると、手配は解除されます。星が多いほど、犯罪は失敗しやすくなります` : `\n-# 🔎 警察に目をつけられはじめた…(手配度 ${heat})`;
+}
 /** 闇マーケットがオンのとき、犯罪に必要な道具を1つ使う。使えたら tool を、オフなら null を、道具がなくて断ったら false を返す */
 function takeTool(i, s, kind, key) {
   if (!s.blackMarket) return null;
@@ -130,15 +139,18 @@ export const crimeCommand = {
     const cd = cooldownLeft(i.guildId, i.user.id, `crime:${key}`); if (cd) return refuse(i, `${c.emoji} ${c.name}は、まだ警戒が厳しいです。あと ${dur(cd)}。`);
     if (budgetEmpty(s, i.guildId)) return refuse(i, BUDGET_EMPTY);
     const toolUsed = takeTool(i, s, 'crime', key); if (toolUsed === false) return; // 闇マーケットがオンのとき、道具が必要(1回で1つ使う)
-    const r = resolveCrime(key, rng);
+    const g = i.guildId, u = i.user.id;
+    const starsNow = s.wantedEnabled ? starsOf(getHeat(g, u, s.wantedDecayMin)) : 0; // 指名手配の星が多いほど、成功しにくい
+    const r = resolveCrime(key, rng, chanceDelta(starsNow));
     if (r.success) {
-      const p = pay(i.guildId, i.user.id, r.amount, s);
-      if (p.paid > 0) setCooldown(i.guildId, i.user.id, `crime:${key}`, c.cd);
-      return i.reply({ embeds: [card(i, s, GREEN, `${c.emoji} ${c.name} 成功!`, `${r.text}\n\n**+ ${money(s, p.paid)}**${shortNote(s, p)}`)] });
+      const p = pay(g, u, r.amount, s);
+      if (p.paid > 0) setCooldown(g, u, `crime:${key}`, c.cd);
+      return i.reply({ embeds: [card(i, s, GREEN, `${c.emoji} ${c.name} 成功!`, `${r.text}\n\n**+ ${money(s, p.paid)}**${shortNote(s, p)}${wantedLine(s, g, u, HEAT.crime[key] ?? 1)}`)] });
     }
+    if (s.wantedEnabled) clearHeat(g, u); // 捕まったので、手配は解除
     const took = fine(i.guildId, i.user.id, r.amount, s, 'crime');
     jail(i.guildId, i.user.id, c.jail); setCooldown(i.guildId, i.user.id, `crime:${key}`, c.cd);
-    await i.reply({ embeds: [card(i, s, RED, `${c.emoji} ${c.name} 失敗…`, `${r.text}\n\n罰金 **- ${money(s, took)}**${debtNote(i, s)}\n🚔 留置場に ${dur(c.jail)} 入ります。(/bail で、保釈金を払って出られます)`)] });
+    await i.reply({ embeds: [card(i, s, RED, `${c.emoji} ${c.name} 失敗…`, `${r.text}\n\n罰金 **- ${money(s, took)}**${debtNote(i, s)}\n🚔 留置場に ${dur(c.jail)} 入ります。(/bail で、保釈金を払って出られます)${starsNow ? '\n-# 捕まったので、指名手配は解除されました' : ''}`)] });
   },
 };
 export const workCommand = {
@@ -150,10 +162,44 @@ export const workCommand = {
     const jl = jailLeft(i.guildId, i.user.id); if (jl) return refuse(i, `🚔 留置場にいる間は、バイトはできません。(あと ${dur(jl)})`);
     const cd = cooldownLeft(i.guildId, i.user.id, `work:${key}`); if (cd) return refuse(i, `${j.emoji} ${j.name}のシフトは、あと ${dur(cd)} 後です。`);
     if (budgetEmpty(s, i.guildId)) return refuse(i, BUDGET_EMPTY);
-    const r = resolveWork(key, rng);
-    const p = pay(i.guildId, i.user.id, r.pay + (r.bonus?.amount ?? 0), s);
-    if (p.paid > 0) setCooldown(i.guildId, i.user.id, `work:${key}`, j.cd);
-    await i.reply({ embeds: [card(i, s, GREEN, `${j.emoji} ${j.name}のバイト`, `${r.text}\n\n給料 **+ ${money(s, r.pay)}**${r.bonus ? `\n${r.bonus.text} **+ ${money(s, r.bonus.amount)}**` : ''}${shortNote(s, p)}${debtNote(i, s)}`)] });
+    // 警察のバイト: 指名手配中の人が多いほど、ボーナス(犯人逮捕の特別手当)が出やすい
+    const wantedCount = key === 'police' && s.wantedEnabled ? topWanted(i.guildId, s.wantedDecayMin, 5, 1000).length : 0;
+    const boost = Math.min(POLICE_BONUS_CAP - JOBS.police.bonus.chance, wantedCount * s.policeBonusPerWanted / 100);
+    const r = resolveWork(key, rng, boost);
+    // 昇進: 階級に応じて、給料の倍率が変わる(オンのサーバーのみ)
+    const g = i.guildId, u = i.user.id;
+    const before = s.promotionEnabled ? rankFor(s.jobRanks[key], shiftsOf(g, u, key)) : null;
+    const pct = before?.rank.pct ?? 100;
+    const salary = scalePay(r.pay, pct), bonus = r.bonus ? scalePay(r.bonus.amount, pct) : 0;
+    const p = pay(g, u, salary + bonus, s);
+    let extra = '';
+    if (p.paid > 0) {
+      setCooldown(g, u, `work:${key}`, j.cd);
+      const n = addShift(g, u, key); // 出勤は、昇進がオフでも数える(あとでオンにしても、積み上がっている)
+      if (s.promotionEnabled) {
+        const after = rankFor(s.jobRanks[key], n);
+        extra = after.index > before.index
+          ? `\n\n🎉 **昇進!** 「${after.rank.name}」になりました!(給料 ×${after.rank.pct / 100})`
+          : `\n-# ${j.emoji} ${after.rank.name} ・ 出勤 ${n}回${after.next ? `(「${after.next.name}」まで あと ${after.left}回)` : '(最高の階級です)'}`;
+      }
+    }
+    await i.reply({ embeds: [card(i, s, GREEN, `${j.emoji} ${j.name}のバイト`, `${r.text}\n\n給料 **+ ${money(s, salary)}**${pct !== 100 ? ` (階級ボーナス ×${pct / 100})` : ''}${r.bonus ? `\n${r.bonus.text} **+ ${money(s, bonus)}**` : ''}${wantedCount ? `\n-# 🚨 指名手配中が ${wantedCount}人 いて、ボーナスが出る確率は ${Math.round((JOBS.police.bonus.chance + boost) * 100)}% です` : ''}${shortNote(s, p)}${debtNote(i, s)}${extra}`)] });
+  },
+};
+export const jobCommand = {
+  data: guildOnly(new SlashCommandBuilder().setName('job').setDescription('バイトの階級と、出勤回数を見ます')),
+  async execute(i) {
+    const s = await open(i); if (!s) return;
+    const shifts = allShifts(i.guildId, i.user.id);
+    const fields = Object.entries(JOBS).map(([key, j]) => {
+      const n = shifts[key] ?? 0;
+      if (!s.promotionEnabled) return { name: `${j.emoji} ${j.name}`, value: `出勤 **${n}回**`, inline: true };
+      const ranks = s.jobRanks[key], r = rankFor(ranks, n);
+      return { name: `${j.emoji} ${j.name}`, value: `**${r.rank.name}**(給料 ×${r.rank.pct / 100})\n出勤 ${n}回 ${r.next ? `\n次: ${r.next.name}(あと ${r.left}回)` : '\n最高の階級です'}\n-# ${ranks.map((x) => `${x.name}${x.shifts ? ` ${x.shifts}回` : ''}`).join(' → ')}`, inline: true };
+    });
+    const e = new EmbedBuilder().setColor(0x6d5dfc).setTitle('💼 バイトの階級').addFields(fields)
+      .setFooter({ text: s.promotionEnabled ? '出勤を重ねると、昇進して、給料が増えます' : 'このサーバーでは、昇進はオフです(出勤回数は、記録されています)' });
+    await i.reply({ embeds: [e], ...EPH });
   },
 };
 export const begCommand = {
@@ -311,6 +357,7 @@ function settleHeistFailure(g, u, s, reason, rng = rnd) {
   const game = claimHeist(g, u); if (!game) return null;
   const T = heistTarget(game.state?.target);
   const took = fine(g, u, heistFine(rng, T), s, 'heist'); jail(g, u, T.jail);
+  clearHeat(g, u); // 捕まったので、手配は解除
   return { game, took, reason, T };
 }
 const reasonText = (T, reason) => (reason === 'timeout' ? `⏰ 時間切れ! ${T.caught}` : `🚨 ${T.maxMistakes + 1}回間違えて、警報が鳴り響いた!`);
@@ -378,7 +425,7 @@ export const heistButton = {
         const left = Math.max(0, game.deadline - now), amount = heistReward(st.reward, left, T);
         const p = pay(g, uid, amount, s);
         return safeUpdate(i, { embeds: [new EmbedBuilder().setColor(GOLD).setTitle(`${T.emoji} ${T.name} 成功!`).setAuthor({ name: st.name, iconURL: st.avatar })
-          .setDescription(`${T.success}\n残り ${dur(left)} でクリア(スピードボーナス +${Math.round((amount / st.reward - 1) * 100)}%)\n\n**+ ${money(s, p.paid)}**${shortNote(s, p)}`)], components: [] });
+          .setDescription(`${T.success}\n残り ${dur(left)} でクリア(スピードボーナス +${Math.round((amount / st.reward - 1) * 100)}%)\n\n**+ ${money(s, p.paid)}**${shortNote(s, p)}${wantedLine(s, g, uid, HEAT.heist[T.id] ?? 4)}`)], components: [] });
       }
       saveHeist(g, uid, { state: st, deadline: game.deadline });
       return safeUpdate(i, hsBody(st, game.deadline, uid));
@@ -500,4 +547,51 @@ export const marketCommand = {
   },
 };
 
-export const commands = [balanceCommand, depositCommand, withdrawCommand, richestCommand, crimeCommand, workCommand, begCommand, bailCommand, chinchiroCommand, slotCommand, blackjackCommand, heistCommand, marketCommand, releaseCommand, payCommand, balanceEditCommand, cooldownResetCommand];
+/* ================= 指名手配 ================= */
+const wantedOff = (i) => refuse(i, 'このサーバーでは、指名手配はオフです。管理者が、ダッシュボードの「通貨 → 指名手配」でオンにできます。');
+export const wantedCommand = {
+  data: guildOnly(new SlashCommandBuilder().setName('wanted').setDescription('指名手配中の人(手配書)を見ます')
+    .addUserOption((o) => o.setName('user').setDescription('調べる人(省略すると、手配書の一覧)'))),
+  async execute(i) {
+    const s = await open(i); if (!s) return;
+    if (!s.wantedEnabled) return wantedOff(i);
+    const g = i.guildId, u = i.options.getUser('user');
+    if (u) {
+      const heat = getHeat(g, u.id, s.wantedDecayMin), n = starsOf(heat);
+      return i.reply({ content: n ? `${starText(n)} <@${u.id}> は **指名手配 Lv${n}** です。(懸賞金 ${money(s, bountyOf(heat, s.bountyPerStar))})` : `<@${u.id}> は、指名手配されていません。${heat ? `(手配度 ${heat} / 星が付くのは ${5} から)` : ''}`, allowedMentions: NO_MENTIONS, ...EPH });
+    }
+    const rows = topWanted(g, s.wantedDecayMin, 5, 10);
+    const e = new EmbedBuilder().setColor(RED).setTitle('🚨 指名手配')
+      .setDescription(rows.length ? rows.map((r, n) => `${n + 1}. ${starText(starsOf(r.heat))} <@${r.user_id}> — 懸賞金 **${money(s, bountyOf(r.heat, s.bountyPerStar))}**`).join('\n') : '指名手配中の人は、いません。')
+      .setFooter({ text: `手配中 ${topWanted(g, s.wantedDecayMin, 5, 1000).length}人 ・ 警察のバイトのボーナス確率 ${Math.round(Math.min(POLICE_BONUS_CAP, JOBS.police.bonus.chance + topWanted(g, s.wantedDecayMin, 5, 1000).length * s.policeBonusPerWanted / 100) * 100)}% ・ 警察のバイトを重ねると、/arrest で逮捕できます` });
+    await i.reply({ embeds: [e], allowedMentions: NO_MENTIONS });
+  },
+};
+export const arrestCommand = {
+  data: guildOnly(new SlashCommandBuilder().setName('arrest').setDescription('指名手配中の人を、逮捕します(警察のバイトを重ねた人だけ)')
+    .addUserOption((o) => o.setName('user').setDescription('逮捕する人').setRequired(true))),
+  async execute(i, rng = rnd) {
+    const s = await open(i); if (!s) return;
+    if (!s.wantedEnabled) return wantedOff(i);
+    const g = i.guildId, me = i.user.id, target = i.options.getUser('user', true);
+    if (target.bot || target.id === me) return refuse(i, 'その相手は、逮捕できません。');
+    const jl = jailLeft(g, me); if (jl) return refuse(i, `🚔 留置場にいる間は、逮捕できません。(あと ${dur(jl)})`);
+    const n = shiftsOf(g, me, 'police');
+    if (n < s.arrestMinShifts) return refuse(i, `👮 逮捕するには、警察のバイト(/work)を ${s.arrestMinShifts}回 以上する必要があります。(いま ${n}回)`);
+    const cd = cooldownLeft(g, me, 'arrest'); if (cd) return refuse(i, `👮 次の逮捕まで、あと ${dur(cd)}。`);
+    const heat = getHeat(g, target.id, s.wantedDecayMin), stars = starsOf(heat);
+    if (!stars) return refuse(i, `<@${target.id}> は、指名手配されていません。(/wanted で、手配書を見られます)`);
+    if (jailLeft(g, target.id)) return refuse(i, `<@${target.id}> は、すでに留置場にいます。`);
+    if (budgetEmpty(s, g)) return refuse(i, BUDGET_EMPTY); // 懸賞金は、予算から払われる
+    setCooldown(g, me, 'arrest', ARREST.cd);
+    if (rng() >= ARREST.chance) {
+      return i.reply({ embeds: [card(i, s, RED, '👮 逮捕に失敗…', `<@${target.id}> に、まんまと逃げられた!\n-# 次の逮捕まで ${dur(ARREST.cd)}`)], allowedMentions: NO_MENTIONS });
+    }
+    const bounty = bountyOf(heat, s.bountyPerStar);
+    const p = pay(g, me, bounty, s);
+    jail(g, target.id, Math.min(ARREST.jailMax, ARREST.jailPerStar * stars)); clearHeat(g, target.id);
+    await i.reply({ embeds: [card(i, s, GOLD, '👮 逮捕成功!', `${starText(stars)} <@${target.id}> を逮捕しました!\n🚔 留置場に ${dur(Math.min(ARREST.jailMax, ARREST.jailPerStar * stars))} 入ります。\n\n懸賞金 **+ ${money(s, p.paid)}**${shortNote(s, p)}`)], allowedMentions: NO_MENTIONS });
+  },
+};
+
+export const commands = [balanceCommand, depositCommand, withdrawCommand, richestCommand, crimeCommand, workCommand, begCommand, bailCommand, chinchiroCommand, slotCommand, blackjackCommand, heistCommand, jobCommand, wantedCommand, arrestCommand, marketCommand, releaseCommand, payCommand, balanceEditCommand, cooldownResetCommand];

@@ -32,6 +32,14 @@ CREATE TABLE IF NOT EXISTS eco_items (            -- 闇マーケットで買っ
   guild_id TEXT NOT NULL, user_id TEXT NOT NULL, item TEXT NOT NULL, qty INTEGER NOT NULL DEFAULT 0,
   PRIMARY KEY (guild_id, user_id, item)
 );
+CREATE TABLE IF NOT EXISTS eco_jobs (             -- 職業ごとの出勤回数(昇進に使う)
+  guild_id TEXT NOT NULL, user_id TEXT NOT NULL, job TEXT NOT NULL, shifts INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (guild_id, user_id, job)
+);
+CREATE TABLE IF NOT EXISTS eco_wanted (           -- 指名手配の手配度(時間で下がる。下がった分は、読むときに計算する)
+  guild_id TEXT NOT NULL, user_id TEXT NOT NULL, heat INTEGER NOT NULL DEFAULT 0, at INTEGER NOT NULL,
+  PRIMARY KEY (guild_id, user_id)
+);
 CREATE TABLE IF NOT EXISTS eco_audit (            -- 管理者の操作の記録(だれが・だれに・何を・いくら)
   id INTEGER PRIMARY KEY AUTOINCREMENT, guild_id TEXT NOT NULL, actor_id TEXT NOT NULL, actor_name TEXT NOT NULL,
   target_id TEXT, action TEXT NOT NULL, amount INTEGER, note TEXT, at INTEGER NOT NULL
@@ -145,6 +153,29 @@ export const addItem = (g, u, item, n = 1) => db.prepare(`INSERT INTO eco_items 
   ON CONFLICT(guild_id,user_id,item) DO UPDATE SET qty=qty+excluded.qty`).run(g, u, item, n);
 /** 道具を1つ使う。あれば true(同時に2回使っても、1つしかなければ、片方しか通らない) */
 export const useItem = (g, u, item) => !!db.prepare('UPDATE eco_items SET qty=qty-1 WHERE guild_id=? AND user_id=? AND item=? AND qty>=1 RETURNING qty').get(g, u, item);
+/* ---------- 職業の出勤回数 ---------- */
+export const shiftsOf = (g, u, job) => db.prepare('SELECT shifts FROM eco_jobs WHERE guild_id=? AND user_id=? AND job=?').get(g, u, job)?.shifts ?? 0;
+export const allShifts = (g, u) => Object.fromEntries(db.prepare('SELECT job, shifts FROM eco_jobs WHERE guild_id=? AND user_id=?').all(g, u).map((r) => [r.job, r.shifts]));
+/** 出勤を1回増やして、新しい回数を返す */
+export const addShift = (g, u, job) => db.prepare(`INSERT INTO eco_jobs (guild_id,user_id,job,shifts) VALUES (?,?,?,1)
+  ON CONFLICT(guild_id,user_id,job) DO UPDATE SET shifts=shifts+1 RETURNING shifts`).get(g, u, job).shifts;
+
+/* ---------- 指名手配 ---------- */
+const decayed = (row, decayMin, now) => (row ? Math.max(0, row.heat - Math.floor((now - row.at) / (Math.max(1, decayMin) * 60_000))) : 0);
+export const getHeat = (g, u, decayMin = 30, now = Date.now()) => decayed(db.prepare('SELECT heat, at FROM eco_wanted WHERE guild_id=? AND user_id=?').get(g, u), decayMin, now);
+/** 手配度を増やす(上限 max)。増やしたあとの手配度を返す */
+export function addHeat(g, u, delta, decayMin = 30, max = 30, now = Date.now()) {
+  const next = Math.min(max, getHeat(g, u, decayMin, now) + delta);
+  db.prepare(`INSERT INTO eco_wanted (guild_id,user_id,heat,at) VALUES (?,?,?,?)
+    ON CONFLICT(guild_id,user_id) DO UPDATE SET heat=excluded.heat, at=excluded.at`).run(g, u, next, now);
+  return next;
+}
+export const clearHeat = (g, u) => db.prepare('DELETE FROM eco_wanted WHERE guild_id=? AND user_id=?').run(g, u);
+/** 手配度が minHeat 以上の人(高い順) */
+export const topWanted = (g, decayMin = 30, minHeat = 5, limit = 10, now = Date.now()) =>
+  db.prepare('SELECT user_id, heat, at FROM eco_wanted WHERE guild_id=?').all(g)
+    .map((r) => ({ user_id: r.user_id, heat: decayed(r, decayMin, now) })).filter((r) => r.heat >= minHeat)
+    .sort((a, b) => b.heat - a.heat).slice(0, limit);
 export const setHeistDeadline = (g, u, deadline) => db.prepare('UPDATE eco_heist SET deadline=? WHERE guild_id=? AND user_id=?').run(deadline, g, u);
 /** ゲームを終わらせる。取れたら、そのゲームを返す(同時に2か所から終わらせても、片方しか取れない=二重に精算されない) */
 export const claimHeist = (g, u) => heistRow(db.prepare('DELETE FROM eco_heist WHERE guild_id=? AND user_id=? RETURNING *').get(g, u));

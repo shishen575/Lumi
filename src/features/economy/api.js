@@ -2,12 +2,22 @@ import { canEditAccess } from '../../core/access.js';
 import { getSettings, saveSettings } from './settings.js';
 import { richest, jailed, release, jailLeft, releaseAll, peek, recentFines, claimFineRefund, audit, recentAudit, adjustBalance, clearCooldowns } from './db.js';
 import { treasury, setTreasury, addTreasury, circulation, pay } from './ledger.js';
+import { JOBS, CRIMES } from './jobs.js';
+import { HEISTS } from './heist.js';
+import { DEFAULT_RANKS, MAX_RANKS } from './ranks.js';
+import { HEAT, HEAT_PER_STAR, CHANCE_PENALTY_PER_STAR, ARREST, POLICE_BONUS_CAP } from './wanted.js';
 import { SLOT_SYMBOLS, CHERRY_TWO, CHERRY_ONE, slotRtp, slotScale, chinchiroScale, bjScale, bjStats } from './games.js';
 
 /** router は /api/guilds/:gid/f/economy に載っていて、req.guild / req.access が使える */
 export function mountApi(router) {
   const view = (req) => ({ ...getSettings(req.guild.id), treasury: treasury(req.guild.id), circulation: circulation(req.guild.id), canEditBudget: canEditAccess(req.access) });
 
+  // 職業の昇進・指名手配の設定画面に必要な、固定の情報
+  router.get('/jobs-meta', (req, res) => res.json({
+    jobs: Object.entries(JOBS).map(([key, j]) => ({ key, name: j.name, emoji: j.emoji })), defaults: DEFAULT_RANKS, maxRanks: MAX_RANKS,
+    heat: [...Object.entries(CRIMES).map(([k, c]) => ({ name: `${c.emoji} ${c.name}`, heat: HEAT.crime[k] ?? 1 })), ...Object.values(HEISTS).map((T) => ({ name: `${T.emoji} ${T.name}`, heat: HEAT.heist[T.id] ?? 4 }))],
+    heatPerStar: HEAT_PER_STAR, penaltyPerStar: Math.round(CHANCE_PENALTY_PER_STAR * 100), arrestChance: Math.round(ARREST.chance * 100), arrestCdMin: ARREST.cd / 60000, bonusBase: Math.round(JOBS.police.bonus.chance * 100), bonusCap: Math.round(POLICE_BONUS_CAP * 100),
+  }));
   router.get('/settings', (req, res) => res.json(view(req)));
   router.put('/settings', (req, res) => {
     const b = req.body ?? {};

@@ -45,6 +45,59 @@ Dash.registerTab({
         };
       } },
 
+    /* ===== 職業の昇進 ===== */
+    { id: 'jobs', title: '職業の昇進', icon: 'list',
+      async render(el, { api, esc, toast, pageHeader }) {
+        const [st, meta] = await Promise.all([api('/settings'), api('/jobs-meta')]);
+        const ranks = JSON.parse(JSON.stringify(st.jobRanks));
+        const draw = () => {
+          el.innerHTML = `${pageHeader('職業の昇進', 'バイト(/work)の出勤回数に応じて、階級が上がり、給料が増えます。階級の名前・必要な出勤回数・給料の倍率を、職業ごとに決められます。')}
+            <div class="card"><label class="sw"><input type="checkbox" id="pe" ${st.promotionEnabled ? 'checked' : ''}><i></i><span><b>昇進を使う</b><small>オフのときは、階級も倍率もありません(出勤回数は、オフの間も記録されます)。メンバーは <code>/job</code> で、自分の階級を見られます</small></span></label></div>
+            ${meta.jobs.map((j) => `<div class="card" data-job="${j.key}"><div class="card-h"><h2>${j.emoji} ${esc(j.name)}</h2></div>
+              ${ranks[j.key].map((r, n) => `<div class="grid3" style="display:grid;grid-template-columns:minmax(0,1.4fr) 1fr 1fr auto;gap:8px;align-items:end;margin-bottom:8px" data-n="${n}">
+                <div class="field" style="margin:0"><label class="f">${n === 0 ? '最初の階級' : `階級 ${n + 1}`}</label><input class="rn" type="text" maxlength="12" value="${esc(r.name)}"></div>
+                <div class="field" style="margin:0"><label class="f">必要な出勤回数</label><input class="rs" type="number" min="0" value="${r.shifts}" ${n === 0 ? 'disabled' : ''}></div>
+                <div class="field" style="margin:0"><label class="f">給料の倍率(%)</label><input class="rp" type="number" min="50" max="500" value="${r.pct}"></div>
+                <button class="btn danger icon" type="button" data-rm="${n}" ${n === 0 ? 'disabled' : ''} aria-label="削除">✕</button></div>`).join('')}
+              <div class="acts" style="margin-top:8px"><button class="btn ghost" type="button" data-add="${j.key}" ${ranks[j.key].length >= meta.maxRanks ? 'disabled' : ''}>階級を追加</button><button class="btn ghost" type="button" data-reset="${j.key}">初期値に戻す</button></div></div>`).join('')}
+            <div class="card"><h2>仕組み</h2><ul style="margin:0;padding-left:1.2em"><li>出勤回数が、次の階級の「必要な出勤回数」に届くと、昇進します(昇進した回は、お知らせが出ます)</li><li>給料の倍率は、現在の階級のものが、給料とボーナスに掛かります(100%で等倍)</li><li>最初の階級は、0回・変更不可の出勤回数です。階級は最大${meta.maxRanks}つまで</li></ul></div>
+            <div class="acts"><button class="btn" id="save" type="button">設定を保存</button></div>`;
+          const collect = () => {
+            ranks && el.querySelectorAll('[data-job]').forEach((c) => { const key = c.dataset.job;
+              ranks[key] = [...c.querySelectorAll('[data-n]')].map((row, n) => ({ name: row.querySelector('.rn').value, shifts: n === 0 ? 0 : Number(row.querySelector('.rs').value) || 0, pct: Number(row.querySelector('.rp').value) || 100 })); });
+            st.promotionEnabled = el.querySelector('#pe').checked;
+          };
+          el.querySelectorAll('[data-add]').forEach((b) => (b.onclick = () => { collect(); const l = ranks[b.dataset.add], last = l[l.length - 1]; l.push({ name: `ランク${l.length + 1}`, shifts: last.shifts + 20, pct: Math.min(500, last.pct + 30) }); draw(); }));
+          el.querySelectorAll('[data-rm]').forEach((b) => (b.onclick = () => { collect(); ranks[b.closest('[data-job]').dataset.job].splice(Number(b.dataset.rm), 1); draw(); }));
+          el.querySelectorAll('[data-reset]').forEach((b) => (b.onclick = () => { collect(); ranks[b.dataset.reset] = JSON.parse(JSON.stringify(meta.defaults[b.dataset.reset])); draw(); }));
+          el.querySelector('#save').onclick = async () => {
+            collect();
+            const saved = await api('/settings', { method: 'PUT', body: { promotionEnabled: st.promotionEnabled, jobRanks: ranks } });
+            Object.assign(ranks, JSON.parse(JSON.stringify(saved.jobRanks))); toast('保存しました'); draw();
+          };
+        };
+        draw();
+      } },
+    /* ===== 指名手配 ===== */
+    { id: 'wanted', title: '指名手配', icon: 'alert',
+      async render(el, { api, esc, toast, pageHeader }) {
+        const [st, meta] = await Promise.all([api('/settings'), api('/jobs-meta')]);
+        el.innerHTML = `${pageHeader('指名手配', '犯罪に成功すると「手配度」が溜まり、星(⭐)が付きます。星が多いほど、犯罪は失敗しやすくなります。警察のバイトを重ねた人は、手配された人を逮捕して、懸賞金をもらえます。')}
+          <div class="card"><label class="sw"><input type="checkbox" id="we" ${st.wantedEnabled ? 'checked' : ''}><i></i><span><b>指名手配を使う</b><small>オンのとき: <code>/wanted</code>(手配書)と <code>/arrest</code>(逮捕)が使えます。手配中の人が多いほど、警察のバイトのボーナスが出やすくなります</small></span></label></div>
+          <div class="card"><h2>設定</h2><div class="grid2">
+            <div class="field"><label class="f" for="wd">手配度が1下がるまでの時間(分)</label><input id="wd" type="number" min="1" max="1440" value="${st.wantedDecayMin}"><p class="hint">放っておくと、手配度は時間とともに下がります</p></div>
+            <div class="field"><label class="f" for="wb">星1つぶんの懸賞金</label><input id="wb" type="number" min="0" value="${st.bountyPerStar}"><p class="hint">懸賞金は、手配度に比例します(星2つで、この金額の2倍)。逮捕した人に支払われます(予算がオンなら、予算から)</p></div>
+            <div class="field"><label class="f" for="wa">逮捕に必要な、警察の出勤回数</label><input id="wa" type="number" min="0" value="${st.arrestMinShifts}"><p class="hint">警察のバイト(/work)を、この回数以上している人だけが、逮捕できます</p></div>
+            <div class="field"><label class="f" for="wp">手配中が1人増えるごとの、警察ボーナス(%)</label><input id="wp" type="number" min="0" max="50" value="${st.policeBonusPerWanted}"><p class="hint">警察のバイトのボーナス(犯人逮捕の特別手当)の確率は、${meta.bonusBase}% + 手配中の人数 × この値(上限 ${meta.bonusCap}%)です</p></div></div></div>
+          <div class="card"><h2>仕組み</h2><ul style="margin:0;padding-left:1.2em">
+            <li>手配度が <b>${meta.heatPerStar}</b> 増えるごとに、星が1つ(最大5つ)。星1つにつき、犯罪の成功率が <b>${meta.penaltyPerStar}%</b> 下がります</li>
+            <li>犯罪・大型犯罪に失敗して<b>捕まる</b>と、手配は解除されます</li>
+            <li>逮捕の成功率は <b>${meta.arrestChance}%</b>。逮捕された人は、星の数ぶん(1つ5分、最大30分)留置場に入り、手配が解除されます。逮捕した人の待ち時間は ${meta.arrestCdMin}分です</li></ul></div>
+          <div class="card flush"><div class="card-h"><h2>成功したときに、上がる手配度</h2></div><div style="padding:6px 18px 12px"><table><tr><th>犯罪</th><th>手配度</th></tr>${meta.heat.map((h) => `<tr><td>${esc(h.name)}</td><td><b>+${h.heat}</b></td></tr>`).join('')}</table></div></div>
+          <div class="acts"><button class="btn" id="save" type="button">設定を保存</button></div>`;
+        const q = (x) => el.querySelector(x);
+        q('#save').onclick = async () => { await api('/settings', { method: 'PUT', body: { wantedEnabled: q('#we').checked, wantedDecayMin: q('#wd').value, bountyPerStar: q('#wb').value, arrestMinShifts: q('#wa').value, policeBonusPerWanted: q('#wp').value } }); toast('保存しました'); };
+      } },
     /* ===== 留置場 ===== */
     { id: 'jail', title: '留置場', icon: 'alert',
       async render(el, { api, esc, ic, toast, confirm, pageHeader }) {

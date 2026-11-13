@@ -1,5 +1,6 @@
 import { getSettings, money } from './settings.js';
-import { CRIMES } from './jobs.js';
+import { CRIMES, JOBS } from './jobs.js';
+import { HEAT, HEAT_PER_STAR, CHANCE_PENALTY_PER_STAR, ARREST, POLICE_BONUS_CAP } from './wanted.js';
 import { HEISTS } from './heist.js';
 import { ITEMS, MAX_STACK, toolFor, priceOf, marketRate } from './market.js';
 
@@ -41,6 +42,7 @@ export function crimeHelp({ guildId }) {
     sections.push({ name: '🕶️ 闇マーケット', value: 'このサーバーでは、**オフ**です。管理者が、ダッシュボードの「通貨」でオンにすると、犯罪に道具が必要になり、`/market` で買えるようになります。' });
   }
 
+  if (s.wantedEnabled) sections.push({ name: '🚨 指名手配', value: `犯罪・大型犯罪に成功すると、手配度が溜まり、星(⭐)が付きます。星1つにつき、犯罪の成功率が ${Math.round(CHANCE_PENALTY_PER_STAR * 100)}% 下がります。警察のバイトを重ねた人に、\`/arrest\` で逮捕されると、留置場に入り、懸賞金を取られます(手配書は \`/wanted\`)。捕まる(失敗する)と、手配は解除されます。詳しくは \`/help topic:職業\`` });
   sections.push({ name: '🔓 留置場と保釈', value: [
     '犯罪に失敗すると、留置場に入ります。入っている間は、犯罪ができません。',
     '・`/bail` — 保釈金を払って出ます(残り**1分につき ' + money(s, 100) + '**)',
@@ -53,5 +55,35 @@ export function crimeHelp({ guildId }) {
     '`/work` `/beg` — 安全に稼ぐ',
     '`/balance` `/deposit` `/withdraw` `/pay` `/richest` — お金の管理',
   ].join('\n') });
+  return sections;
+}
+
+/** /help topic:職業 の中身(バイト・昇進・指名手配) */
+export function jobHelp({ guildId }) {
+  const s = getSettings(guildId), sections = [];
+  sections.push({ name: '💼 バイト `/work`', value: [
+    '安全に稼げます(失敗はありません)。種類ごとに、待ち時間があります。`/job` で、自分の階級と出勤回数を見られます。',
+    '',
+    ...Object.values(JOBS).map((j) => `${j.emoji} **${j.name}** — 給料 ${range(s, j.pay)} ・ 待ち時間 ${dur(j.cd)}${j.bonus ? ` ・ ボーナス ${Math.round(j.bonus.chance * 100)}%(+${range(s, j.bonus.amount)})` : ''}`),
+  ].join('\n') });
+  if (s.promotionEnabled) {
+    sections.push({ name: '📈 昇進', value: ['出勤を重ねると昇進して、給料(ボーナスも)の倍率が上がります。', '',
+      ...Object.entries(JOBS).map(([k, j]) => `${j.emoji} **${j.name}**: ${s.jobRanks[k].map((r) => `${r.name}${r.shifts ? `(${r.shifts}回〜)` : ''} ×${r.pct / 100}`).join(' → ')}`)].join('\n') });
+  } else {
+    sections.push({ name: '📈 昇進', value: 'このサーバーでは、**オフ**です。管理者が、ダッシュボードの「通貨 → 職業の昇進」でオンにすると、出勤回数に応じて、階級が上がり、給料が増えます。' });
+  }
+  if (s.wantedEnabled) {
+    sections.push({ name: '🚨 指名手配', value: [
+      `犯罪・大型犯罪に**成功**すると、**手配度**が溜まります。手配度が ${HEAT_PER_STAR} 増えるごとに、星(⭐)が1つ(最大5つ)。星1つにつき、犯罪の成功率が **${Math.round(CHANCE_PENALTY_PER_STAR * 100)}%** 下がります。手配度は、**${s.wantedDecayMin}分ごとに1** 下がります。捕まる(失敗する)と、手配は解除されます。`,
+      '・`/wanted` — 手配書(手配中の人と、懸賞金)。`user` で、1人を調べられます',
+      `・\`/arrest\` — 指名手配中の人を逮捕。**警察のバイトを ${s.arrestMinShifts}回 以上**した人だけ。成功率 ${Math.round(ARREST.chance * 100)}%、待ち時間 ${dur(ARREST.cd)}。成功すると、**懸賞金**(星1つ ${money(s, s.bountyPerStar)})がもらえて、相手は留置場に入ります`,
+      `・**警察のバイトのボーナス**は、手配中の人が1人増えるごとに **+${s.policeBonusPerWanted}%**(基本 ${Math.round(JOBS.police.bonus.chance * 100)}% → 上限 ${Math.round(POLICE_BONUS_CAP * 100)}%)`,
+      '',
+      '手配度の上がり方: ' + [...Object.entries(CRIMES).map(([k, c]) => `${c.emoji}+${HEAT.crime[k] ?? 1}`), ...Object.values(HEISTS).map((T) => `${T.emoji}+${HEAT.heist[T.id] ?? 4}`)].join(' '),
+    ].join('\n') });
+  } else {
+    sections.push({ name: '🚨 指名手配', value: 'このサーバーでは、**オフ**です。管理者が、ダッシュボードの「通貨 → 指名手配」でオンにすると、犯罪で手配度が溜まり、警察のバイトを重ねた人が `/arrest` で逮捕して、懸賞金をもらえます。' });
+  }
+  sections.push({ name: '📋 関連コマンド', value: '`/work` `/job` — バイトと階級\n`/wanted` `/arrest` — 指名手配と逮捕\n`/crime` `/heist` — 犯罪(`/help topic:犯罪`)' });
   return sections;
 }
