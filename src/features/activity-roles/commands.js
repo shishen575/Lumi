@@ -98,7 +98,7 @@ async function renderTop(i, metric, page) {
     .setColor(0x6d5dfc)
     .setTitle(`🏆 ${METRICS[metric]}ランキング`)
     .setDescription(lines.join('\n') || 'まだデータがありません')
-    .setFooter({ text: `${d.page} / ${d.pages} ページ ・ あなた: ${mine.pos ? `${mine.pos}位` : '圏外'}` });
+    .setFooter({ text: `${d.page} / ${d.pages} ページ ・ ${i.member?.displayName ?? i.user.globalName ?? i.user.username}: ${mine.pos ? `${mine.pos}位` : '圏外'}` });
   const row = new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId('top:first').setEmoji('⏮').setStyle(ButtonStyle.Secondary).setDisabled(d.page <= 1),
     new ButtonBuilder().setCustomId('top:prev').setLabel('前へ').setStyle(ButtonStyle.Primary).setDisabled(d.page <= 1),
