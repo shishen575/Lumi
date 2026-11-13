@@ -92,6 +92,8 @@ export default {
 機能に `commands: [...]` と `help: '説明文'` を書くと、登録と `/help` への掲載が自動で行われます(`src/core/commands.js`)。
 
 ## 紹介サイト・説明書
+**リリースノート**: 機能を追加・変更したら、`site/release-notes.json` の先頭に、新しい `n`(番号)で1件追加します。BOTが更新で戻ったとき、お知らせチャンネルに「アップデート内容」として送られ、更新履歴のページにも表示されます(まだ知らせていない分だけ送ります)。
+
 `site/` に静的ページがあります: 紹介 `index.html` / 説明書 `docs.html` / 更新履歴 `changelog.html` / サポート `support.html` / プライバシーポリシー `privacy.html` / 利用規約 `terms.html`。
 (Developer Portal の「Terms of Service URL」「Privacy Policy URL」には、`/terms.html` と `/privacy.html` を設定できます)
 - BOTが `/` で配信します(例: `https://<BASE_URL>/`)。ダッシュボードは `/dashboard/` です(旧 `/about/` は `/` へ転送)。招待リンクは `/api/public` から自動で取得します

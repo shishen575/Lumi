@@ -11,6 +11,7 @@ Dash.registerTab({
           <div class="acts" style="margin-top:12px"><button class="btn" id="save" type="button">保存</button></div></div>
         <div class="card"><h2>お知らせの内容</h2><ul style="margin:0;padding-left:1.2em">
           <li>止まる前に「🔄 再起動します」、戻ったときに「✅ 戻りました(バージョン・かかった時間)」を送ります</li>
+          <li>更新で機能が追加・変更されたときは、戻ったお知らせに「アップデート内容」(リリースノート)も添えます(まだ知らせていない分だけ)</li>
           <li>止まる合図を受けてから、<b>5秒待って</b>から終了します(お知らせを出す時間です)</li>
           <li>短い間に何度も起動したときは、戻ったお知らせを続けて流しません</li></ul></div>`;
       el.querySelector('#rc').value = s.channel_id || '';

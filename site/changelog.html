@@ -21,7 +21,7 @@
 <main><div class="wrap page"><article>
 <h1>更新履歴</h1>
 <p>Lumiの機能追加と変更を、新しいものから順に載せています。</p>
-<div class="log">
+<div class="log" id="log">
 <section><div><h2>2026年11月(後半)</h2><p class="when">アップデート</p></div><ul>
   <li><span class="tag2">追加</span>通貨の管理者機能: メンバーの残高の調整(増やす・減らす・指定額)と、罰金の返金。操作は、すべて記録に残ります。オーナー・管理者・運営だけが使えます</li>
   <li><span class="tag2">追加</span>留置場の釈放を、サーバー側(管理者)でできるようにしました。ダッシュボードの「通貨 → 留置場」と、コマンド <code>/release</code> です</li>
@@ -68,6 +68,19 @@
 var INVITE = 'https://discord.com/oauth2/authorize?client_id=1570076671820693504&scope=bot+applications.commands&permissions=8&integration_type=0';
 function setInvite(u) { document.querySelectorAll('[data-invite]').forEach(function (a) { a.href = u; a.target = '_blank'; a.rel = 'noopener'; }); }
 setInvite(INVITE);
+
+// 新しい更新は release-notes.json から表示する(BOTの更新のお知らせと、同じ内容)
+fetch('release-notes.json').then(function (r) { return r.ok ? r.json() : []; }).then(function (list) {
+  var log = document.getElementById('log'), first = log.firstElementChild;
+  function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+  list.sort(function (a, b) { return b.n - a.n; }).forEach(function (e) {
+    var s = document.createElement('section');
+    s.innerHTML = '<div><h2>' + esc(e.title) + '</h2><p class="when">' + esc(e.date) + '</p></div><ul>' + e.items.map(function (it) {
+      return '<li><span class="tag2">' + esc(it.tag || '更新') + '</span>' + esc(it.text).replace(/`([^`]+)`/g, '<code>$1</code>') + '</li>';
+    }).join('') + '</ul>';
+    log.insertBefore(s, first);
+  });
+}).catch(function () {});
 fetch('/api/public').then(function (r) { return r.ok ? r.json() : null; }).then(function (j) { if (j && j.invite) setInvite(j.invite); }).catch(function () {});
 </script>
 </body>
