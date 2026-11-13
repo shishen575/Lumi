@@ -11,7 +11,7 @@ import {
 import { rankFor, scalePay } from './ranks.js';
 import { RAMEN, makeOrder, gradeRamen, GRADES } from './ramen.js';
 import { POLICE_BONUS_CAP } from './wanted.js';
-import { timeoutCfg, ramenCfg, crimeOf, jobOf, begOf, heistOf, itemOf, marketCfg, wantedCfg, bailPerMin } from './balance.js';
+import { toolCfg, timeoutCfg, ramenCfg, crimeOf, jobOf, begOf, heistOf, itemOf, marketCfg, wantedCfg, bailPerMin } from './balance.js';
 import { starsOf, stars as starText, bountyOf, chanceDelta } from './wanted.js';
 import { ITEMS, itemById, toolFor, priceOf, marketRate } from './market.js';
 import { CRIMES, JOBS, resolveCrime, resolveWork, resolveBeg } from './jobs.js';
@@ -123,6 +123,13 @@ function wantedLine(s, g, u, gain) {
   return n ? `\n\n${starText(n)} **指名手配 Lv${n}**(懸賞金 ${money(s, bountyOf(heat, s.bountyPerStar, wc.heatPerStar))})\n-# 警察に逮捕されると、手配は解除されます。星が多いほど、犯罪は失敗しやすくなります` : `\n-# 🔎 警察に目をつけられはじめた…(手配度 ${heat})`;
 }
 /** 闇マーケットがオンのとき、犯罪に必要な道具を1つ使う。使えたら tool を、オフなら null を、道具がなくて断ったら false を返す */
+/** 使った道具を、確率で持ち帰る(戻ってくる)。outcome: success / fail / timeout。戻ったら、その道具を返す */
+function keepTool(s, tool, outcome, g, u, rng = rnd) {
+  if (!tool || !(rng() < toolCfg(s)[outcome])) return null;
+  addItem(g, u, tool.id, 1);
+  return tool;
+}
+const toolLine = (tool) => (tool ? `\n🧰 ${tool.emoji} **${tool.name}** は、持ち帰りました(消費しませんでした)` : '');
 function takeTool(i, s, kind, key) {
   if (!s.blackMarket) return null;
   const tool = toolFor(kind, key); if (!tool) return null;
@@ -148,12 +155,12 @@ export const crimeCommand = {
     if (r.success) {
       const p = pay(g, u, r.amount, s);
       if (p.paid > 0) setCooldown(g, u, `crime:${key}`, c.cd);
-      return i.reply({ embeds: [card(i, s, GREEN, `${c.emoji} ${c.name} 成功!`, `${r.text}\n\n**+ ${money(s, p.paid)}**${shortNote(s, p)}${wantedLine(s, g, u, wc.heatCrime(key))}`)] });
+      return i.reply({ embeds: [card(i, s, GREEN, `${c.emoji} ${c.name} 成功!`, `${r.text}\n\n**+ ${money(s, p.paid)}**${shortNote(s, p)}${wantedLine(s, g, u, wc.heatCrime(key))}${toolLine(keepTool(s, toolUsed, 'success', g, u, rng))}`)] });
     }
     if (s.wantedEnabled) clearHeat(g, u); // 捕まったので、手配は解除
     const took = fine(i.guildId, i.user.id, r.amount, s, 'crime');
     jail(i.guildId, i.user.id, c.jail); setCooldown(i.guildId, i.user.id, `crime:${key}`, c.cd);
-    await i.reply({ embeds: [card(i, s, RED, `${c.emoji} ${c.name} 失敗…`, `${r.text}\n\n罰金 **- ${money(s, took)}**${debtNote(i, s)}\n🚔 留置場に ${dur(c.jail)} 入ります。(/bail で、保釈金を払って出られます)${starsNow ? '\n-# 捕まったので、指名手配は解除されました' : ''}`)] });
+    await i.reply({ embeds: [card(i, s, RED, `${c.emoji} ${c.name} 失敗…`, `${r.text}\n\n罰金 **- ${money(s, took)}**${debtNote(i, s)}\n🚔 留置場に ${dur(c.jail)} 入ります。(/bail で、保釈金を払って出られます)${starsNow ? '\n-# 捕まったので、指名手配は解除されました' : ''}${toolLine(keepTool(s, toolUsed, 'fail', g, u, rng))}`)] });
   },
 };
 export const workCommand = {
@@ -434,11 +441,12 @@ function settleHeistFailure(g, u, s, reason, rng = rnd) {
   const took = fineAmount > 0 ? fine(g, u, fineAmount, s, 'heist') : 0;
   if (jailMs > 0) jail(g, u, jailMs);
   clearHeat(g, u); // 捕まった(撤退した)ので、手配は解除
-  return { game, took, reason, T, jailMs };
+  const toolBack = keepTool(s, game.state?.tool ? itemById(game.state.tool) : null, reason === 'timeout' ? 'timeout' : 'fail', g, u, rng); // 使った道具を、持ち帰れることがある
+  return { game, took, reason, T, jailMs, toolBack };
 }
 const reasonText = (T, reason) => (reason === 'timeout' ? `⏰ 時間切れ! ${T.caught}` : `🚨 ${T.maxMistakes + 1}回間違えて、警報が鳴り響いた!`);
 const failEmbed = (s, name, r) => new EmbedBuilder().setColor(RED).setTitle(`${r.T.emoji} ${r.T.name} ${r.took || r.jailMs ? '失敗…' : '撤退'}`)
-  .setDescription(`${reasonText(r.T, r.reason)}\n\n${r.took || r.jailMs ? `罰金 **- ${money(s, r.took)}**${r.jailMs ? `\n🚔 留置場に ${dur(r.jailMs)} 入ります。(/bail で、保釈金を払って出られます)` : ''}` : '報酬は、ありません。(罰金も、留置場も、ありません)'}`).setAuthor({ name });
+  .setDescription(`${reasonText(r.T, r.reason)}\n\n${r.took || r.jailMs ? `罰金 **- ${money(s, r.took)}**${r.jailMs ? `\n🚔 留置場に ${dur(r.jailMs)} 入ります。(/bail で、保釈金を払って出られます)` : ''}` : '報酬は、ありません。(罰金も、留置場も、ありません)'}${toolLine(r.toolBack)}`).setAuthor({ name });
 const hsStatus = (st, deadline, T) => {
   const left = T.maxMistakes - st.mistakes;
   return `制限時間: <t:${Math.floor(deadline / 1000)}:R> まで ・ ステップ **${st.idx + 1} / ${st.steps.length}** ・ 間違えられるのは あと **${left}回**`;
@@ -465,7 +473,7 @@ export const heistCommand = {
     const cd = cooldownLeft(g, u, key); if (cd) return refuse(i, `${T.emoji} ${T.short}は、まだ警備が厳重です。あと ${dur(cd)}。`);
     if (budgetEmpty(s, g)) return refuse(i, BUDGET_EMPTY);
     const toolUsed = takeTool(i, s, 'heist', T.id); if (toolUsed === false) return; // 闇マーケットがオンのとき、道具が必要
-    const st = { target: T.id, steps: makeSteps(rng, T.steps, T.makers), idx: 0, mistakes: 0, wrong: [], reward: heistBase(rng, T), name: i.member?.displayName ?? i.user.username, avatar: i.user.displayAvatarURL?.() };
+    const st = { target: T.id, tool: toolUsed?.id ?? null, steps: makeSteps(rng, T.steps, T.makers), idx: 0, mistakes: 0, wrong: [], reward: heistBase(rng, T), name: i.member?.displayName ?? i.user.username, avatar: i.user.displayAvatarURL?.() };
     const deadline = (i.createdTimestamp ?? Date.now()) + T.timeMs; // コマンドを打った時刻から数える(BOTの処理の遅れで、短くならない)
     setCooldown(g, u, key, T.cd);
     saveHeist(g, u, { channelId: i.channelId, state: st, deadline });  // 先に保存してから返信する
@@ -501,7 +509,7 @@ export const heistButton = {
         const left = Math.max(0, game.deadline - now), amount = heistReward(st.reward, left, T);
         const p = pay(g, uid, amount, s);
         return safeUpdate(i, { embeds: [new EmbedBuilder().setColor(GOLD).setTitle(`${T.emoji} ${T.name} 成功!`).setAuthor({ name: st.name, iconURL: st.avatar })
-          .setDescription(`${T.success}\n残り ${dur(left)} でクリア(スピードボーナス +${Math.round((amount / st.reward - 1) * 100)}%)\n\n**+ ${money(s, p.paid)}**${shortNote(s, p)}${wantedLine(s, g, uid, wantedCfg(s).heatHeist(T.id))}`)], components: [] });
+          .setDescription(`${T.success}\n残り ${dur(left)} でクリア(スピードボーナス +${Math.round((amount / st.reward - 1) * 100)}%)\n\n**+ ${money(s, p.paid)}**${shortNote(s, p)}${wantedLine(s, g, uid, wantedCfg(s).heatHeist(T.id))}${toolLine(keepTool(s, st.tool ? itemById(st.tool) : null, 'success', g, uid))}`)], components: [] });
       }
       saveHeist(g, uid, { state: st, deadline: game.deadline });
       return safeUpdate(i, hsBody(st, game.deadline, uid, T));

@@ -65,6 +65,9 @@ function buildSchema() {
   for (const it of ITEMS) L.push(p(`item.${it.id}.price`, '闇マーケット', '🕶️ 道具の値段(基本)', `${it.emoji} ${it.name}`, it.price, 1, 1e9, '$'));
   L.push(p('market.rateLow', '闇マーケット', '🕶️ 闇相場と所持数', '相場の下限(基本の値段に対する)', 80, 10, 100, '%'));
   L.push(p('market.rateHigh', '闇マーケット', '🕶️ 闇相場と所持数', '相場の上限', 130, 100, 500, '%'));
+  L.push(p('tool.keepOnSuccess', '闇マーケット', '🧰 道具の持ち帰り(使った道具が、戻ってくる確率)', '成功したとき', 0, 0, 100, '%'));
+  L.push(p('tool.keepOnFail', '闇マーケット', '🧰 道具の持ち帰り(使った道具が、戻ってくる確率)', '失敗して捕まったとき', 0, 0, 100, '%'));
+  L.push(p('tool.keepOnTimeout', '闇マーケット', '🧰 道具の持ち帰り(使った道具が、戻ってくる確率)', '大型犯罪が時間切れ・撤退になったとき', 100, 0, 100, '%'));
   L.push(p('market.maxStack', '闇マーケット', '🕶️ 闇相場と所持数', '1種類の道具を持てる上限', 99, 1, 9999, '個'));
   const wg = '🚨 指名手配のしくみ';
   L.push(p('wanted.heatPerStar', '指名手配', wg, '星1つに必要な手配度', HEAT_PER_STAR, 1, 100, ''));
@@ -116,6 +119,7 @@ export const heistOf = (s, id) => {
     speedBonus: val(s, pre + 'speedBonus') / 100, fine: range(s, pre + 'fineMin', pre + 'fineMax'), jail: val(s, pre + 'jail') * MIN, cd: val(s, pre + 'cd') * MIN };
 };
 export const timeoutCfg = (s) => ({ finePct: val(s, 'heist.timeoutFinePct') / 100, jailPct: val(s, 'heist.timeoutJailPct') / 100 }); // 時間切れの扱い(100% = 失敗と同じ。0% = 罰なしの撤退)
+export const toolCfg = (s) => ({ success: val(s, 'tool.keepOnSuccess') / 100, fail: val(s, 'tool.keepOnFail') / 100, timeout: val(s, 'tool.keepOnTimeout') / 100 }); // 使った道具が、戻ってくる確率
 export const itemOf = (s, item) => ({ ...item, price: val(s, `item.${item.id}.price`) });
 export const marketCfg = (s) => ({ range: [val(s, 'market.rateLow') / 100, val(s, 'market.rateHigh') / 100], maxStack: val(s, 'market.maxStack') });
 export const wantedCfg = (s) => {

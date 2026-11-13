@@ -2,7 +2,7 @@ import { getSettings, money } from './settings.js';
 import { CRIMES, JOBS } from './jobs.js';
 import { POLICE_BONUS_CAP } from './wanted.js';
 import { RAMEN, GRADES } from './ramen.js';
-import { timeoutCfg, ramenCfg, crimeOf, jobOf, heistOf, itemOf, marketCfg, wantedCfg, bailPerMin } from './balance.js';
+import { toolCfg, timeoutCfg, ramenCfg, crimeOf, jobOf, heistOf, itemOf, marketCfg, wantedCfg, bailPerMin } from './balance.js';
 import { HEISTS } from './heist.js';
 import { ITEMS, toolFor, priceOf, marketRate } from './market.js';
 
@@ -39,6 +39,7 @@ export function crimeHelp({ guildId }) {
     sections.push({ name: '🕶️ 闇マーケット `/market`(今日の相場)', value: [
       '`/market list` で相場と所持数、`/market buy` で購入。値段は毎日少し変わります(基本の' + mc.range[0] + '〜' + mc.range[1] + '倍)。1種類につき、最大' + mc.maxStack + '個まで。',
       '',
+      (() => { const k = toolCfg(s); return `使った道具は、結果によって、持ち帰れることがあります(成功 ${Math.round(k.success * 100)}% ・ 失敗 ${Math.round(k.fail * 100)}% ・ 大型犯罪の時間切れ/撤退 ${Math.round(k.timeout * 100)}%)`; })(),
       ...ITEMS.map((x) => { const r = marketRate(guildId, x.id, undefined, mc.range); return `${x.emoji} **${x.name}** ${money(s, priceOf(guildId, itemOf(s, x), undefined, mc.range))}${r < 0.95 ? ' 📉' : r > 1.15 ? ' 📈' : ''} — ${x.desc}`; }),
     ].join('\n') });
   } else {
