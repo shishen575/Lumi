@@ -2,6 +2,12 @@ import { recordLatency, pruneLatency } from './latency.js';
 
 // 止まった記録(/ping で表示する)。直近1時間ぶん
 const stalls = [];
+let arrivalSinceRecord = 0, missedSinceRecord = 0; // 前回の記録から: コマンドが届くまでの遅れの最大(ms)、応答できなかったコマンドの数
+/** コマンド・ボタンが届いたとき(lagMs = 押されてから、BOTが受け取るまで)、応答できなかったとき(missed)に呼ぶ */
+export function noteInteraction({ lagMs = 0, missed = false } = {}) {
+  if (lagMs > arrivalSinceRecord) arrivalSinceRecord = Math.round(lagMs);
+  if (missed) missedSinceRecord++;
+}
 let stallSinceRecord = 0; // 前回の記録から、いちばん長かった止まり(ms)
 export function healthSnapshot(now = Date.now()) {
   while (stalls.length && now - stalls[0].at > 3600_000) stalls.shift();
@@ -48,7 +54,7 @@ export function startHealthMonitor(client) {
       if (restMs > 1500) console.warn(`[health] Discordの通常の通信(REST)が遅いです (${restMs}ms)`);
     } catch { restMs = null; }
     // 1分ごとに、ゲートウェイ・REST・処理の止まりを、データベースに記録する(ダッシュボードのグラフ用)
-    try { recordLatency({ gateway: client?.ws?.ping, rest: restMs, stall: stallSinceRecord }); stallSinceRecord = 0; } catch (e) { console.warn('[health] 通信の記録に失敗:', e.message); }
+    try { recordLatency({ gateway: client?.ws?.ping, rest: restMs, stall: stallSinceRecord, arrival: arrivalSinceRecord || null, missed: missedSinceRecord }); stallSinceRecord = 0; arrivalSinceRecord = 0; missedSinceRecord = 0; } catch (e) { console.warn('[health] 通信の記録に失敗:', e.message); }
   };
   if (client?.rest) { const r = setInterval(probe, 60_000); r.unref?.(); probe(); }
   const pr = setInterval(() => { try { pruneLatency(); } catch { /* 次の機会に */ } }, 3600_000); pr.unref?.();

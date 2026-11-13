@@ -87,12 +87,10 @@ const MEDAL = { 1: '🥇', 2: '🥈', 3: '🥉' };
 async function renderTop(i, metric, page) {
   const gid = i.guildId;
   const d = pageData(gid, metric, page);
-  const found = d.rows.length
-    ? await i.guild.members.fetch({ user: d.rows.map((r) => r.user_id) }).catch(() => new Map())
-    : new Map();
+  // メンバーの取得はしない(ゲートウェイ経由の問い合わせなので、遅い時間帯に、3秒の応答期限を超えうる)。ランキングは、退出した人を除いて数えている
   const val = (v) => fmt(metric, metric === 'voice_minutes' ? Math.floor(v / 60) : v);
   const lines = d.rows.map((r) =>
-    `${MEDAL[r.rk] ?? `**${r.rk}位**`} ${found.get?.(r.user_id) ? `<@${r.user_id}>` : '(退出したユーザー)'} — ${val(r.v)}`);
+    `${MEDAL[r.rk] ?? `**${r.rk}位**`} <@${r.user_id}> — ${val(r.v)}`);
   const mine = position(gid, metric, i.user.id);
   const embed = new EmbedBuilder()
     .setColor(0x6d5dfc)

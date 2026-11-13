@@ -1,5 +1,6 @@
 import { Events, SlashCommandBuilder, EmbedBuilder, MessageFlags } from 'discord.js';
 import { isShuttingDown } from './shutdown.js';
+import { noteInteraction } from './health.js';
 import { hasAccessSync } from './access.js';
 
 /** サーバーごとの、登録済みコマンドのID(押せるコマンド表記 </名前:ID> を作るのに使う) */
@@ -35,9 +36,11 @@ export function setupCommands(client, features) {
   async function run(label, i, fn) {
     const t0 = Date.now();
     const lag = t0 - i.createdTimestamp; // 送られてから、BOTが処理を始めるまで
+    noteInteraction({ lagMs: lag });
     try { await fn(i); }
     catch (e) {
       if (e.code === 10062) { // 3秒以内に応答できなかった。再試行しても無効なので、要点だけ記録する
+        noteInteraction({ missed: true });
         console.warn(`[commands] ${label}: 3秒以内に応答できませんでした (受信まで ${lag}ms / 処理 ${Date.now() - t0}ms)`);
         return;
       }

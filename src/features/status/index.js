@@ -35,7 +35,7 @@ export const pingCommand = {
         { name: '📨 コマンドが届くまで', value: ms(received), inline: true },
         { name: '💬 返信にかかった時間', value: ms(replied), inline: true },
         { name: '⚙️ 処理の止まり(直近1時間)', value: st.count ? `${st.count}回 / 最大 ${(st.maxMs / 1000).toFixed(1)}秒` : 'なし', inline: true },
-        ...(hist?.n >= 3 ? [{ name: '📈 直近1時間(1分ごとの記録)', value: `ゲートウェイ 平均 ${ms(hist.gwAvg)} / 最大 ${ms(hist.gwMax)}\nREST 平均 ${ms(hist.restAvg)} / 最大 ${ms(hist.restMax)}`, inline: false }] : []),
+        ...(hist?.n >= 3 ? [{ name: '📈 直近1時間(1分ごとの記録)', value: `ゲートウェイ 平均 ${ms(hist.gwAvg)} / 最大 ${ms(hist.gwMax)}\nREST 平均 ${ms(hist.restAvg)} / 最大 ${ms(hist.restMax)}\nコマンドが届くまで 最大 ${ms(hist.arrivalMax)} ・ 応答できなかったコマンド ${hist.missed}回`, inline: false }] : []),
         { name: '🖥️ BOT', value: `稼働 ${up(process.uptime())} ・ メモリ ${Math.round(mem.rss / 1048576)}MB ・ ${i.client.guilds.cache.size}サーバー`, inline: false },
       );
     if (version) embed.setFooter({ text: `バージョン ${version}` });
