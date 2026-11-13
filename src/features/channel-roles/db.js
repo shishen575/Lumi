@@ -21,13 +21,24 @@ CREATE TABLE IF NOT EXISTS chr_granted (
 );
 `);
 
+// 追加の項目(既存DBにも追加): 対象の種類(channel / category)、何回でも付与するか
+for (const col of ["kind TEXT NOT NULL DEFAULT 'channel'", 'repeat INTEGER NOT NULL DEFAULT 0']) {
+  try { db.exec(`ALTER TABLE chr_rules ADD COLUMN ${col}`); } catch { /* exists */ }
+}
+
 export const getRules = (g) => db.prepare('SELECT * FROM chr_rules WHERE guild_id=? ORDER BY id').all(g);
+/** そのメッセージに当てはまるルール(チャンネルのルールと、そのカテゴリのルール)。ids = [チャンネルID, カテゴリID] */
+export const rulesForTargets = (g, ids) => {
+  const list = ids.filter(Boolean);
+  if (!list.length) return [];
+  return db.prepare(`SELECT * FROM chr_rules WHERE guild_id=? AND channel_id IN (${list.map(() => '?').join(',')}) ORDER BY id`).all(g, ...list);
+};
 export const rulesForChannel = (g, ch) => db.prepare('SELECT * FROM chr_rules WHERE guild_id=? AND channel_id=?').all(g, ch);
 export const getRule = (g, id) => db.prepare('SELECT * FROM chr_rules WHERE guild_id=? AND id=?').get(g, id);
-export const addRule = (g, r) => Number(db.prepare('INSERT INTO chr_rules (guild_id,channel_id,role_id,min_messages,include_threads) VALUES (?,?,?,?,?)')
-  .run(g, r.channel_id, r.role_id, r.min_messages, r.include_threads).lastInsertRowid);
-export const updateRule = (g, id, r) => Number(db.prepare('UPDATE chr_rules SET channel_id=?,role_id=?,min_messages=?,include_threads=? WHERE guild_id=? AND id=?')
-  .run(r.channel_id, r.role_id, r.min_messages, r.include_threads, g, id).changes) > 0;
+export const addRule = (g, r) => Number(db.prepare('INSERT INTO chr_rules (guild_id,channel_id,role_id,min_messages,include_threads,kind,repeat) VALUES (?,?,?,?,?,?,?)')
+  .run(g, r.channel_id, r.role_id, r.min_messages, r.include_threads, r.kind ?? 'channel', r.repeat ?? 0).lastInsertRowid);
+export const updateRule = (g, id, r) => Number(db.prepare('UPDATE chr_rules SET channel_id=?,role_id=?,min_messages=?,include_threads=?,kind=?,repeat=? WHERE guild_id=? AND id=?')
+  .run(r.channel_id, r.role_id, r.min_messages, r.include_threads, r.kind ?? 'channel', r.repeat ?? 0, g, id).changes) > 0;
 export function deleteRule(g, id) {
   const row = getRule(g, id); if (!row) return false;
   db.prepare('DELETE FROM chr_rules WHERE guild_id=? AND id=?').run(g, id);
