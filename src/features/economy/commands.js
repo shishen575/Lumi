@@ -11,7 +11,7 @@ import {
 import { rankFor, scalePay } from './ranks.js';
 import { RAMEN, makeOrder, gradeRamen, GRADES } from './ramen.js';
 import { POLICE_BONUS_CAP } from './wanted.js';
-import { ramenCfg, crimeOf, jobOf, begOf, heistOf, itemOf, marketCfg, wantedCfg, bailPerMin } from './balance.js';
+import { timeoutCfg, ramenCfg, crimeOf, jobOf, begOf, heistOf, itemOf, marketCfg, wantedCfg, bailPerMin } from './balance.js';
 import { starsOf, stars as starText, bountyOf, chanceDelta } from './wanted.js';
 import { ITEMS, itemById, toolFor, priceOf, marketRate } from './market.js';
 import { CRIMES, JOBS, resolveCrime, resolveWork, resolveBeg } from './jobs.js';
@@ -428,13 +428,17 @@ export const ramenButton = {
 function settleHeistFailure(g, u, s, reason, rng = rnd) {
   const game = claimHeist(g, u); if (!game) return null;
   const T = heistOf(s, game.state?.target);
-  const took = fine(g, u, heistFine(rng, T), s, 'heist'); jail(g, u, T.jail);
-  clearHeat(g, u); // 捕まったので、手配は解除
-  return { game, took, reason, T };
+  // 時間切れ(制限時間を過ぎた・放置した)は、設定の割合(初期値 100% = 失敗と同じ)で、罰を軽くできる。0% なら、罰なしの撤退
+  const tc = reason === 'timeout' ? timeoutCfg(s) : { finePct: 1, jailPct: 1 };
+  const fineAmount = Math.round(heistFine(rng, T) * tc.finePct), jailMs = Math.round(T.jail * tc.jailPct);
+  const took = fineAmount > 0 ? fine(g, u, fineAmount, s, 'heist') : 0;
+  if (jailMs > 0) jail(g, u, jailMs);
+  clearHeat(g, u); // 捕まった(撤退した)ので、手配は解除
+  return { game, took, reason, T, jailMs };
 }
 const reasonText = (T, reason) => (reason === 'timeout' ? `⏰ 時間切れ! ${T.caught}` : `🚨 ${T.maxMistakes + 1}回間違えて、警報が鳴り響いた!`);
-const failEmbed = (s, name, r) => new EmbedBuilder().setColor(RED).setTitle(`${r.T.emoji} ${r.T.name} 失敗…`)
-  .setDescription(`${reasonText(r.T, r.reason)}\n\n罰金 **- ${money(s, r.took)}**\n🚔 留置場に ${dur(r.T.jail)} 入ります。(/bail で、保釈金を払って出られます)`).setAuthor({ name });
+const failEmbed = (s, name, r) => new EmbedBuilder().setColor(RED).setTitle(`${r.T.emoji} ${r.T.name} ${r.took || r.jailMs ? '失敗…' : '撤退'}`)
+  .setDescription(`${reasonText(r.T, r.reason)}\n\n${r.took || r.jailMs ? `罰金 **- ${money(s, r.took)}**${r.jailMs ? `\n🚔 留置場に ${dur(r.jailMs)} 入ります。(/bail で、保釈金を払って出られます)` : ''}` : '報酬は、ありません。(罰金も、留置場も、ありません)'}`).setAuthor({ name });
 const hsStatus = (st, deadline, T) => {
   const left = T.maxMistakes - st.mistakes;
   return `制限時間: <t:${Math.floor(deadline / 1000)}:R> まで ・ ステップ **${st.idx + 1} / ${st.steps.length}** ・ 間違えられるのは あと **${left}回**`;

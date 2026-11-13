@@ -2,7 +2,7 @@ import { getSettings, money } from './settings.js';
 import { CRIMES, JOBS } from './jobs.js';
 import { POLICE_BONUS_CAP } from './wanted.js';
 import { RAMEN, GRADES } from './ramen.js';
-import { ramenCfg, crimeOf, jobOf, heistOf, itemOf, marketCfg, wantedCfg, bailPerMin } from './balance.js';
+import { timeoutCfg, ramenCfg, crimeOf, jobOf, heistOf, itemOf, marketCfg, wantedCfg, bailPerMin } from './balance.js';
 import { HEISTS } from './heist.js';
 import { ITEMS, toolFor, priceOf, marketRate } from './market.js';
 
@@ -29,6 +29,7 @@ export function crimeHelp({ guildId }) {
 
   sections.push({ name: '🏦 大型犯罪 `/heist target:場所`(腕で決まります)', value: [
     '制限時間内に、ボタンで問題(計算・数列・仲間はずれ・配線・暗証番号・監視カメラの数え上げ)に答えます。全部解ければ成功。間違えられる回数を超えるか、時間切れで失敗です。早く終えるほど、報酬は**最大+25%**。待ち時間は、場所ごとです。',
+    (() => { const tc = timeoutCfg(s); return `⏰ 時間切れ(放置も同じ): ${tc.finePct === 1 && tc.jailPct === 1 ? '失敗と同じ扱い(重い罰金と留置場)' : tc.finePct === 0 && tc.jailPct === 0 ? '罰のない撤退(報酬はなし)' : `罰が軽くなります(罰金 ${Math.round(tc.finePct * 100)}% ・ 留置場 ${Math.round(tc.jailPct * 100)}%)`}`; })(),
     '',
     ...Object.keys(HEISTS).map((id) => heistOf(s, id)).map((T) =>
       `${T.emoji} **${T.short}** — ${T.steps}問・${T.timeMs / 1000}秒・間違いは${T.maxMistakes}回まで\n　成功 ${range(s, T.win)} ・ 失敗 罰金 ${range(s, T.fine)}・留置場 ${dur(T.jail)} ・ 待ち時間 ${dur(T.cd)}${toolNote('heist', T.id)}`),

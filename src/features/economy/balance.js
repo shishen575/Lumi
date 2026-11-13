@@ -60,6 +60,8 @@ function buildSchema() {
     L.push(p(pre + 'jail', '大型犯罪', g, '失敗したときの留置場', T.jail / MIN, 0, 1440, '分'));
     L.push(p(pre + 'cd', '大型犯罪', g, '次に挑戦できるまでの時間', T.cd / MIN, 0, 10080, '分'));
   }
+  L.push(p('heist.timeoutFinePct', '大型犯罪', '⏰ 時間切れ(制限時間を過ぎた・放置した)', '罰金の割合(失敗の罰金に対して)', 100, 0, 100, '%'));
+  L.push(p('heist.timeoutJailPct', '大型犯罪', '⏰ 時間切れ(制限時間を過ぎた・放置した)', '留置場の割合(失敗の留置場に対して)', 100, 0, 100, '%'));
   for (const it of ITEMS) L.push(p(`item.${it.id}.price`, '闇マーケット', '🕶️ 道具の値段(基本)', `${it.emoji} ${it.name}`, it.price, 1, 1e9, '$'));
   L.push(p('market.rateLow', '闇マーケット', '🕶️ 闇相場と所持数', '相場の下限(基本の値段に対する)', 80, 10, 100, '%'));
   L.push(p('market.rateHigh', '闇マーケット', '🕶️ 闇相場と所持数', '相場の上限', 130, 100, 500, '%'));
@@ -113,6 +115,7 @@ export const heistOf = (s, id) => {
   return { ...T, steps: val(s, pre + 'steps'), timeMs: val(s, pre + 'timeSec') * 1000, maxMistakes: val(s, pre + 'maxMistakes'), win: range(s, pre + 'winMin', pre + 'winMax'),
     speedBonus: val(s, pre + 'speedBonus') / 100, fine: range(s, pre + 'fineMin', pre + 'fineMax'), jail: val(s, pre + 'jail') * MIN, cd: val(s, pre + 'cd') * MIN };
 };
+export const timeoutCfg = (s) => ({ finePct: val(s, 'heist.timeoutFinePct') / 100, jailPct: val(s, 'heist.timeoutJailPct') / 100 }); // 時間切れの扱い(100% = 失敗と同じ。0% = 罰なしの撤退)
 export const itemOf = (s, item) => ({ ...item, price: val(s, `item.${item.id}.price`) });
 export const marketCfg = (s) => ({ range: [val(s, 'market.rateLow') / 100, val(s, 'market.rateHigh') / 100], maxStack: val(s, 'market.maxStack') });
 export const wantedCfg = (s) => {
