@@ -44,7 +44,7 @@ Node.js 22.13+ が必要(組み込みSQLite使用)。データは `data/bot.db`�
    (Pterodactylの割当ポート。BOT内で `SERVER_PORT` を自動使用)
 3. このフォルダをGitリポジトリにpush(または後でファイルをアップロード)
 4. パネル Admin → Nests → Import Egg で `deploy/egg-lumi.json` を取り込み
-5. サーバー作成時に変数を入力: トークン類 / `BASE_URL=https://bot.example.com` / `TUNNEL_TOKEN` / `GIT_ADDRESS`
+5. サーバー作成時に変数を入力: トークン類 / `BASE_URL=https://bot.example.com` / `TUNNEL_TOKEN` / `TUNNEL_PROTOCOL`(省略可。`http2`=TCP が既定、`quic`、`auto`)/ `GIT_ADDRESS`
 6. 起動するとBOTとダッシュボード、cloudflared(自動起動・自動再起動)が立ち上がる
 
 ポート開放は不要(トンネルは外向き接続)。

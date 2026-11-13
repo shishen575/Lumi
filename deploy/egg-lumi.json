@@ -89,6 +89,16 @@
       "field_type": "text"
     },
     {
+      "name": "Tunnel Protocol",
+      "description": "Cloudflare Tunnel の通信方式。http2(TCP。既定)/ quic(UDP)/ auto。空なら http2",
+      "env_variable": "TUNNEL_PROTOCOL",
+      "default_value": "http2",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": "nullable|in:http2,quic,auto",
+      "field_type": "text"
+    },
+    {
       "name": "Git Address",
       "description": "BOTのソースのGitリポジトリURL(アップロードで入れるなら空)",
       "env_variable": "GIT_ADDRESS",
