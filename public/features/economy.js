@@ -18,6 +18,8 @@ Dash.registerTab({
             </div></div>
           <div class="card"><h2>借金</h2>
             <label class="sw"><input type="checkbox" id="ad" ${st.allowDebt ? 'checked' : ''}><i></i><span><b>借金を許可する</b><small>オンのとき: 罰金やチンチロの倍払いが、持っているお金を超えると、所持金が0より下(借金)になります。<b>所持金が0以下の間は、犯罪ができません</b>(バイト・乞食で返せます)。オフのとき: 持っているお金までしか、引かれません</small></span></label></div>
+          <div class="card"><h2>闇マーケット</h2>
+            <label class="sw"><input type="checkbox" id="bm" ${st.blackMarket ? 'checked' : ''}><i></i><span><b>闇マーケットを使う(犯罪に道具が必要)</b><small>オンのとき: 犯罪・大型犯罪に、専用の<b>道具</b>が必要になります(1回の挑戦で1つ使います)。道具は <code>/market</code> で買えて、値段は毎日少し変わります。オフのとき: 道具なしで、これまでどおり挑戦できます(<code>/market</code> は使えません)</small></span></label></div>
           <div class="card"><h2>ギャンブルの還元率</h2>
             <p class="sub">賭け金に対して、平均でどれだけ戻ってくるかを、パーセントで決めます。100%未満だと、遊ぶほど、お金が減っていきます。</p>
             <div class="field"><label class="f" for="pr">還元率(%)</label><div class="inline"><input id="pr" type="number" min="50" max="150" value="${st.payoutRate}" style="width:110px"><input id="prs" type="range" min="50" max="150" value="${st.payoutRate}" style="flex:1;min-width:120px"><span class="mut">%</span></div>
@@ -38,7 +40,7 @@ Dash.registerTab({
         q('#pr').onchange = q('#prs').onchange = drawRates;
         drawRates();
         q('#save').onclick = async () => {
-          await api('/settings', { method: 'PUT', body: { enabled: q('#en').checked, currencyName: q('#cn').value, currencyEmoji: q('#ce').value, startBalance: q('#sb').value, maxBet: q('#mb').value, payoutRate: q('#pr').value, allowDebt: q('#ad').checked } });
+          await api('/settings', { method: 'PUT', body: { enabled: q('#en').checked, currencyName: q('#cn').value, currencyEmoji: q('#ce').value, startBalance: q('#sb').value, maxBet: q('#mb').value, payoutRate: q('#pr').value, allowDebt: q('#ad').checked, blackMarket: q('#bm').checked } });
           toast('保存しました');
         };
       } },
@@ -92,7 +94,7 @@ Dash.registerTab({
                 <div class="field"><label class="f" for="nt">メモ(任意)</label><input id="nt" type="text" maxlength="100" placeholder="理由など"></div></div>
               <div class="acts"><button class="btn" id="apply" type="button">調整する</button></div>
               <p class="hint">予算には、影響しません(管理者による調整は、予算の出し入れとは別です)。${st.allowDebt ? '' : '借金を許可していないので、手持ちは0未満になりません。'}</p></div>
-            <div class="card flush"><div class="card-h"><h2>最近の罰金(犯罪・大型銀行)</h2></div>${a.fines.length ? `<ol class="lb">${a.fines.map((f) => `<li style="grid-template-columns:minmax(0,1fr) auto auto"><span class="nm">${f.kind === 'heist' ? '🏦 大型銀行' : '🚔 犯罪'}の罰金 <b>${fmtN(f.amount)}</b> <span class="mut small">${dt(f.at)}</span></span>${f.refunded ? '<span class="badge ok">返金済み</span>' : `<button class="btn ghost sm" type="button" data-f="${f.id}" data-a="${f.amount}">返金する</button>`}<span></span></li>`).join('')}</ol>` : '<div class="empty"><h2>最近の罰金は、ありません</h2></div>'}</div>`;
+            <div class="card flush"><div class="card-h"><h2>最近の罰金(犯罪・大型犯罪)</h2></div>${a.fines.length ? `<ol class="lb">${a.fines.map((f) => `<li style="grid-template-columns:minmax(0,1fr) auto auto"><span class="nm">${f.kind === 'heist' ? '🏦 大型犯罪' : '🚔 犯罪'}の罰金 <b>${fmtN(f.amount)}</b> <span class="mut small">${dt(f.at)}</span></span>${f.refunded ? '<span class="badge ok">返金済み</span>' : `<button class="btn ghost sm" type="button" data-f="${f.id}" data-a="${f.amount}">返金する</button>`}<span></span></li>`).join('')}</ol>` : '<div class="empty"><h2>最近の罰金は、ありません</h2></div>'}</div>`;
           q('#apply').onclick = async () => {
             const body = { user_id: picked, target: q('#tg').value, mode: q('#md').value, amount: q('#am').value, note: q('#nt').value };
             if (body.amount === '') { toast('金額を入力してください', 'err'); return; }

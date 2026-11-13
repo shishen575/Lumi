@@ -1,6 +1,6 @@
 import { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, MessageFlags } from 'discord.js';
 import { getSettings, money } from './settings.js';
-import { transfer, adjustBalance, clearCooldowns, audit, peek, deposit, withdraw, cooldownLeft, setCooldown, jailLeft, jail, release, richest, getBj, saveBj, deleteBj, getHeist, saveHeist, claimHeist, expiredHeists, setHeistDeadline, releaseAll } from './db.js';
+import { itemQty, allItems, addItem, useItem, transfer, adjustBalance, clearCooldowns, audit, peek, deposit, withdraw, cooldownLeft, setCooldown, jailLeft, jail, release, richest, getBj, saveBj, deleteBj, getHeist, saveHeist, claimHeist, expiredHeists, setHeistDeadline, releaseAll } from './db.js';
 import { ensureAccount, pay, collect, fine, treasury } from './ledger.js';
 import { hasAccessSync, isOperator } from '../../core/access.js';
 import { PermissionFlagsBits } from 'discord.js';
@@ -8,8 +8,9 @@ import {
   rnd, roundProb, chinchiroPlay, chinchiroCompare, chinchiroScale, slotSpin, slotPayout, slotMultiplier,
   bjDeal, bjHit, bjStand, bjDouble, handValue, cardText, bjScale,
 } from './games.js';
+import { ITEMS, MAX_STACK, itemById, toolFor, priceOf, marketRate } from './market.js';
 import { CRIMES, JOBS, resolveCrime, resolveWork, resolveBeg, BEG } from './jobs.js';
-import { HEIST, makeSteps, heistReward, heistBase, heistFine } from './heist.js';
+import { HEISTS, heistTarget, heistKey, makeSteps, heistReward, heistBase, heistFine } from './heist.js';
 
 const EPH = { flags: MessageFlags.Ephemeral };
 const NO_MENTIONS = { parse: [] };
@@ -110,6 +111,14 @@ export const richestCommand = {
 const crimeChoices = Object.entries(CRIMES).map(([value, c]) => ({ name: `${c.emoji} ${c.name}`, value }));
 const jobChoices = Object.entries(JOBS).map(([value, j]) => ({ name: `${j.emoji} ${j.name}`, value }));
 
+/** 闇マーケットがオンのとき、犯罪に必要な道具を1つ使う。使えたら tool を、オフなら null を、道具がなくて断ったら false を返す */
+function takeTool(i, s, kind, key) {
+  if (!s.blackMarket) return null;
+  const tool = toolFor(kind, key); if (!tool) return null;
+  if (useItem(i.guildId, i.user.id, tool.id)) return tool;
+  refuse(i, `🎒 ${tool.emoji} **${tool.name}** が必要です。\`/market\` の闇マーケットで買えます。(${tool.desc})`);
+  return false;
+}
 export const crimeCommand = {
   data: guildOnly(new SlashCommandBuilder().setName('crime').setDescription('犯罪に挑戦します(成功すると大金。失敗すると罰金と留置場)')
     .addStringOption((o) => o.setName('type').setDescription('何をするか').setRequired(true).addChoices(...crimeChoices))),
@@ -120,6 +129,7 @@ export const crimeCommand = {
     const w = wallet(i); if (w <= 0) return refuse(i, `💸 所持金が0以下のときは、犯罪はできません。(いまの所持金 ${money(s, w)})\nバイト(/work)や乞食(/beg)で、お金を稼ぎましょう。`);
     const cd = cooldownLeft(i.guildId, i.user.id, `crime:${key}`); if (cd) return refuse(i, `${c.emoji} ${c.name}は、まだ警戒が厳しいです。あと ${dur(cd)}。`);
     if (budgetEmpty(s, i.guildId)) return refuse(i, BUDGET_EMPTY);
+    const toolUsed = takeTool(i, s, 'crime', key); if (toolUsed === false) return; // 闇マーケットがオンのとき、道具が必要(1回で1つ使う)
     const r = resolveCrime(key, rng);
     if (r.success) {
       const p = pay(i.guildId, i.user.id, r.amount, s);
@@ -299,40 +309,45 @@ export const blackjackButton = {
 /** 失敗の精算(罰金と留置場)。claim できたときだけ精算するので、二重に罰金が引かれない。精算したら、そのゲームを返す */
 function settleHeistFailure(g, u, s, reason, rng = rnd) {
   const game = claimHeist(g, u); if (!game) return null;
-  const took = fine(g, u, heistFine(rng), s, 'heist'); jail(g, u, HEIST.jail);
-  return { game, took, reason };
+  const T = heistTarget(game.state?.target);
+  const took = fine(g, u, heistFine(rng, T), s, 'heist'); jail(g, u, T.jail);
+  return { game, took, reason, T };
 }
-const REASON = { timeout: '⏰ 時間切れ! 警備員に見つかった。', alarm: `🚨 ${HEIST.maxMistakes + 1}回間違えて、警報が鳴り響いた!` };
-const failEmbed = (s, name, r) => new EmbedBuilder().setColor(RED).setTitle(`${HEIST.emoji} ${HEIST.name} 失敗…`)
-  .setDescription(`${REASON[r.reason]}\n\n罰金 **- ${money(s, r.took)}**\n🚔 留置場に ${dur(HEIST.jail)} 入ります。(/bail で、保釈金を払って出られます)`).setAuthor({ name });
+const reasonText = (T, reason) => (reason === 'timeout' ? `⏰ 時間切れ! ${T.caught}` : `🚨 ${T.maxMistakes + 1}回間違えて、警報が鳴り響いた!`);
+const failEmbed = (s, name, r) => new EmbedBuilder().setColor(RED).setTitle(`${r.T.emoji} ${r.T.name} 失敗…`)
+  .setDescription(`${reasonText(r.T, r.reason)}\n\n罰金 **- ${money(s, r.took)}**\n🚔 留置場に ${dur(r.T.jail)} 入ります。(/bail で、保釈金を払って出られます)`).setAuthor({ name });
 const hsStatus = (st, deadline) => {
-  const left = HEIST.maxMistakes - st.mistakes;
+  const left = heistTarget(st.target).maxMistakes - st.mistakes;
   return `制限時間: <t:${Math.floor(deadline / 1000)}:R> まで ・ ステップ **${st.idx + 1} / ${st.steps.length}** ・ 間違えられるのは あと **${left}回**`;
 };
 function hsBody(st, deadline, uid, warn = '') {
-  const step = st.steps[st.idx];
-  const e = new EmbedBuilder().setColor(BLUE).setTitle(`${HEIST.emoji} ${HEIST.name}`).setAuthor({ name: st.name, iconURL: st.avatar })
+  const step = st.steps[st.idx], T = heistTarget(st.target);
+  const e = new EmbedBuilder().setColor(BLUE).setTitle(`${T.emoji} ${T.name}`).setAuthor({ name: st.name, iconURL: st.avatar })
     .setDescription(`${hsStatus(st, deadline)}\n\n${warn ? `${warn}\n\n` : ''}${step.prompt}`);
   const row = new ActionRowBuilder().addComponents(step.options.map((label, k) =>
     new ButtonBuilder().setCustomId(`eco:hs:${uid}:${st.idx}:${k}`).setLabel(label).setStyle(ButtonStyle.Secondary).setDisabled(st.wrong.includes(k))));
   return { embeds: [e], components: [row] };
 }
 export const heistCommand = {
-  data: guildOnly(new SlashCommandBuilder().setName('heist').setDescription(`大型銀行強盗(ミニゲーム。${HEIST.timeMs / 1000}秒以内に、${HEIST.steps}つの問題を解けば成功)`)),
+  data: guildOnly(new SlashCommandBuilder().setName('heist').setDescription('大型犯罪(ミニゲーム。制限時間内に、すべての問題を解けば成功)')
+    .addStringOption((o) => o.setName('target').setDescription('狙う場所(省略すると大型銀行)')
+      .addChoices(...Object.values(HEISTS).map((T) => ({ name: `${T.emoji} ${T.name}(${T.blurb})`, value: T.id }))))),
   async execute(i, rng = rnd) {
     const s = await open(i); if (!s) return;
     const g = i.guildId, u = i.user.id;
+    const T = heistTarget(i.options.getString?.('target') ?? 'bank'), key = heistKey(T.id);
     const jl = jailLeft(g, u); if (jl) return refuse(i, `🚔 留置場にいる間は、犯罪はできません。(あと ${dur(jl)})`);
     const w = wallet(i); if (w <= 0) return refuse(i, `💸 所持金が0以下のときは、犯罪はできません。(いまの所持金 ${money(s, w)})`);
-    if (getHeist(g, u)) return refuse(i, '進行中の大型銀行強盗があります。先に、そちらを終わらせてください。');
-    const cd = cooldownLeft(g, u, 'heist'); if (cd) return refuse(i, `${HEIST.emoji} 大型銀行は、まだ警備が厳重です。あと ${dur(cd)}。`);
+    if (getHeist(g, u)) return refuse(i, '進行中の強盗があります。先に、そちらを終わらせてください。');
+    const cd = cooldownLeft(g, u, key); if (cd) return refuse(i, `${T.emoji} ${T.short}は、まだ警備が厳重です。あと ${dur(cd)}。`);
     if (budgetEmpty(s, g)) return refuse(i, BUDGET_EMPTY);
-    const st = { steps: makeSteps(rng), idx: 0, mistakes: 0, wrong: [], reward: heistBase(rng), name: i.member?.displayName ?? i.user.username, avatar: i.user.displayAvatarURL?.() };
-    const deadline = (i.createdTimestamp ?? Date.now()) + HEIST.timeMs; // コマンドを打った時刻から数える(BOTの処理の遅れで、短くならない)
-    setCooldown(g, u, 'heist', HEIST.cd);
+    const toolUsed = takeTool(i, s, 'heist', T.id); if (toolUsed === false) return; // 闇マーケットがオンのとき、道具が必要
+    const st = { target: T.id, steps: makeSteps(rng, T.steps, T.makers), idx: 0, mistakes: 0, wrong: [], reward: heistBase(rng, T), name: i.member?.displayName ?? i.user.username, avatar: i.user.displayAvatarURL?.() };
+    const deadline = (i.createdTimestamp ?? Date.now()) + T.timeMs; // コマンドを打った時刻から数える(BOTの処理の遅れで、短くならない)
+    setCooldown(g, u, key, T.cd);
     saveHeist(g, u, { channelId: i.channelId, state: st, deadline });  // 先に保存してから返信する
     try { await i.reply(hsBody(st, deadline, u)); }
-    catch (e) { claimHeist(g, u); setCooldown(g, u, 'heist', 0); throw e; } // 画面を出せなかったときは、遊んでいないので、罰を受けない
+    catch (e) { claimHeist(g, u); setCooldown(g, u, key, 0); if (toolUsed) addItem(g, u, toolUsed.id, 1); throw e; } // 画面を出せなかったときは、遊んでいないので、罰を受けない
     const msg = await i.fetchReply().catch(() => null);
     if (msg) saveHeist(g, u, { channelId: i.channelId, msgId: msg.id, state: st, deadline });
   },
@@ -345,7 +360,7 @@ export const heistButton = {
     const g = i.guildId, s = getSettings(g);
     const game = getHeist(g, uid);
     if (!game) return safeUpdate(i, { content: 'この強盗は、すでに終了しています。', embeds: [], components: [] });
-    const st = game.state;
+    const st = game.state, T = heistTarget(st.target);
     const now = i.createdTimestamp ?? Date.now(); // ボタンを押した時刻(Discordの記録)。BOTの処理が遅れても、押した時刻で判定する
     if (now > game.deadline + CLICK_GRACE) { // 制限時間を過ぎてから、押された
       const r = settleHeistFailure(g, uid, s, 'timeout');
@@ -360,16 +375,16 @@ export const heistButton = {
       st.idx++; st.wrong = [];
       if (st.idx >= st.steps.length) { // 全ステップ突破 → 成功
         if (!claimHeist(g, uid)) return safeUpdate(i, { content: 'この強盗は、すでに終了しています。', embeds: [], components: [] });
-        const left = Math.max(0, game.deadline - now), amount = heistReward(st.reward, left);
+        const left = Math.max(0, game.deadline - now), amount = heistReward(st.reward, left, T);
         const p = pay(g, uid, amount, s);
-        return safeUpdate(i, { embeds: [new EmbedBuilder().setColor(GOLD).setTitle(`${HEIST.emoji} ${HEIST.name} 成功!`).setAuthor({ name: st.name, iconURL: st.avatar })
-          .setDescription(`金庫を開けて、大金を持ち出した!\n残り ${dur(left)} でクリア(スピードボーナス +${Math.round((amount / st.reward - 1) * 100)}%)\n\n**+ ${money(s, p.paid)}**${shortNote(s, p)}`)], components: [] });
+        return safeUpdate(i, { embeds: [new EmbedBuilder().setColor(GOLD).setTitle(`${T.emoji} ${T.name} 成功!`).setAuthor({ name: st.name, iconURL: st.avatar })
+          .setDescription(`${T.success}\n残り ${dur(left)} でクリア(スピードボーナス +${Math.round((amount / st.reward - 1) * 100)}%)\n\n**+ ${money(s, p.paid)}**${shortNote(s, p)}`)], components: [] });
       }
       saveHeist(g, uid, { state: st, deadline: game.deadline });
       return safeUpdate(i, hsBody(st, game.deadline, uid));
     }
     st.mistakes++; st.wrong.push(k);
-    if (st.mistakes > HEIST.maxMistakes) { // 警報
+    if (st.mistakes > T.maxMistakes) { // 警報
       const r = settleHeistFailure(g, uid, s, 'alarm');
       return safeUpdate(i, r ? { embeds: [failEmbed(s, st.name, r)], components: [] } : { content: 'この強盗は、すでに終了しています。', embeds: [], components: [] });
     }
@@ -422,7 +437,7 @@ export const balanceEditCommand = {
   },
 };
 
-const CD_LABEL = { all: 'すべて', crime: '犯罪', work: 'バイト', beg: '乞食', heist: '大型銀行' };
+const CD_LABEL = { all: 'すべて', crime: '犯罪', work: 'バイト', beg: '乞食', heist: '大型犯罪' };
 export const cooldownResetCommand = {
   data: guildOnly(new SlashCommandBuilder().setName('cooldown-reset').setDescription('【管理者向け】メンバーのクールダウンを解除します')
     .addUserOption((o) => o.setName('user').setDescription('対象の人').setRequired(true))
@@ -454,4 +469,35 @@ export const payCommand = {
   },
 };
 
-export const commands = [balanceCommand, depositCommand, withdrawCommand, richestCommand, crimeCommand, workCommand, begCommand, bailCommand, chinchiroCommand, slotCommand, blackjackCommand, heistCommand, releaseCommand, payCommand, balanceEditCommand, cooldownResetCommand];
+/* ================= 闇マーケット ================= */
+export const marketCommand = {
+  data: guildOnly(new SlashCommandBuilder().setName('market').setDescription('闇マーケット(犯罪・大型犯罪に使う道具を買います)')
+    .addSubcommand((c) => c.setName('list').setDescription('今日の相場と、持っている道具を見ます'))
+    .addSubcommand((c) => c.setName('buy').setDescription('道具を買います')
+      .addStringOption((o) => o.setName('item').setDescription('買う道具').setRequired(true).addChoices(...ITEMS.map((x) => ({ name: `${x.emoji} ${x.name}(${x.desc})`, value: x.id }))))
+      .addIntegerOption((o) => o.setName('amount').setDescription(`個数(1〜${MAX_STACK}。省略すると1)`).setMinValue(1).setMaxValue(MAX_STACK)))),
+  async execute(i) {
+    const s = await open(i); if (!s) return;
+    if (!s.blackMarket) return refuse(i, 'このサーバーでは、闇マーケットはオフです。管理者が、ダッシュボードの「通貨」でオンにできます。');
+    const g = i.guildId, u = i.user.id;
+    if (i.options.getSubcommand() === 'list') {
+      const own = allItems(g, u);
+      const field = (x) => { const r = marketRate(g, x.id); return { name: `${x.emoji} ${x.name}`, value: `**${money(s, priceOf(g, x))}** ${r < 0.95 ? '📉 安い' : r > 1.15 ? '📈 高い' : ''}\n${x.desc} ・ 所持 **${own[x.id] ?? 0}**`, inline: true }; };
+      const e = new EmbedBuilder().setColor(0x2b2d31).setTitle('🕶️ 闇マーケット')
+        .setDescription(`犯罪・大型犯罪には、それぞれ専用の道具が必要です。**1回の挑戦で、1つ使います**(成功でも失敗でも)。\n\`/market buy\` で買えます。値段は、毎日少し変わります(闇相場)。`)
+        .addFields({ name: '犯罪', value: '\u200b' }, ...ITEMS.filter((x) => x.kind === 'crime').map(field), { name: '大型犯罪(/heist)', value: '\u200b' }, ...ITEMS.filter((x) => x.kind === 'heist').map(field))
+        .setFooter({ text: `手持ち: ${wallet(i).toLocaleString()} ・ 1種類につき、最大${MAX_STACK}個まで` });
+      return i.reply({ embeds: [e], ...EPH });
+    }
+    const item = itemById(i.options.getString('item', true)), n = i.options.getInteger('amount') ?? 1;
+    if (!item) return refuse(i, 'その道具は、売っていません。');
+    const have = itemQty(g, u, item.id);
+    if (have + n > MAX_STACK) return refuse(i, `${item.emoji} ${item.name}は、最大${MAX_STACK}個までしか持てません。(いま ${have}個)`);
+    const price = priceOf(g, item), total = price * n;
+    if (!collect(g, u, total, s)) return refuse(i, `お金が足りません。(必要 ${money(s, total)} / 手持ち ${money(s, Math.max(0, wallet(i)))})`);
+    addItem(g, u, item.id, n);
+    await i.reply({ embeds: [card(i, s, 0x2b2d31, '🕶️ 闇マーケット', `${item.emoji} **${item.name}** を **${n}個** 買いました。\n**- ${money(s, total)}**(1個 ${money(s, price)})\n所持: **${have + n}個**`)], ...EPH });
+  },
+};
+
+export const commands = [balanceCommand, depositCommand, withdrawCommand, richestCommand, crimeCommand, workCommand, begCommand, bailCommand, chinchiroCommand, slotCommand, blackjackCommand, heistCommand, marketCommand, releaseCommand, payCommand, balanceEditCommand, cooldownResetCommand];

@@ -14,7 +14,7 @@ export default {
   help: [
     '管理者が有効にしたサーバーで使えます。`/balance` で残高、`/deposit` `/withdraw` で銀行、`/richest` でランキング。',
     '稼ぐ: `/work`(バイト: コンビニ・警察・ファーストフード)、`/beg`(乞食)、`/crime`(犯罪: コンビニ・ATM・銀行・宝石・海賊。失敗すると罰金と留置場。`/bail` で保釈)。',
-    '遊ぶ: `/chinchiro` `/slot` `/blackjack`。\n大型銀行: `/heist`(ミニゲーム。制限時間内に5つの問題を解けば成功。大金を狙えますが、失敗すると重い罰金と留置場です)。',
+    '遊ぶ: `/chinchiro` `/slot` `/blackjack`。\n大型犯罪: `/heist`(ミニゲーム。現金輸送車・大型銀行・美術館・カジノ・宝物庫から選び、制限時間内に問題を解けば成功。大金を狙えますが、失敗すると重い罰金と留置場です)。\n闇マーケット: 管理者がオンにしたサーバーでは、犯罪に道具が必要です。`/market list` `/market buy` で買えます。',
   ].join('\n'),
   register({ client, router }) {
     mountApi(router);

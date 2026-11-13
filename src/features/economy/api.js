@@ -108,7 +108,7 @@ export function mountApi(router) {
     const row = claimFineRefund(g, id);
     if (!row) return res.status(404).json({ error: 'その罰金は、すでに返金済みか、返金できません' });
     const s = getSettings(g); const p = pay(g, row.user_id, row.amount, s); // 予算がオンのときは、予算から返す(足りなければ、ある分だけ)
-    audit(g, req.actor, row.user_id, `罰金の返金(${row.kind === 'heist' ? '大型銀行' : '犯罪'})`, p.paid, p.short ? `予算が足りず ${p.short} は返金できませんでした` : null);
+    audit(g, req.actor, row.user_id, `罰金の返金(${row.kind === 'heist' ? '大型犯罪' : '犯罪'})`, p.paid, p.short ? `予算が足りず ${p.short} は返金できませんでした` : null);
     res.json({ paid: p.paid, short: p.short });
   });
   router.get('/audit', async (req, res) => {

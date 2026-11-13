@@ -28,6 +28,10 @@ CREATE TABLE IF NOT EXISTS eco_fines (            -- 罰金の記録(返金で�
   amount INTEGER NOT NULL, kind TEXT NOT NULL, at INTEGER NOT NULL, refunded INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_eco_fines_user ON eco_fines (guild_id, user_id, at);
+CREATE TABLE IF NOT EXISTS eco_items (            -- 闇マーケットで買った道具
+  guild_id TEXT NOT NULL, user_id TEXT NOT NULL, item TEXT NOT NULL, qty INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (guild_id, user_id, item)
+);
 CREATE TABLE IF NOT EXISTS eco_audit (            -- 管理者の操作の記録(だれが・だれに・何を・いくら)
   id INTEGER PRIMARY KEY AUTOINCREMENT, guild_id TEXT NOT NULL, actor_id TEXT NOT NULL, actor_name TEXT NOT NULL,
   target_id TEXT, action TEXT NOT NULL, amount INTEGER, note TEXT, at INTEGER NOT NULL
@@ -134,6 +138,13 @@ try { db.exec('ALTER TABLE eco_heist ADD COLUMN paused_left INTEGER'); } catch {
 export const pauseHeists = (now = Date.now()) => Number(db.prepare('UPDATE eco_heist SET paused_left = MAX(0, deadline - ?)').run(now).changes);
 /** 起動したとき: 記録した残り時間から、制限時間を数え直す(最低でも minMs は残す)。数え直した件数を返す */
 export const resumeHeists = (now = Date.now(), minMs = 10_000) => Number(db.prepare('UPDATE eco_heist SET deadline = ? + MAX(paused_left, ?), paused_left = NULL WHERE paused_left IS NOT NULL').run(now, minMs).changes);
+/* ---------- 闇マーケットの道具 ---------- */
+export const itemQty = (g, u, item) => db.prepare('SELECT qty FROM eco_items WHERE guild_id=? AND user_id=? AND item=?').get(g, u, item)?.qty ?? 0;
+export const allItems = (g, u) => Object.fromEntries(db.prepare('SELECT item, qty FROM eco_items WHERE guild_id=? AND user_id=? AND qty>0').all(g, u).map((r) => [r.item, r.qty]));
+export const addItem = (g, u, item, n = 1) => db.prepare(`INSERT INTO eco_items (guild_id,user_id,item,qty) VALUES (?,?,?,?)
+  ON CONFLICT(guild_id,user_id,item) DO UPDATE SET qty=qty+excluded.qty`).run(g, u, item, n);
+/** 道具を1つ使う。あれば true(同時に2回使っても、1つしかなければ、片方しか通らない) */
+export const useItem = (g, u, item) => !!db.prepare('UPDATE eco_items SET qty=qty-1 WHERE guild_id=? AND user_id=? AND item=? AND qty>=1 RETURNING qty').get(g, u, item);
 export const setHeistDeadline = (g, u, deadline) => db.prepare('UPDATE eco_heist SET deadline=? WHERE guild_id=? AND user_id=?').run(deadline, g, u);
 /** ゲームを終わらせる。取れたら、そのゲームを返す(同時に2か所から終わらせても、片方しか取れない=二重に精算されない) */
 export const claimHeist = (g, u) => heistRow(db.prepare('DELETE FROM eco_heist WHERE guild_id=? AND user_id=? RETURNING *').get(g, u));
