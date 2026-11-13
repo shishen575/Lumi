@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import { gracefulExit } from './shutdown.js';
 
 export const RESTART_CODE = 42; // この終了コードのときだけ、起動スクリプトが git pull して再起動する
 
@@ -6,7 +7,7 @@ export const RESTART_CODE = 42; // この終了コードのときだけ、起動
  * GitHub push Webhook を受けて自己更新する。GITHUB_WEBHOOK_SECRET 未設定なら無効。
  * 署名(HMAC-SHA256)を検証し、対象ブランチへのpushのときだけ再起動を要求する。
  */
-export function mountGithubWebhook(app, { onUpdate = () => setTimeout(() => process.exit(RESTART_CODE), 500) } = {}) {
+export function mountGithubWebhook(app, { onUpdate = () => gracefulExit(RESTART_CODE, 'GitHub更新') } = {}) {
   const secret = process.env.GITHUB_WEBHOOK_SECRET;
   if (!secret) return false;
   const branch = process.env.GIT_BRANCH || 'main';

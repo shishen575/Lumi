@@ -1,10 +1,10 @@
 import { SlashCommandBuilder, EmbedBuilder, MessageFlags } from 'discord.js';
-import { spawnSync } from 'node:child_process';
+import { version } from '../../core/version.js';
+import { setupRestartNotice, getNotice, setNotice } from './restart-notice.js';
 import { latencySummary } from '../../core/latency.js';
 import { healthSnapshot, measureRest } from '../../core/health.js';
 
 const GREEN = 0x57f287, YELLOW = 0xfee75c, RED = 0xed4245;
-const version = (() => { try { const r = spawnSync('git', ['rev-parse', '--short', 'HEAD'], { encoding: 'utf8' }); return r.status === 0 ? r.stdout.trim() : null; } catch { return null; } })();
 const up = (s) => { const d = Math.floor(s / 86400), h = Math.floor((s % 86400) / 3600), m = Math.floor((s % 3600) / 60); return d ? `${d}日${h}時間` : h ? `${h}時間${m}分` : `${m}分`; };
 const ms = (n) => (n == null || n < 0 ? '測定できません' : `${Math.round(n)}ms`);
 const worst = (...v) => Math.max(0, ...v.filter((x) => typeof x === 'number' && x >= 0));
@@ -48,5 +48,18 @@ export default {
   title: 'ステータス',
   commands: [pingCommand],
   help: '`/ping` で、BOTの応答速度(Discordとの通信、コマンドが届くまでの遅れ、処理の止まり)を調べられます。',
-  register() {},
+  ui: '/dashboard/features/status.js',
+  register({ client, router }) {
+    setupRestartNotice(client);
+    router.get('/settings', (req, res) => res.json(getNotice(req.guild.id)));
+    router.put('/settings', (req, res) => {
+      const id = req.body?.channel_id ? String(req.body.channel_id) : null;
+      if (id) {
+        const ch = req.guild.channels.cache.get(id);
+        if (!ch?.isTextBased() || ch.isThread()) return res.status(400).json({ error: 'チャンネルが不正です' });
+      }
+      setNotice(req.guild.id, id);
+      res.json(getNotice(req.guild.id));
+    });
+  },
 };
