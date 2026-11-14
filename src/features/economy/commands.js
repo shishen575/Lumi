@@ -691,15 +691,17 @@ export const arrestCommand = {
     const wc = wantedCfg(s), heat = getHeat(g, target.id, s.wantedDecayMin), stars = starsOf(heat, wc.heatPerStar);
     if (!stars) return refuse(i, `<@${target.id}> は、指名手配されていません。(/wanted で、手配書を見られます)`);
     if (jailLeft(g, target.id)) return refuse(i, `<@${target.id}> は、すでに留置場にいます。`);
-    if (budgetEmpty(s, g)) return refuse(i, BUDGET_EMPTY); // 懸賞金は、予算から払われる
+    if (wc.bountyFine === 0 && budgetEmpty(s, g)) return refuse(i, BUDGET_EMPTY); // 罰金を取らない設定のときだけ、懸賞金は、予算(または何もないところ)から払われる
     setCooldown(g, me, 'arrest', wc.arrestCd);
     if (rng() >= wc.arrestChance) {
       return i.reply({ embeds: [card(i, s, RED, '👮 逮捕に失敗…', `<@${target.id}> に、まんまと逃げられた!\n-# 次の逮捕まで ${dur(wc.arrestCd)}`)], allowedMentions: NO_MENTIONS });
     }
     const bounty = bountyOf(heat, s.bountyPerStar, wc.heatPerStar), jailMs = Math.min(wc.jailMax, wc.jailPerStar * stars);
+    // 懸賞金の出どころ: 逮捕された人の罰金(予算がオンなら、予算に入る)→ そこから、逮捕した人に払う
+    const took = Math.round(bounty * wc.bountyFine) > 0 ? fine(g, target.id, Math.round(bounty * wc.bountyFine), s, 'arrest') : 0;
     const p = pay(g, me, bounty, s);
     jail(g, target.id, jailMs); clearHeat(g, target.id);
-    await i.reply({ embeds: [card(i, s, GOLD, '👮 逮捕成功!', `${starText(stars)} <@${target.id}> を逮捕しました!\n🚔 留置場に ${dur(jailMs)} 入ります。\n\n懸賞金 **+ ${money(s, p.paid)}**${shortNote(s, p)}`)], allowedMentions: NO_MENTIONS });
+    await i.reply({ embeds: [card(i, s, GOLD, '👮 逮捕成功!', `${starText(stars)} <@${target.id}> を逮捕しました!\n🚔 留置場に ${dur(jailMs)} 入ります。\n\n懸賞金 **+ ${money(s, p.paid)}**${shortNote(s, p)}${took ? `\n-# <@${target.id}> が、罰金 ${money(s, took)} を支払いました(懸賞金は、ここから払われます)` : ''}`)], allowedMentions: NO_MENTIONS });
   },
 };
 

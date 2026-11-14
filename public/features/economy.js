@@ -86,7 +86,7 @@ Dash.registerTab({
           <div class="card"><label class="sw"><input type="checkbox" id="we" ${st.wantedEnabled ? 'checked' : ''}><i></i><span><b>指名手配を使う</b><small>オンのとき: <code>/wanted</code>(手配書)と <code>/arrest</code>(逮捕)が使えます。手配中の人が多いほど、警察のバイトのボーナスが出やすくなります</small></span></label></div>
           <div class="card"><h2>設定</h2><div class="grid2">
             <div class="field"><label class="f" for="wd">手配度が1下がるまでの時間(分)</label><input id="wd" type="number" min="1" max="1440" value="${st.wantedDecayMin}"><p class="hint">放っておくと、手配度は時間とともに下がります</p></div>
-            <div class="field"><label class="f" for="wb">星1つぶんの懸賞金</label><input id="wb" type="number" min="0" value="${st.bountyPerStar}"><p class="hint">懸賞金は、手配度に比例します(星2つで、この金額の2倍)。逮捕した人に支払われます(予算がオンなら、予算から)</p></div>
+            <div class="field"><label class="f" for="wb">星1つぶんの懸賞金</label><input id="wb" type="number" min="0" value="${st.bountyPerStar}"><p class="hint">懸賞金は、手配度に比例します(星2つで、この金額の2倍)。逮捕された人の罰金から、逮捕した人に支払われます(予算がオンなら、罰金は予算に入り、そこから払われます。罰金の割合は、ゲームバランスで変えられます)</p></div>
             <div class="field"><label class="f" for="wa">逮捕に必要な、警察の出勤回数</label><input id="wa" type="number" min="0" value="${st.arrestMinShifts}"><p class="hint">警察のバイト(/work)を、この回数以上している人だけが、逮捕できます</p></div>
             <div class="field"><label class="f" for="wp">手配中が1人増えるごとの、警察ボーナス(%)</label><input id="wp" type="number" min="0" max="50" value="${st.policeBonusPerWanted}"><p class="hint">警察のバイトのボーナス(犯人逮捕の特別手当)の確率は、${meta.bonusBase}% + 手配中の人数 × この値(上限 ${meta.bonusCap}%)です</p></div></div></div>
           <div class="card"><h2>仕組み</h2><ul style="margin:0;padding-left:1.2em">
