@@ -7,7 +7,9 @@ const { setupCommands } = await import('./core/commands.js');
 const { startHealthMonitor } = await import('./core/health.js');
 const { installSignalHandlers, onShutdownCleanup } = await import('./core/shutdown.js');
 
-for (const k of ['DISCORD_TOKEN', 'DISCORD_CLIENT_ID', 'DISCORD_CLIENT_SECRET', 'SESSION_SECRET']) {
+// LUMI_NO_LOGIN=1: Discordにログインしない(Webだけ起動)。データの引っ越しの間、別の場所のBOTと二重に動かないようにするためのモード
+const NO_LOGIN = process.env.LUMI_NO_LOGIN === '1';
+for (const k of ['DISCORD_TOKEN', 'DISCORD_CLIENT_ID', 'DISCORD_CLIENT_SECRET', 'SESSION_SECRET'].filter((x) => !(NO_LOGIN && x === 'DISCORD_TOKEN'))) {
   if (!process.env[k]) { console.error(`環境変数 ${k} が未設定です`); process.exit(1); }
 }
 const client = createClient();
@@ -18,4 +20,5 @@ startHealthMonitor(client);
 setupCommands(client, features);
 startWeb(client, features);
 startTunnel();
-await client.login(process.env.DISCORD_TOKEN);
+if (NO_LOGIN) console.log('[main] LUMI_NO_LOGIN=1 のため、Discordにはログインしません(Webだけ動いています)');
+else await client.login(process.env.DISCORD_TOKEN);

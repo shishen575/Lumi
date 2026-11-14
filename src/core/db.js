@@ -1,8 +1,17 @@
 import { DatabaseSync } from 'node:sqlite';
 import fs from 'node:fs';
 
-fs.mkdirSync('data', { recursive: true });
-export const db = new DatabaseSync('data/bot.db');
+// データの置き場(Railwayなどでは、ボリュームの場所を DATA_DIR で指定する)
+export const DATA_DIR = process.env.DATA_DIR || 'data';
+fs.mkdirSync(DATA_DIR, { recursive: true });
+const FILE = `${DATA_DIR}/bot.db`, PENDING = `${DATA_DIR}/bot.db.import`;
+if (fs.existsSync(PENDING)) { // 引っ越しで届いたデータに入れ替える(開く前に行う)。元のデータは、バックアップとして残す
+  const ts = Date.now();
+  for (const ext of ['', '-wal', '-shm']) if (fs.existsSync(FILE + ext)) fs.renameSync(FILE + ext, `${FILE}.before-import-${ts}${ext}`);
+  fs.renameSync(PENDING, FILE);
+  console.log(`[db] 引っ越しのデータに入れ替えました(元のデータは bot.db.before-import-${ts} に残してあります)`);
+}
+export const db = new DatabaseSync(FILE);
 // WAL + synchronous=NORMAL: 書き込みのたびにディスクの完了を待たない(WALでは、電源断でも壊れず、最後の数件が失われるだけ)。
 // このDBは同期APIなので、書き込みが遅いと、その間BOT全体が止まる。busy_timeout は、別のプロセスが使っているときの待ち時間
 db.exec('PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL; PRAGMA busy_timeout = 5000;');
