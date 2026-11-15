@@ -3,6 +3,7 @@ import { commands, blackjackButton, heistButton, ramenButton, resolveExpiredHeis
 import { mountApi } from './api.js';
 import { crimeHelp, jobHelp, lifeHelp } from './help.js';
 import { settleAll } from './lotteryengine.js';
+import { boardTick } from './stockboard.js';
 import { pauseHeists, resumeHeists } from './db.js';
 import { onShutdownCleanup } from '../../core/shutdown.js';
 
@@ -31,6 +32,7 @@ export default {
       holdHeistSweep(30_000); setInterval(() => resolveExpiredHeists(client), 15_000).unref?.();
       // 宝くじ: 1分ごとに、抽選の時刻を過ぎた回を、抽選して、発表する(起動直後にも1回。止まっていた間の分)
       settleAll(client); setInterval(() => settleAll(client), 60_000).unref?.();
+      setInterval(() => boardTick(client), 60_000).unref?.();
     });
   },
 };

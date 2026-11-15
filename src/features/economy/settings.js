@@ -27,6 +27,9 @@ export const DEFAULTS = {
   estate: DEFAULT_ESTATE,  // 物件の一覧(名前・値段・家賃・維持費などを、サーバーごとに変えられる)
   lotteryEnabled: false,   // 宝くじ。オンのとき、/lottery が使え、決まった時刻に、自動で抽選する
   lotteries: [DEFAULT_LOTTERY], // くじの一覧(サーバーごとに、自由に、最大6つ。名前・値段・間隔・桁数・賞金などを変えられる)
+  stockChannelId: null,    // 株価のグラフを出すチャンネル
+  stockBoardMin: 60,       // グラフを出す間隔(分)
+  stockBoardEdit: true,    // true: 1つのメッセージを更新 / false: 毎回、新しく出す
   lotteryChannelId: null,  // 抽選の結果を発表するチャンネル(くじごとに、別のチャンネルも選べる)
   petsEnabled: false,      // ペット。オンのとき、/pet が使え、育てるとボーナスがつく
   shopItems: DEFAULT_SHOP, // お店の品(名前・値段・効果などを、サーバーごとに変えられる)
@@ -63,6 +66,9 @@ export function saveSettings(guildId, s) {
     lotteryChannelId: s.lotteryChannelId === undefined ? cur.lotteryChannelId : (/^\d{15,25}$/.test(String(s.lotteryChannelId ?? '')) ? String(s.lotteryChannelId) : null),
     stocksEnabled: s.stocksEnabled === undefined ? cur.stocksEnabled : !!s.stocksEnabled,
     stockNames: s.stockNames === undefined ? cur.stockNames : sanitizeNames(s.stockNames, cur.stockNames),
+    stockChannelId: s.stockChannelId === undefined ? cur.stockChannelId : (/^\d{15,25}$/.test(String(s.stockChannelId ?? '')) ? String(s.stockChannelId) : null),
+    stockBoardMin: s.stockBoardMin === undefined ? cur.stockBoardMin : clamp(s.stockBoardMin, 10, 1440, DEFAULTS.stockBoardMin),
+    stockBoardEdit: s.stockBoardEdit === undefined ? cur.stockBoardEdit : !!s.stockBoardEdit,
     stockLevels: s.stockLevels === undefined ? cur.stockLevels : sanitizeLevels(s.stockLevels, cur.stockLevels),
     blackMarket: s.blackMarket === undefined ? cur.blackMarket : !!s.blackMarket,
     balance: s.balance === undefined ? cur.balance : sanitizeBalance(s.balance, cur.balance),

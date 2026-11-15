@@ -176,12 +176,17 @@ Dash.registerTab({
       } },
     /* ===== 株 ===== */
     { id: 'stocks', title: '株', icon: 'coin',
-      async render(el, { api, esc, toast, pageHeader }) {
-        const [st, meta] = await Promise.all([api('/settings'), api('/extras-meta')]);
+      async render(el, { api, channels: getChannels, esc, toast, pageHeader }) {
+        const [st, meta, chans] = await Promise.all([api('/settings'), api('/extras-meta'), getChannels()]);
         const names = JSON.parse(JSON.stringify(st.stockNames)), levels = { ...st.stockLevels };
         const daily = (L) => (L >= 1 ? ['1.5', '2.5', '3.5', '5', '7', '9', '12', '16', '21', '28'][L - 1] : '');
         el.innerHTML = `${pageHeader('株', '架空の会社の株を、売り買いできます。株価は、5分ごとに動きます(間隔は「ゲームバランス」で変えられます)。会社の名前・ティッカー・絵文字と、値動きの大きさ(10段階)を、サーバーで決められます。')}
           <div class="card"><label class="sw"><input type="checkbox" id="on" ${st.stocksEnabled ? 'checked' : ''}><i></i><span><b>株を使う</b><small><code>/stock</code> が使えます。売買の手数料などは、「ゲームバランス」で変えられます</small></span></label></div>
+          <div class="card"><h2>株価のグラフ</h2><p class="hint">決めたチャンネルに、24時間の株価のグラフ(折れ線)と、いまの値段を出します。</p>
+            <div class="grid2">
+              <div class="field"><label class="f">グラフを出すチャンネル</label><select id="bch"><option value="">出さない</option>${chans.map((c) => `<option value="${c.id}" ${st.stockChannelId === c.id ? 'selected' : ''}>#${esc(c.name)}</option>`).join('')}</select></div>
+              <div class="field"><label class="f">出す間隔</label><select id="bmin">${[10, 30, 60, 180, 360, 720, 1440].map((m) => `<option value="${m}" ${st.stockBoardMin === m ? 'selected' : ''}>${m >= 60 ? m / 60 + '時間' : m + '分'}ごと</option>`).join('')}</select></div></div>
+            <label class="sw"><input type="checkbox" id="bedit" ${st.stockBoardEdit ? 'checked' : ''}><i></i><span><b>1つのメッセージを更新する</b><small>オフにすると、毎回、新しいメッセージを出します(グラフが、残っていきます)</small></span></label></div>
           ${meta.companies.map((c) => `<div class="card" data-c="${c.id}"><div class="card-h"><h2>${esc(names[c.id].emoji)} ${esc(names[c.id].ticker)} <span class="mut small">基準 ${c.base.toLocaleString()} ・ ${esc(c.blurb)}</span></h2></div>
             <div class="grid2">
               <div class="field"><label class="f">会社の名前</label><input class="s-name" type="text" maxlength="16" value="${esc(names[c.id].name)}"></div>
@@ -194,7 +199,7 @@ Dash.registerTab({
         el.querySelector('#save').onclick = async () => {
           const stockNames = {}, stockLevels = {};
           el.querySelectorAll('[data-c]').forEach((c) => { const id = c.dataset.c; stockNames[id] = { name: c.querySelector('.s-name').value, ticker: c.querySelector('.s-tick').value, emoji: c.querySelector('.s-emoji').value }; stockLevels[id] = Number(c.querySelector('.s-lv').value); });
-          await api('/settings', { method: 'PUT', body: { stocksEnabled: el.querySelector('#on').checked, stockNames, stockLevels } }); toast('保存しました');
+          await api('/settings', { method: 'PUT', body: { stocksEnabled: el.querySelector('#on').checked, stockNames, stockLevels, stockChannelId: el.querySelector('#bch').value || null, stockBoardMin: Number(el.querySelector('#bmin').value), stockBoardEdit: el.querySelector('#bedit').checked } }); toast('保存しました');
         };
       } },
     /* ===== 宝くじ ===== */
