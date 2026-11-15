@@ -12,7 +12,7 @@ import { petsOpen, bonusLabel } from './pets.js';
 import { estateOf } from './estate.js';
 import { ITEMS as MARKET_ITEMS } from './market.js';
 import { COMPANIES, companyOf } from './stocks.js';
-import { arrestCommand, wantedCommand, crimeCommand, heistCommand, workCommand, begCommand, shopCommand, useCommand, estateCommand, marketCommand, petCommand, stockCommand, newsCommand } from './commands.js';
+import { arrestCommand, wantedCommand, crimeCommand, heistCommand, workCommand, begCommand, shopCommand, useCommand, estateCommand, marketCommand, petCommand, stockCommand, newsCommand, scandalCommand } from './commands.js';
 
 /**
  * パネル: チャンネルに置く、ボタンつきのメッセージ。コマンドを打たなくても、ボタンで、犯罪・バイト・お店が使える。
@@ -24,9 +24,9 @@ export const PANELS = {
   // お店パネルは、お店・不動産・闇市をまとめたもの(v2 から)
   shop: { title: 'お店パネル(お店・不動産・闇市)', commands: ['shop', 'use', 'estate', 'market'], added: { estate: 2, market: 2 } },
   pet: { title: 'ペットパネル', commands: ['pet'] },
-  stock: { title: '株パネル', commands: ['stock', 'news'], added: { news: 4 } },
+  stock: { title: '株パネル', commands: ['stock', 'news', 'scandal'], added: { news: 4, scandal: 5 } },
 };
-export const PANEL_VERSION = 4;
+export const PANEL_VERSION = 5;
 // そのパネルが置かれた版(v)で、パネルに載っていたコマンドだけ(あとから載せたコマンドは、置き直すまで、廃止の対象にしない)
 const commandsOf = (kind, st) => PANELS[kind].commands.filter((n) => (PANELS[kind].added?.[n] ?? 0) <= (st?.v ?? 1));
 /** そのパネルで、廃止しているコマンド: retire(名前の配列)があれば、それだけ。なければ(古い設定)、hide が true のとき、パネルに載っている全部のコマンド */
@@ -109,9 +109,10 @@ export function panelMessage(kind, g) {
   }
   if (kind === 'stock') {
     return {
-      embeds: [new EmbedBuilder().setColor(0x2ecc71).setTitle('📈 株パネル').setDescription('架空の会社の株を、売り買いできます。株価は、決まった間隔で動きます。「📰 ニュース」で、会社ごとの最近のニュースを見られます。')
+      embeds: [new EmbedBuilder().setColor(0x2ecc71).setTitle('📈 株パネル').setDescription('架空の会社の株を、売り買いできます。株価は、決まった間隔で動きます。「📰 ニュース」で会社ごとの最近のニュース、「👥 株主」でみんなの持ち株と割合を見られます。')
         .addFields({ name: '会社', value: COMPANIES.map((c0, n) => { const c = companyOf(s, c0); return `${n + 1}. ${c.emoji} **${c.ticker}** ${c.name}`; }).join('\n') })],
-      components: [new ActionRowBuilder().addComponents(btn('panel:stock:list', '株価・持ち株', '📈'), btn('panel:stock:news', 'ニュース', '📰', ButtonStyle.Primary), btn('panel:stock:buy', '買う', '🛒', ButtonStyle.Success), btn('panel:stock:sell', '売る', '💰', ButtonStyle.Danger))],
+      components: [new ActionRowBuilder().addComponents(btn('panel:stock:list', '株価・持ち株', '📈'), btn('panel:stock:news', 'ニュース', '📰', ButtonStyle.Primary), btn('panel:stock:buy', '買う', '🛒', ButtonStyle.Success), btn('panel:stock:sell', '売る', '💰', ButtonStyle.Danger), btn('panel:stock:holders', '株主', '👥')),
+        ...(s.scandalEnabled ? [new ActionRowBuilder().addComponents(btn('panel:stock:scandal', '不祥事を起こす', '🤫', ButtonStyle.Danger))] : [])],
     };
   }
   // お店パネル(お店・不動産・闇市)
@@ -239,6 +240,10 @@ export const panelComponent = {
       if (action === 'list') return stockCommand.execute(asCommand(i, {}, 'list'));
       if (action === 'news') return say('どの会社のニュースを、見ますか?', { components: [selectRow('panel:stock:newssel', '会社を選ぶ', [{ label: '全部の会社', value: '0' }, ...names.map((nm, n) => ({ label: nm.slice(0, 100), value: String(n + 1) }))])] });
       if (action === 'newssel') return newsCommand.execute(asCommand(i, { company: Number(v0) || null }));
+      if (action === 'holders') return say('どの会社の株主を、見ますか?', { components: [selectRow('panel:stock:holderssel', '会社を選ぶ', [{ label: '全部の会社(まとめ)', value: '0' }, ...names.map((nm, n) => ({ label: nm.slice(0, 100), value: String(n + 1) }))])] });
+      if (action === 'holderssel') return stockCommand.execute(asCommand(i, { company: Number(v0) || null }, 'holders'));
+      if (action === 'scandal') return say('どの会社に、不祥事を起こしますか?(お金がかかります。ばれることもあります)', { components: [selectRow('panel:stock:scandalsel', '会社を選ぶ', names.map((nm, n) => ({ label: nm.slice(0, 100), value: String(n + 1) })))] });
+      if (action === 'scandalsel') return scandalCommand.execute(asCommand(i, { company: Number(v0) }));
       if (action === 'buy' || action === 'sell') return say(action === 'buy' ? 'どの会社の株を、買いますか?' : 'どの会社の株を、売りますか?', { components: [selectRow(`panel:stock:pick:${action}`, '会社を選ぶ', names.map((nm, n) => ({ label: nm.slice(0, 100), value: String(n + 1) })))] });
       if (action === 'pick') { // 会社を選んだ → 株数を、プルダウンで選ぶ(自分で入力もできる)
         const co = companyOf(s, COMPANIES[Number(v0) - 1] ?? COMPANIES[0]), opts = [1, 5, 10, 50, 100, 500].map((n) => ({ label: `${n.toLocaleString()}株`, value: String(n) }));
