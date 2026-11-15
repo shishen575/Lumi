@@ -636,7 +636,7 @@ export const payCommand = {
 /* ================= 闇マーケット ================= */
 export const marketCommand = {
   data: guildOnly(new SlashCommandBuilder().setName('market').setDescription('闇マーケット(犯罪・大型犯罪に使う道具を買います)')
-    .addSubcommand((c) => c.setName('list').setDescription('今日の相場と、持っている道具を見ます'))
+    .addSubcommand((c) => c.setName('list').setDescription('今日の相場と、持っている道具を見ます').addBooleanOption((o) => o.setName('public').setDescription('全員に表示する(省略すると自分だけ)')))
     .addSubcommand((c) => c.setName('buy').setDescription('道具を買います')
       .addStringOption((o) => o.setName('item').setDescription('買う道具').setRequired(true).addChoices(...ITEMS.map((x) => ({ name: `${x.emoji} ${x.name}(${x.desc})`, value: x.id }))))
       .addIntegerOption((o) => o.setName('amount').setDescription('個数(省略すると1)').setMinValue(1).setMaxValue(9999)))),
@@ -652,7 +652,7 @@ export const marketCommand = {
         .setDescription(`犯罪・大型犯罪には、それぞれ専用の道具が必要です。**1回の挑戦で、1つ使います**(成功でも失敗でも)。\n\`/market buy\` で買えます。値段は、毎日少し変わります(闇相場)。`)
         .addFields({ name: '犯罪', value: '\u200b' }, ...ITEMS.filter((x) => x.kind === 'crime').map(field), { name: '大型犯罪(/heist)', value: '\u200b' }, ...ITEMS.filter((x) => x.kind === 'heist').map(field))
         .setFooter({ text: `手持ち: ${wallet(i).toLocaleString()} ・ 1種類につき、最大${mc.maxStack}個まで` });
-      return i.reply({ embeds: [e], ...EPH });
+      return i.reply({ embeds: [e], ...vis(i) });
     }
     const item = itemById(i.options.getString('item', true)), n = i.options.getInteger('amount') ?? 1;
     if (!item) return refuse(i, 'その道具は、売っていません。');
@@ -723,7 +723,7 @@ const shopOff = (i) => refuse(i, 'このサーバーでは、お店はオフで�
 const shopNumber = (s, i) => { const items = shopItems(s), n = i.options.getInteger('item', true); return { items, it: items[n - 1] ?? null, n }; };
 export const shopCommand = {
   data: guildOnly(new SlashCommandBuilder().setName('shop').setDescription('お店(タバコ・お酒など。使うと、しばらく効果がつきます)')
-    .addSubcommand((c) => c.setName('list').setDescription('品物と、いま効いている効果を見ます'))
+    .addSubcommand((c) => c.setName('list').setDescription('品物と、いま効いている効果を見ます').addBooleanOption((o) => o.setName('public').setDescription('全員に表示する(省略すると自分だけ)')))
     .addSubcommand((c) => c.setName('buy').setDescription('買います')
       .addIntegerOption((o) => o.setName('item').setDescription('品の番号(/shop list の番号)').setRequired(true).setMinValue(1).setMaxValue(MAX_SHOP_ITEMS))
       .addIntegerOption((o) => o.setName('amount').setDescription('個数(省略すると1)').setMinValue(1).setMaxValue(SHOP_MAX_STACK)))),
@@ -738,7 +738,7 @@ export const shopCommand = {
         .setDescription(`${head}\n\n\`/shop buy\` で買って(番号で選びます)、\`/use\` で使います。同じ枠(${Object.values(SLOTS).join('・')})の品は、同時に1つだけ効きます(もう一度使うと、上書き)。`)
         .addFields(items.map((it, n) => ({ name: `${n + 1}. ${it.emoji} ${it.name}(${SLOTS[it.slot]}枠)`, value: `**${money(s, it.price)}** ・ ${it.minutes}分 ・ 所持 **${own[it.id] ?? 0}**\n${itemText(it)}${it.desc ? `\n-# ${it.desc}` : ''}`, inline: false })))
         .setFooter({ text: `所持金 ${money(s, wallet(i))}` });
-      return i.reply({ embeds: [e], ...EPH });
+      return i.reply({ embeds: [e], ...vis(i) });
     }
     const { it, n } = shopNumber(s, i), amount = i.options.getInteger('amount') ?? 1;
     if (!it) return refuse(i, `${n} 番の品は、ありません。(/shop list の番号を指定してください)`);
@@ -768,12 +768,14 @@ export const useCommand = {
 
 /* ================= ペット ================= */
 const MAX_SLOTS = 40;
+/** 一覧系の返事: ふつうは自分だけに見える。`public` をオンにすると、全員に見える */
+const vis = (i) => (i.options.getBoolean('public') ? {} : EPH);
 const petOff = (i) => refuse(i, 'このサーバーでは、ペットはオフです。管理者が、ダッシュボードの「通貨 → お店・ペット・株など」でオンにできます。');
 const cleanName = (v, fallback) => (String(v ?? '').replace(/[\r\n<>@`*_~|]/g, '').trim().slice(0, 12) || fallback);
 const petCapacity = (s, g, u) => petCfg(s).baseSlots + (s.estateEnabled ? estateHoldings(g, u).reduce((a, h) => a + h.count * (estateById(s, h.property)?.petSlots ?? 0), 0) : 0);
 export const petCommand = {
   data: guildOnly(new SlashCommandBuilder().setName('pet').setDescription('ペットを飼って、育てます(育つと、ボーナスがつきます)')
-    .addSubcommand((c) => c.setName('status').setDescription('ペットの様子を見ます(まだなら、飼える動物の一覧)'))
+    .addSubcommand((c) => c.setName('status').setDescription('ペットの様子を見ます(まだなら、飼える動物の一覧)').addBooleanOption((o) => o.setName('public').setDescription('全員に表示する(省略すると自分だけ)')))
     .addSubcommand((c) => c.setName('adopt').setDescription('ペットを飼います(お金がかかります。飼える数は、不動産で増えます)')
       .addIntegerOption((o) => o.setName('species').setDescription('動物の番号(/pet status の一覧の番号)').setRequired(true).setMinValue(1).setMaxValue(MAX_PETS))
       .addStringOption((o) => o.setName('name').setDescription('名前(省略すると、動物の名前)').setMaxLength(12)))
@@ -793,7 +795,7 @@ export const petCommand = {
         if (!open_.length) return refuse(i, '飼えるペットが、まだ用意されていません。管理者が、ダッシュボードで追加できます。');
         const list = open_.slice(0, 24).map((x, n) => ({ name: `${n + 1}. ${x.emoji} ${x.name} ・ ${money(s, x.price)}`, value: `${bonusLabel(x, cfg.power)} / レベル\n餌: ${x.foodEmoji} ${x.foodName}(${money(s, x.feedCost)})`, inline: true }));
         const e = new EmbedBuilder().setColor(0xe67e22).setTitle('🐾 ペット').setDescription(`まだ、ペットがいません。\`/pet adopt species:番号\` で飼えます。育てると、ボーナスがつきます。\n${capText}`).addFields(list);
-        return i.reply({ embeds: [e], ...EPH });
+        return i.reply({ embeds: [e], ...vis(i) });
       }
       const e = new EmbedBuilder().setColor(0xe67e22).setTitle('🐾 ペット').setAuthor({ name: i.member?.displayName ?? i.user.username, iconURL: i.user.displayAvatarURL?.() })
         .setDescription(`${capText}${pets.length < cap ? '\n`/pet adopt` で、もう1匹飼えます。' : ''}\n世話は、番号で選びます(例: \`/pet feed pet:2\`)`)
@@ -801,7 +803,7 @@ export const petCommand = {
           const sp = speciesOf(s, pet.species), h = hungerNow(pet, cfg.hungerDecay, now), lv = levelOf(pet.xp), nx = nextXp(pet.xp), fcd = cooldownLeft(g, u, `pet:feed:${pet.id}`), pcd = cooldownLeft(g, u, `pet:play:${pet.id}`);
           return { name: `${n + 1}. ${sp.emoji} ${pet.name}(${sp.name}) Lv ${lv}`, value: `${lv >= MAX_LEVEL ? 'なつき度 最大' : `なつき度 ${pet.xp} / ${nx}`}\n${hungerBar(h)}\n${bonusText(pet, sp)}\n${sp.foodEmoji} ${fcd ? `あと ${dur(fcd)}` : `**あげられます**(${money(s, sp.feedCost)})`} ・ 🎾 ${pcd ? `あと ${dur(pcd)}` : '**できます**'}`, inline: true };
         }));
-      return i.reply({ embeds: [e], ...EPH });
+      return i.reply({ embeds: [e], ...vis(i) });
     }
     if (sub === 'adopt') {
       if (pets.length >= cap) return refuse(i, `これ以上は飼えません。(${pets.length} / ${cap}匹)${s.estateEnabled ? '\n不動産を買うと、飼える数が増えます(`/estate list` で、増える数を確かめられます)。' : '\n手放すなら `/pet release` です。'}`);
@@ -841,7 +843,7 @@ const arrow = trendArrow;
 const pct = (c) => `${c > 0 ? '+' : ''}${(c * 100).toFixed(1)}%`;
 export const stockCommand = {
   data: guildOnly(new SlashCommandBuilder().setName('stock').setDescription('株(架空の会社)を売り買いします')
-    .addSubcommand((c) => c.setName('list').setDescription('株価と、自分の持ち株を見ます'))
+    .addSubcommand((c) => c.setName('list').setDescription('株価と、自分の持ち株を見ます').addBooleanOption((o) => o.setName('public').setDescription('全員に表示する(省略すると自分だけ)')))
     .addSubcommand((c) => c.setName('buy').setDescription('株を買います')
       .addIntegerOption((o) => o.setName('company').setDescription('会社の番号(/stock list の番号)').setRequired(true).setMinValue(1).setMaxValue(5))
       .addIntegerOption((o) => o.setName('shares').setDescription('株数').setRequired(true).setMinValue(1)))
@@ -862,7 +864,7 @@ export const stockCommand = {
       });
       const e = new EmbedBuilder().setColor(0x2ecc71).setTitle('📈 株式市場').setDescription(`株価は、**${Math.round(cfg.tickMs / 60000)}分ごと**に動きます。売買の手数料は、それぞれ ${(cfg.fee * 100).toFixed(1)}%。\`/stock buy\` \`/stock sell\``).addFields(fields)
         .setFooter({ text: `持ち株の評価額 ${total.toLocaleString()}(損益 ${(total - cost).toLocaleString()})・ 手持ち ${wallet(i).toLocaleString()}` });
-      return i.reply({ embeds: [e], ...EPH });
+      return i.reply({ embeds: [e], ...vis(i) });
     }
     const idx = i.options.getInteger('company', true) - 1, m = market[idx]; if (!m) return refuse(i, 'その会社は、ありません。');
     const c = companyOf(s, m.company), px = unitPrice(m.price), h = holding(g, u, c.id);
@@ -887,13 +889,13 @@ const lotteryOff = (i) => refuse(i, 'このサーバーでは、宝くじはオ�
 export const lotteryCommand = {
   data: guildOnly(new SlashCommandBuilder().setName('lottery').setDescription('宝くじ(番号を選んで買います。決まった時刻に、自動で抽選します)')
     .addSubcommand((c) => c.setName('info').setDescription('くじの一覧、または、1つのくじの詳しい情報(次の抽選・ジャックポット・自分のくじ)')
-      .addIntegerOption((o) => o.setName('lottery').setDescription('くじの番号(省略すると、一覧)').setMinValue(1).setMaxValue(MAX_LOTTERIES)))
+      .addIntegerOption((o) => o.setName('lottery').setDescription('くじの番号(省略すると、一覧)').setMinValue(1).setMaxValue(MAX_LOTTERIES)).addBooleanOption((o) => o.setName('public').setDescription('全員に表示する(省略すると自分だけ)')))
     .addSubcommand((c) => c.setName('buy').setDescription('くじを買います')
       .addIntegerOption((o) => o.setName('lottery').setDescription('くじの番号(/lottery info の番号。省略すると 1)').setMinValue(1).setMaxValue(MAX_LOTTERIES))
       .addIntegerOption((o) => o.setName('count').setDescription('枚数(省略すると1枚)').setMinValue(1).setMaxValue(100))
       .addIntegerOption((o) => o.setName('number').setDescription('番号(省略すると、ランダム。指定すると、その番号を枚数ぶん買います)').setMinValue(0).setMaxValue(9999)))
     .addSubcommand((c) => c.setName('results').setDescription('前回の抽選結果を見ます')
-      .addIntegerOption((o) => o.setName('lottery').setDescription('くじの番号(省略すると 1)').setMinValue(1).setMaxValue(MAX_LOTTERIES)))),
+      .addIntegerOption((o) => o.setName('lottery').setDescription('くじの番号(省略すると 1)').setMinValue(1).setMaxValue(MAX_LOTTERIES)).addBooleanOption((o) => o.setName('public').setDescription('全員に表示する(省略すると自分だけ)')))),
   async execute(i) {
     const s = await open(i); if (!s) return;
     const g = i.guildId, u = i.user.id, now = Date.now(), sub = i.options.getSubcommand(), all = lotteriesOf(s);
@@ -904,13 +906,13 @@ export const lotteryCommand = {
       const e = new EmbedBuilder().setColor(0xf1c40f).setTitle('🎟️ 宝くじ').setDescription('`/lottery buy lottery:番号` で買えます。詳しくは `/lottery info lottery:番号`。')
         .addFields(all.map((L, n) => { const at = Math.floor(drawTimeOf(roundOf(now, L), L) / 1000); return { name: `${n + 1}. ${L.emoji} ${L.name}`, value: `1枚 **${money(s, L.price)}** ・ ${L.digits}桁 ・ 抽選 <t:${at}:R>\n🥇 ジャックポット **${money(s, lotteryJackpot(g, L.id, L.jackpotBase))}**`, inline: false }; }))
         .setFooter({ text: `所持金 ${wallet(i).toLocaleString()}` });
-      return i.reply({ embeds: [e], ...EPH });
+      return i.reply({ embeds: [e], ...vis(i) });
     }
     const n = pick ?? 1, L = all[n - 1]; if (!L) return refuse(i, `${n} 番のくじは、ありません。(/lottery info で一覧を見られます)`);
     const round = roundOf(now, L), drawAt = drawTimeOf(round, L), mine = userTickets(g, L.id, round, u), count = userTicketCount(g, L.id, round, u);
     if (sub === 'results') {
       const d = lastDraw(g, L.id); if (!d) return refuse(i, `${L.emoji} ${L.name}は、まだ抽選が行われていません。`);
-      return i.reply({ embeds: [drawEmbed(s, { ...d, lottery: L, jackpotWon: !!d.jackpot_won, short: 0, nextJackpot: lotteryJackpot(g, L.id, L.jackpotBase) })], ...EPH });
+      return i.reply({ embeds: [drawEmbed(s, { ...d, lottery: L, jackpotWon: !!d.jackpot_won, short: 0, nextJackpot: lotteryJackpot(g, L.id, L.jackpotBase) })], ...vis(i) });
     }
     if (sub === 'info') {
       const est = estimateRtp(L);
@@ -920,7 +922,7 @@ export const lotteryCommand = {
           { name: `🥈 2等(下${L.digits - 1}桁)${L.digits >= 3 ? ' / 🥉 3等(下' + (L.digits - 2) + '桁)' : ''}`, value: `くじ代の **×${L.prize2}**${L.digits >= 3 ? `\nくじ代の **×${L.prize3}**` : ''}`, inline: true },
           { name: `あなたのくじ(${count}枚)`, value: mine.length ? mine.map((t) => `${pad(t.number, L.digits)}${t.qty > 1 ? `×${t.qty}` : ''}`).join('  ').slice(0, 1000) : 'まだ買っていません。' })
         .setFooter({ text: `この回の販売 ${roundSales(g, L.id, round).toLocaleString()}枚 ・ 所持金 ${wallet(i).toLocaleString()}` });
-      return i.reply({ embeds: [e], ...EPH });
+      return i.reply({ embeds: [e], ...vis(i) });
     }
     const k = i.options.getInteger('count') ?? 1, picked = i.options.getInteger('number'), maxNum = 10 ** L.digits - 1;
     if (picked !== null && picked > maxNum) return refuse(i, `${L.name}の番号は、${pad(0, L.digits)}〜${maxNum} です。`);
@@ -949,7 +951,7 @@ function collectRent(s, g, u, now = Date.now()) {
 }
 export const estateCommand = {
   data: guildOnly(new SlashCommandBuilder().setName('estate').setDescription('不動産(物件を買って、家賃をもらいます)')
-    .addSubcommand((c) => c.setName('list').setDescription('物件の一覧と、自分の持ち物件・溜まった家賃を見ます'))
+    .addSubcommand((c) => c.setName('list').setDescription('物件の一覧と、自分の持ち物件・溜まった家賃を見ます').addBooleanOption((o) => o.setName('public').setDescription('全員に表示する(省略すると自分だけ)')))
     .addSubcommand((c) => c.setName('buy').setDescription('物件を買います')
       .addIntegerOption((o) => o.setName('property').setDescription('物件の番号(/estate list の番号)').setRequired(true).setMinValue(1).setMaxValue(MAX_PROPERTIES))
       .addIntegerOption((o) => o.setName('count').setDescription('数(省略すると1)').setMinValue(1).setMaxValue(20)))
@@ -969,7 +971,7 @@ export const estateCommand = {
         .setDescription(`家賃は、**1時間ごと**に溜まり、最大 **${cfg.capHours}時間ぶん**まで溜まります。\`/estate collect\` で受け取ります。\n手取り: **${money(s, hourly)}/時間**(家賃 − 維持費)・溜まった家賃: **${money(s, waiting)}**${full && waiting ? '(上限です。早く受け取りましょう)' : ''}`)
         .addFields(list.map((p, n) => { const net = Math.max(0, p.rent - p.upkeep), o = own[p.id]; return { name: `${n + 1}. ${p.emoji} ${p.name}`, value: `**${money(s, p.price)}** ・ 家賃 ${money(s, p.rent)}/時 − 維持費 ${money(s, p.upkeep)} = **${money(s, net)}/時**(1日 ${(net * 24 / p.price * 100).toFixed(1)}%)\n持ち物件 **${o?.count ?? 0}/${p.maxOwn}**${p.petSlots && s.petsEnabled ? ` ・ 🐾 ペット枠 +${p.petSlots}` : ''}${p.desc ? `\n-# ${p.desc}` : ''}`, inline: false }; }))
         .setFooter({ text: `手持ち ${wallet(i).toLocaleString()} ・ 売るときは、買った値段の ${Math.round(cfg.sellPct * 100)}%` });
-      return i.reply({ embeds: [e], ...EPH });
+      return i.reply({ embeds: [e], ...vis(i) });
     }
     if (sub === 'collect') {
       const owned = mine(); if (!owned.length) return refuse(i, '物件を持っていません。`/estate buy` で買えます。');

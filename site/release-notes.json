@@ -1,5 +1,16 @@
 [
   {
+    "n": 25,
+    "date": "2026-11-15",
+    "title": "一覧は自分だけ。全員に見せるのは選べる",
+    "items": [
+      {
+        "tag": "変更",
+        "text": "一覧系のコマンドに `public` オプションを追加しました。ふつうは自分だけに見えて、`public:True` にすると、全員に見えます(`/shop list` `/market list` `/pet status` `/stock list` `/estate list` `/lottery info` `/lottery results`)。買い物(`/shop buy`)と使用(`/use`)は、これまで通り、全員に見えます"
+      }
+    ]
+  },
+  {
     "n": 24,
     "date": "2026-11-15",
     "title": "ニュースの間隔を選べる",
