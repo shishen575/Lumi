@@ -1,6 +1,6 @@
 import { EmbedBuilder } from 'discord.js';
 import { getSettings, money } from './settings.js';
-import { postBoard as post, boardDue } from './board.js';
+import { postBoard as post, boardDue, updatedLine } from './board.js';
 import { petsOpen, bonusLabel } from './pets.js';
 import { estateOf, hourlyNet } from './estate.js';
 import { ITEMS, marketRate, priceOf } from './market.js';
@@ -25,7 +25,7 @@ export function priceEmbeds(s, g, now = Date.now()) {
     const mc = marketCfg(s), line = (x) => { const r = marketRate(g, x.id, undefined, mc.range); return `${x.emoji} **${x.name}** ${m(priceOf(g, itemOf(s, x), undefined, mc.range))} ${r < 0.95 ? '📉' : r > 1.15 ? '📈' : ''}`; };
     out.push(new EmbedBuilder().setColor(0x2b2d31).setTitle('🕶️ 闇市(今日の相場)').setDescription(`**犯罪**\n${ITEMS.filter((x) => x.kind === 'crime').map(line).join('\n')}\n\n**大型犯罪**\n${ITEMS.filter((x) => x.kind === 'heist').map(line).join('\n')}`).setFooter({ text: '値段は、毎日少し変わります(📉 安い / 📈 高い)' }));
   }
-  if (out.length) out.at(-1).setTimestamp(now);
+  if (out.length) out[0].setDescription(`${updatedLine(now)}\n${out[0].data.description}`);
   return out;
 }
 
@@ -40,3 +40,5 @@ export async function priceTick(client, now = Date.now()) {
     catch (e) { console.error(`[priceboard] 失敗 (${g}):`, e.message); }
   }
 }
+
+export async function repostPrice(client, g) { const s = getSettings(g); if (!s.priceBoardReplace) return false; return postPriceBoard(client, g); }

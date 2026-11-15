@@ -1,5 +1,5 @@
 import { EmbedBuilder } from 'discord.js';
-import { postBoard as post, boardDue } from './board.js';
+import { postBoard as post, boardDue, updatedLine } from './board.js';
 import { getSettings } from './settings.js';
 import { marketNow } from './stockmarket.js';
 import { companyOf, trendArrow } from './stocks.js';
@@ -19,8 +19,8 @@ export function chartUrl(s, rows) {
 
 export function boardEmbed(s, g, now = Date.now()) {
   const rows = marketNow(s, g, now);
-  const e = new EmbedBuilder().setColor(0x3498db).setTitle('📈 株価ボード').setTimestamp(now).setImage(chartUrl(s, rows))
-    .setDescription(rows.map((r) => { const c = companyOf(s, r.company), pct = r.change * 100; return `${c.emoji} **${c.ticker}** ${c.name} — **${Math.max(1, Math.round(r.price)).toLocaleString()}** ${s.currencyEmoji} ${trendArrow(r.change)} ${pct > 0 ? '+' : ''}${pct.toFixed(1)}%`; }).join('\n'))
+  const e = new EmbedBuilder().setColor(0x3498db).setTitle('📈 株価ボード').setImage(chartUrl(s, rows))
+    .setDescription(`${updatedLine(now)}\n${rows.map((r) => { const c = companyOf(s, r.company), pct = r.change * 100; return `${c.emoji} **${c.ticker}** ${c.name} — **${Math.max(1, Math.round(r.price)).toLocaleString()}** ${s.currencyEmoji} ${trendArrow(r.change)} ${pct > 0 ? '+' : ''}${pct.toFixed(1)}%`; }).join('\n')}`)
     .setFooter({ text: '24時間の値動き ・ 売買は /stock' });
   return e;
 }
@@ -40,3 +40,6 @@ export async function boardTick(client, now = Date.now()) {
     } catch (e) { console.error(`[stockboard] 失敗 (${g}):`, e.message); }
   }
 }
+
+/** チャンネルで誰かが話したあとの、出し直し(「一番下に出す」がオンのときだけ) */
+export async function repostStock(client, g) { const s = getSettings(g); if (!s.stockBoardEdit) return false; return postBoard(client, g); }

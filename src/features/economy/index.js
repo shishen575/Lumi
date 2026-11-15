@@ -3,9 +3,9 @@ import { commands, blackjackButton, heistButton, ramenButton, resolveExpiredHeis
 import { mountApi } from './api.js';
 import { crimeHelp, jobHelp, lifeHelp } from './help.js';
 import { settleAll } from './lotteryengine.js';
-import { boardTick, postBoard as postStockBoard } from './stockboard.js';
+import { boardTick, repostStock } from './stockboard.js';
 import { stickBoards } from './board.js';
-import { priceTick, postPriceBoard } from './priceboard.js';
+import { priceTick, repostPrice } from './priceboard.js';
 import { pauseHeists, resumeHeists } from './db.js';
 import { onShutdownCleanup } from '../../core/shutdown.js';
 
@@ -31,7 +31,7 @@ export default {
     // 制限時間を過ぎて放置された大型銀行強盗を、15秒ごとに失敗として精算する(放置で罰を逃れられないように)
     // 起動した直後の30秒は、保留する(BOTが止まっていた間に、制限時間が過ぎた強盗を、すぐ失敗にしない)
     // 株価グラフ・値段表のチャンネルで、誰かが話したら、ボードを一番下に出し直す
-    client.on(Events.MessageCreate, stickBoards(client, { stock: (g) => postStockBoard(client, g), price: (g) => postPriceBoard(client, g) }));
+    client.on(Events.MessageCreate, stickBoards(client, { price: (g) => repostPrice(client, g), stock: (g) => repostStock(client, g) }));
     client.once(Events.ClientReady, () => {
       holdHeistSweep(30_000); setInterval(() => resolveExpiredHeists(client), 15_000).unref?.();
       // 宝くじ: 1分ごとに、抽選の時刻を過ぎた回を、抽選して、発表する(起動直後にも1回。止まっていた間の分)

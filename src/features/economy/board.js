@@ -22,6 +22,8 @@ export async function postBoard(client, g, kind, channelId, payload, { replace =
   } catch (e) { console.warn(`[board:${kind}] 送れませんでした (${g}): ${e.message}`); return false; }
 }
 /** 前回から minutes 分たっていれば true(まだなら false) */
+/** 「最終更新」の表示(Discordの時刻表示: 見る人の時計で、時刻と、「○分前」が出る) */
+export const updatedLine = (now = Date.now()) => `🕒 最終更新 <t:${Math.floor(now / 1000)}:t>(<t:${Math.floor(now / 1000)}:R>)`;
 export const boardDue = (g, kind, minutes, now = Date.now()) => { const at = getKV(g, `board:${kind}`, {}).at; return !at || now - at >= minutes * 60_000 - 5_000; };
 
 /**
@@ -34,7 +36,7 @@ export function stickBoards(client, repost) {
   return (msg) => {
     if (!msg.guildId || msg.author?.id === client.user?.id) return;
     for (const [kind, fn] of Object.entries(repost)) {
-      const st = getKV(msg.guildId, `board:${kind}`, {}); if (!st.ch || st.ch !== msg.channelId || !st.sticky) continue;
+      const st = getKV(msg.guildId, `board:${kind}`, {}); if (!st.ch || st.ch !== msg.channelId) continue; // 「一番下に出す」がオフなら、出し直す側(repost)が、何もしない
       const key = `${msg.guildId}:${kind}`, now = Date.now(), cur = pending.get(key) ?? { first: now };
       clearTimeout(cur.t);
       cur.t = setTimeout(() => { pending.delete(key); fn(msg.guildId).catch((e) => console.warn(`[board:${kind}] 出し直せませんでした:`, e.message)); }, Math.min(8000, Math.max(1000, 30000 - (now - cur.first))));
