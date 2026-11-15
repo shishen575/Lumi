@@ -13,6 +13,8 @@ import { PANELS, panelState, installPanel, removePanel, retiredOf } from './pane
 import { customPanels, saveCustomPanel, removeCustomPanel, removeCustomButton, retiredOfCustom, MAX_CUSTOM, MAX_BUTTONS } from './custompanels.js';
 import { commandCatalog } from '../../core/commands.js';
 import { marketNow, unitPrice } from './stockmarket.js';
+import { hubState, hubRetired, installHub, removeHub, buttonsOf } from './hub.js';
+import { commandCategories } from '../../core/commands.js';
 import { MAX_PETS, DEFAULT_PETS, PET_FX_KEYS, speciesOf } from './pets.js';
 import { itemById as marketItemById, ITEMS as MARKET_ITEMS } from './market.js';
 import { MAX_LOTTERIES, DEFAULT_LOTTERY } from './lottery.js';
@@ -176,6 +178,16 @@ export function mountApi(router, client = null) {
     const ok = await removeCustomPanel(client, req.guild.id, req.params.id); if (!ok) return res.status(404).json({ error: 'パネルが、ありません' });
     audit(req.guild.id, req.actor, null, 'カスタムパネルを撤去', null, ''); res.json({ ok: true });
   });
+  // メニューパネル(全コマンドを、カテゴリーごとに、ボタンにする)
+  const hubView = (g) => { const st = hubState(g); return { categories: commandCategories().map((c) => ({ id: c.id, title: c.title, emoji: c.emoji ?? '📁', commands: c.commands, buttons: buttonsOf(c).length })).filter((c) => c.buttons), installed: st?.msg ? { channel_id: st.ch, retire: st.retire ?? [], sticky: st.sticky !== false, retired: hubRetired(st), link: `https://discord.com/channels/${g}/${st.ch}/${st.msg}` } : null }; };
+  router.get('/hub', (req, res) => res.json(hubView(req.guild.id)));
+  router.post('/hub', async (req, res) => {
+    if (!adminOnly(req, res)) return;
+    try { await installHub(client, req.guild.id, String(req.body?.channel_id ?? ''), req.body?.retire, req.body?.sticky !== false); }
+    catch (e) { return res.status(400).json({ error: e.code === 50013 || e.code === 50001 ? 'そのチャンネルに、メッセージを送る権限がありません' : e.message }); }
+    audit(req.guild.id, req.actor, null, 'メニューパネルを設置', null, (req.body?.retire ?? []).length ? `廃止: ${hubRetired(hubState(req.guild.id)).map((n) => '/' + n).join(' ')}` : 'コマンドは残す'); res.json(hubView(req.guild.id));
+  });
+  router.delete('/hub', async (req, res) => { if (!adminOnly(req, res)) return; await removeHub(client, req.guild.id); audit(req.guild.id, req.actor, null, 'メニューパネルを撤去', null, 'コマンドを元に戻した'); res.json(hubView(req.guild.id)); });
   // みんなの持ち株: 会社ごとの株主と、株の割合(その人の持ち株 ÷ みんなの持ち株の合計)
   router.get('/stock-holders', async (req, res) => {
     const g = req.guild.id, s = getSettings(g), market = marketNow(s, g), all = stockHoldersAll(g);

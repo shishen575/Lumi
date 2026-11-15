@@ -43,7 +43,9 @@ export function rewriteHidden(hid, payload) {
 /** /help の「パネル」欄など、機能が、ヘルプに足す欄: (guildId) => [{ name, value }] */
 const helpExtras = [];
 export const registerHelpExtras = (fn) => helpExtras.push(fn);
-let byNameRef = new Map(), catalogRef = [];
+let byNameRef = new Map(), catalogRef = [], categoriesRef = [];
+/** 機能ごとの、コマンドの分類(メニューパネルで使う): [{ id, title, emoji, commands: [名前] }]。機能が categories を持っていなければ、機能ごとに1つ */
+export const commandCategories = () => categoriesRef;
 /** 登録されている全コマンドの、名前・説明・項目(カスタムパネルで、コマンドを選ぶのに使う) */
 export const commandCatalog = () => catalogRef;
 export const findCommand = (name) => byNameRef.get(name);
@@ -65,6 +67,7 @@ export function setupCommands(client, features) {
   if (!cmds.length) return;
   const byName = new Map(cmds.map((c) => [c.data.name, c]));
   byNameRef = byName; catalogRef = cmds.map((c) => c.data.toJSON());
+  categoriesRef = features.flatMap((f) => (f.categories ?? [{ id: f.name, title: f.title ?? f.name, emoji: f.emoji ?? '📁', commands: (f.commands ?? []).map((c) => c.data.name) }]).map((c) => ({ ...c, commands: c.commands.filter((n) => byName.has(n)) }))).filter((c) => c.commands.length);
   const comps = features.flatMap((f) => f.components ?? []); // [{ id: 'ogiri:answer', execute(i) }]
   const body = cmds.map((c) => c.data.toJSON());
   const register = (guild) =>
