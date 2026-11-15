@@ -14,10 +14,11 @@ BOT・ダッシュボード・公式サイトを、ひとまとめにして、Ra
 2. リポジトリの `Dockerfile` と `railway.json` が、自動で使われます。
 3. サービスの **Settings → Networking → Generate Domain** で、仮のアドレス(`○○.up.railway.app`)を作ります。
 
-## 2. ボリュームを付ける(データの保存場所)
+## 2. ボリュームを付ける(データの保存場所)【必ず、データを送る前に】
 
-1. サービスの **Volumes → New Volume** を作り、**Mount path** を `/app/data` にします。
-2. これがないと、再デプロイのたびに、データが消えます。
+1. プロジェクトの全体の画面(サービスのカードが並ぶ画面)で、空いている所を**右クリック**(スマホは右上の **+ Create**、または `Ctrl+K` / `⌘+K` で「volume」)→ **Volume** を選び、サービスは **Lumi**、**Mount path** は `/app/data` にします。
+2. **これがないと、再デプロイのたびに、データが消えます**(送ったデータも、消えます)。
+3. 付いたか確認: Lumi の Variables に、`RAILWAY_VOLUME_MOUNT_PATH`(値は `/app/data`)が、自動で現れます。ボリュームがないと、ログと `/ping` に「ボリュームが付いていません」と警告が出ます。
 
 ## 3. 環境変数(Variables)
 
@@ -49,7 +50,8 @@ BOT・ダッシュボード・公式サイトを、ひとまとめにして、Ra
    ```bash
    node scripts/upload-db.mjs export.db https://○○.up.railway.app <MIGRATION_TOKEN>
    ```
-   `200 {"ok":true,...}` と出れば、成功です。Railway 側が、自動で再起動して、データを入れ替えます(元のデータは、`bot.db.before-import-…` に残ります)。
+   `200 {"ok":true,...}` と出れば、成功です。
+5. **データが消えないか確認します。** Railway で、一度 **Redeploy** を押して、終わったあと、同じ宛先に、もう一度 `upload-db.mjs` を実行します。`409 すでに引っ越し済みです` と返れば、ボリュームが効いています(印が残っている)。`400` なら、ボリュームに保存されていません(上の「2」を確認)。Railway 側が、自動で再起動して、データを入れ替えます(元のデータは、`bot.db.before-import-…` に残ります)。
 
 ## 5. BOT を動かす
 
