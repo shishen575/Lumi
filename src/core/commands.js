@@ -105,6 +105,11 @@ export function setupCommands(client, features) {
     }
   }
   client.on(Events.InteractionCreate, (i) => {
+    if (i.isAutocomplete?.()) { // 入力中の候補(コマンドの autocomplete 関数があるもの)
+      const cmd = byName.get(i.commandName);
+      if (cmd?.autocomplete) Promise.resolve(cmd.autocomplete(i)).catch((e) => { if (e.code !== 10062 && e.code !== 40060) console.warn(`[commands] autocomplete /${i.commandName}:`, e.message); });
+      return;
+    }
     if (i.isChatInputCommand()) {
       const cmd = byName.get(i.commandName);
       if (cmd && isShuttingDown()) return void i.reply({ content: '🔄 Lumi は、再起動の準備中です。数十秒後に、もう一度お試しください。', flags: MessageFlags.Ephemeral }).catch(() => {});
