@@ -217,6 +217,12 @@ export const itemQty = (g, u, item) => db.prepare('SELECT qty FROM eco_items WHE
 export const allItems = (g, u) => Object.fromEntries(db.prepare('SELECT item, qty FROM eco_items WHERE guild_id=? AND user_id=? AND qty>0').all(g, u).map((r) => [r.item, r.qty]));
 export const addItem = (g, u, item, n = 1) => db.prepare(`INSERT INTO eco_items (guild_id,user_id,item,qty) VALUES (?,?,?,?)
   ON CONFLICT(guild_id,user_id,item) DO UPDATE SET qty=qty+excluded.qty`).run(g, u, item, n);
+/** 管理者による、品の付与・回収。個数を delta だけ増減する(0〜max の範囲に収める)。前後の個数を返す */
+export function adjustItem(g, u, item, delta, max) {
+  const before = itemQty(g, u, item), after = Math.max(0, Math.min(max, before + delta));
+  db.prepare(`INSERT INTO eco_items (guild_id,user_id,item,qty) VALUES (?,?,?,?) ON CONFLICT(guild_id,user_id,item) DO UPDATE SET qty=excluded.qty`).run(g, u, item, after);
+  return { before, after };
+}
 /** 道具を、ほかの人に渡す。渡せたら 'ok'、持っている数が足りなければ 'short'、相手が持てる上限を超えるなら 'full'(途中で止まっても、片方だけ減ったり増えたりしない) */
 export function transferItem(g, from, to, item, n, maxStack) {
   db.exec('BEGIN');

@@ -374,13 +374,13 @@ Dash.registerTab({
       } },
 
     /* ===== 管理者ツール(残高の調整・罰金の返金・操作の記録) ===== */
-    { id: 'admin', title: '残高の調整', icon: 'shield',
+    { id: 'admin', title: '残高の調整・アイテム', icon: 'shield',
       async render(el, { api, esc, ic, toast, confirm, pageHeader }) {
         const st = await api('/settings'); const can = st.canEditBudget; const em = esc(st.currencyEmoji);
         const fmtN = (n) => `${em} ${Number(n).toLocaleString()}`;
         const dt = (t) => new Date(t).toLocaleString('ja-JP', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
         let picked = null;
-        el.innerHTML = `${pageHeader('残高の調整', '管理者が、メンバーのお金を増やす・減らす・指定した額にする、罰金を返金する、ためのページです。すべての操作は、下の記録に残ります。')}
+        el.innerHTML = `${pageHeader('残高の調整・アイテム', '管理者が、メンバーのお金を増やす・減らす・指定した額にする、アイテムを付ける・取り上げる、罰金を返金する、ためのページです。すべての操作は、下の記録に残ります。')}
           ${can ? '' : '<div class="card" style="background:var(--warn-soft);border-color:transparent"><b>この操作ができるのは、サーバーのオーナー・管理者・運営だけです</b><p class="small" style="margin:6px 0 0">あなたは、記録を見ることだけができます。</p></div>'}
           ${can ? `<div class="card"><h2>1. メンバーを選ぶ</h2><div class="inline"><input id="q" type="text" placeholder="名前の一部、またはユーザーID" maxlength="32" style="max-width:320px"><button class="btn ghost sm" id="find" type="button">探す</button></div><div id="found" style="margin-top:10px"></div></div>
           <div id="panel"></div>` : ''}
@@ -402,6 +402,18 @@ Dash.registerTab({
               <div class="acts"><button class="btn" id="apply" type="button">調整する</button></div>
               <p class="hint">予算には、影響しません(管理者による調整は、予算の出し入れとは別です)。${st.allowDebt ? '' : '借金を許可していないので、手持ちは0未満になりません。'}</p></div>
             <div class="card flush"><div class="card-h"><h2>最近の罰金(犯罪・大型犯罪)</h2></div>${a.fines.length ? `<ol class="lb">${a.fines.map((f) => `<li style="grid-template-columns:minmax(0,1fr) auto auto"><span class="nm">${f.kind === 'heist' ? '🏦 大型犯罪' : '🚔 犯罪'}の罰金 <b>${fmtN(f.amount)}</b> <span class="mut small">${dt(f.at)}</span></span>${f.refunded ? '<span class="badge ok">返金済み</span>' : `<button class="btn ghost sm" type="button" data-f="${f.id}" data-a="${f.amount}">返金する</button>`}<span></span></li>`).join('')}</ol>` : '<div class="empty"><h2>最近の罰金は、ありません</h2></div>'}</div>`;
+          q('#panel').insertAdjacentHTML('beforeend', `<div class="card"><h2>3. アイテムの付与・回収</h2><p class="hint" style="margin:0 0 8px">お店の品と、闇市の道具を、${esc(a.name)} に付けたり、取り上げたりします。持てる上限(お店99個・闇市は設定の上限)を超えるぶんは、付きません。</p>
+            <div class="tiles" style="margin:0 0 12px">${a.items.filter((x) => x.qty).map((x) => `<div class="tile"><div class="k">${esc(x.emoji)} ${esc(x.name)}${x.kind === 'market' ? '(闇市)' : ''}</div><div class="v">${x.qty}<span class="u">個</span></div></div>`).join('') || '<span class="mut small">いまは、品を持っていません</span>'}</div>
+            <div class="grid2"><div class="field"><label class="f" for="gi">品</label><select id="gi">${['shop', 'market'].map((k) => `<optgroup label="${k === 'shop' ? 'お店' : '闇市'}">${a.items.filter((x) => x.kind === k).map((x) => `<option value="${x.id}">${esc(x.emoji)} ${esc(x.name)}(いま ${x.qty}個)</option>`).join('')}</optgroup>`).join('')}</select></div>
+              <div class="field"><label class="f" for="gm">操作</label><select id="gm"><option value="add">付ける</option><option value="remove">取り上げる</option></select></div>
+              <div class="field"><label class="f" for="gn">個数</label><input id="gn" type="number" min="1" max="99" value="1"></div>
+              <div class="field"><label class="f" for="gt">メモ(任意)</label><input id="gt" type="text" maxlength="100" placeholder="理由など"></div></div>
+            <div class="acts"><button class="btn" id="grant" type="button">実行する</button></div></div>`);
+          q('#grant').onclick = async () => {
+            const it = a.items.find((x) => x.id === q('#gi').value), mode = q('#gm').value, amount = q('#gn').value;
+            if (!await confirm({ title: 'アイテムを' + (mode === 'add' ? '付与' : '回収'), message: `${a.name} ${mode === 'add' ? 'に' : 'から'}、${it.emoji} ${it.name} を ${amount}個 ${mode === 'add' ? '付けます' : '取り上げます'}。`, ok: '実行する', danger: mode !== 'add' })) return;
+            await api('/grant-item', { method: 'POST', body: { user_id: picked, item: it.id, mode, amount, note: q('#gt').value } }); toast(mode === 'add' ? '付与しました' : '取り上げました'); await drawPanel(); drawLog();
+          };
           q('#apply').onclick = async () => {
             const body = { user_id: picked, target: q('#tg').value, mode: q('#md').value, amount: q('#am').value, note: q('#nt').value };
             if (body.amount === '') { toast('金額を入力してください', 'err'); return; }
