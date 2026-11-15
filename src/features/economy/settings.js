@@ -1,7 +1,7 @@
 import { getKV, setKV } from '../../core/db.js';
 import { DEFAULT_RANKS, sanitizeRanks } from './ranks.js';
 import { sanitizeBalance } from './balance.js';
-import { DEFAULT_NAMES, sanitizeNames, DEFAULT_LEVELS, sanitizeLevels } from './stocks.js';
+import { DEFAULT_NAMES, sanitizeNames, DEFAULT_LEVELS, sanitizeLevels, DEFAULT_EVENTS, sanitizeEvents } from './stocks.js';
 import { DEFAULT_PETS, sanitizePets } from './pets.js';
 import { DEFAULT_SHOP, sanitizeShopItems } from './shop.js';
 import { DEFAULT_LOTTERY, sanitizeLotteries } from './lottery.js';
@@ -28,6 +28,7 @@ export const DEFAULTS = {
   estate: DEFAULT_ESTATE,  // 物件の一覧(名前・値段・家賃・維持費などを、サーバーごとに変えられる)
   lotteryEnabled: false,   // 宝くじ。オンのとき、/lottery が使え、決まった時刻に、自動で抽選する
   lotteries: [DEFAULT_LOTTERY], // くじの一覧(サーバーごとに、自由に、最大6つ。名前・値段・間隔・桁数・賞金などを変えられる)
+  newsEvents: DEFAULT_EVENTS, // 株のニュース(出来事): 文・上がる/下がる割合・会社・起きやすさ
   newsChannelId: null,     // 新聞チャンネル(株のニュースを出す)
   priceChannelId: null,    // 値段表(ペット・不動産・闇市)を出すチャンネル
   priceBoardMin: 30,       // 値段表を出す間隔(分)
@@ -76,6 +77,7 @@ export function saveSettings(guildId, s) {
     lotteryChannelId: s.lotteryChannelId === undefined ? cur.lotteryChannelId : (/^\d{15,25}$/.test(String(s.lotteryChannelId ?? '')) ? String(s.lotteryChannelId) : null),
     stocksEnabled: s.stocksEnabled === undefined ? cur.stocksEnabled : !!s.stocksEnabled,
     stockNames: s.stockNames === undefined ? cur.stockNames : sanitizeNames(s.stockNames, cur.stockNames),
+    newsEvents: s.newsEvents === undefined ? cur.newsEvents : sanitizeEvents(s.newsEvents, cur.newsEvents),
     newsChannelId: s.newsChannelId === undefined ? cur.newsChannelId : (/^\d{15,25}$/.test(String(s.newsChannelId ?? '')) ? String(s.newsChannelId) : null),
     priceChannelId: s.priceChannelId === undefined ? cur.priceChannelId : (/^\d{15,25}$/.test(String(s.priceChannelId ?? '')) ? String(s.priceChannelId) : null),
     priceBoardMin: s.priceBoardMin === undefined ? cur.priceBoardMin : clamp(s.priceBoardMin, 5, 1440, DEFAULTS.priceBoardMin),

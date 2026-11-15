@@ -43,38 +43,63 @@ function hash(str) { let h = 2166136261; for (const ch of str) { h ^= ch.charCod
 function mulberry(seed) { let a = seed >>> 0; return () => { a = (a + 0x6D2B79F5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
 const gauss = (r) => Math.sqrt(-2 * Math.log(Math.max(1e-12, r()))) * Math.cos(2 * Math.PI * r());
 
-export const NEWS_UP = ['新商品が大ヒット!', '好決算を発表', '大型契約を獲得', '人気の経営者が、就任'];
-export const NEWS_DOWN = ['不祥事が発覚', '工場でトラブルが発生', '決算が、予想を下回った', 'ライバルに、顧客を奪われた'];
-/** その時刻(tick)の、ニュース(なければ null): 確率 3% で、株価が大きく動く */
-export function eventAt(guild, companyId, tick, stepFactor = 1, newsRate = 1) {
+// ニュース(出来事): 株価が、決まった割合で、上がったり、下がったりする。サーバーごとに、ダッシュボードで、自由に変えられる
+// pct: 株価の変わる割合(%。プラスは上がる、マイナスは下がる)/ company: 空なら全社、会社の id ならその会社だけ / weight: 起きやすさ(1〜10)
+export const MAX_EVENTS = 40;
+const E = (id, pct, text, company = '', weight = 3) => ({ id, enabled: true, text, pct, company, weight });
+export const DEFAULT_EVENTS = [
+  E('ev_up1', 8, '新商品が、大ヒット!'), E('ev_up2', 6, '好決算を発表'), E('ev_up3', 9, '大型契約を獲得'), E('ev_up4', 5, '人気の経営者が、就任'),
+  E('ev_up5', 10, '大手企業との提携を発表'), E('ev_up6', 5, '増配を発表'), E('ev_up7', 6, '新しい工場が、稼働'), E('ev_up8', 4, '業界全体に、追い風', '', 2),
+  E('ev_dn1', -9, '不祥事が、発覚'), E('ev_dn2', -7, '工場でトラブルが、発生'), E('ev_dn3', -6, '決算が、予想を下回った'), E('ev_dn4', -5, 'ライバルに、顧客を奪われた'),
+  E('ev_dn5', -12, '商品の、リコールが発生'), E('ev_dn6', -8, '社長が、急病で入院'), E('ev_dn7', -6, 'ストライキが、発生'), E('ev_dn8', -10, 'サイバー攻撃を、受けた', '', 2),
+  E('ev_c1a', -8, '発電所のトラブルで、大規模な停電', 'c1', 2), E('ev_c2a', 9, '行列ができる、大人気に', 'c2', 2), E('ev_c2b', -15, '食中毒騒ぎが、発生', 'c2', 1),
+  E('ev_c3a', 8, '新種のペットが、大ヒット', 'c3', 2), E('ev_c4a', 10, '宝石の価格が、高騰', 'c4', 2), E('ev_c5a', -20, '闇取引が、摘発された!', 'c5', 1), E('ev_c5b', 12, '裏で、大もうけの噂', 'c5', 1),
+];
+const evClean = (x, n) => String(x ?? '').replace(/[\r\n<>@`*_~|]/g, '').trim().slice(0, n);
+/** 出来事のリストを、正しい形に直す(最大40件。割合は ±1〜50%)。空のリストや不正な入力は、いまのまま(全部オフにするときは、各項目の「有効」をオフにする) */
+export function sanitizeEvents(input, current = DEFAULT_EVENTS) {
+  if (!Array.isArray(input)) return current;
+  const out = [], used = new Set();
+  for (const raw of input.filter((x) => evClean(x?.text, 30)).slice(0, MAX_EVENTS)) {
+    const pct = Math.round(Number(raw?.pct)); if (!Number.isFinite(pct) || pct === 0) continue;
+    let id = /^ev_[a-z0-9]{1,10}$/.test(String(raw?.id ?? '')) ? raw.id : null;
+    if (!id || used.has(id)) { let n = 1; while (used.has(`ev_n${n}`)) n++; id = `ev_n${n}`; }
+    used.add(id);
+    out.push({ id, enabled: raw?.enabled !== false, text: evClean(raw.text, 30), pct: Math.max(-50, Math.min(50, pct)), company: COMPANIES.some((c) => c.id === raw?.company) ? raw.company : '', weight: Math.max(1, Math.min(10, Math.round(Number(raw?.weight)) || 3)) });
+  }
+  return out.length ? out : current;
+}
+/** その時刻(tick)の、ニュース(なければ null): 確率 約1.5%(15分あたり)で、出来事が1つ起きる。どれが起きるかは、起きやすさ(weight)で決まる */
+export function eventAt(guild, companyId, tick, stepFactor = 1, newsRate = 1, events = DEFAULT_EVENTS) {
   const r = mulberry(hash(`ev:${guild}:${companyId}:${tick}`));
   if (r() >= 0.015 * stepFactor * newsRate) return null; // 15分あたり 1.5%(1日に1〜2回ほど)。間隔が短ければ、1回あたりは、その割合で小さく
-  const up = r() < 0.5, size = 0.04 + r() * 0.06; // 基本の大きさ(±4〜10%)。荒い株ほど、大きく動く(nextPrice で調整)
-  const list = up ? NEWS_UP : NEWS_DOWN;
-  return { up, size, text: list[Math.floor(r() * list.length)] };
+  const list = events.filter((e) => e.enabled && (!e.company || e.company === companyId)); if (!list.length) return null;
+  let x = r() * list.reduce((a, e) => a + e.weight, 0), e = list.at(-1);
+  for (const c of list) { x -= c.weight; if (x < 0) { e = c; break; } }
+  return { id: e.id, up: e.pct > 0, pct: e.pct, size: Math.abs(e.pct) / 100, text: e.text };
 }
 /**
  * 1つ前の価格から、次の時刻の価格を決める。
  *   level: 変動の10段階(1〜10)/ volScale: サーバー全体の倍率 / stepFactor: 更新間隔 ÷ 15分(間隔が短いほど、1回の動きは小さい)
  */
-export function nextPrice(guild, c, tick, prev, { level = c.level, volScale = 1, stepFactor = 1, newsRate = 1 } = {}) {
+export function nextPrice(guild, c, tick, prev, { level = c.level, volScale = 1, stepFactor = 1, newsRate = 1, events = DEFAULT_EVENTS } = {}) {
   const vol = VOL_LEVELS[Math.min(10, Math.max(1, level)) - 1] * volScale;
   const r = mulberry(hash(`px:${guild}:${c.id}:${tick}`));
   let ret = (c.drift - REVERT * Math.log(prev / c.base)) * stepFactor + vol * Math.sqrt(stepFactor) * gauss(r);
-  const ev = eventAt(guild, c.id, tick, stepFactor, newsRate);
-  if (ev) ret += (ev.up ? 1 : -1) * ev.size * Math.min(2.5, Math.max(0.4, Math.sqrt(vol / VOL_LEVELS[4]))); // 荒い株ほど、ニュースで大きく動く
+  const ev = eventAt(guild, c.id, tick, stepFactor, newsRate, events);
+  if (ev) ret += Math.log(1 + ev.pct / 100); // 出来事で、決まった割合だけ動く
   return Math.min(c.base * 6, Math.max(c.base * 0.15, prev * Math.exp(ret)));
 }
 /**
  * 1つ後の価格から、1つ前の時刻の価格を、さかのぼって決める(履歴が24時間に足りないときに、過去のぶんを作る)。
  * 同じ乱数(その時刻の動き)を使い、逆向きに戻すので、いまの価格とつながる。ほぼ正確(平均への戻りの小さな項は、無視する)
  */
-export function prevPrice(guild, c, tick, price, { level = c.level, volScale = 1, stepFactor = 1, newsRate = 1 } = {}) {
+export function prevPrice(guild, c, tick, price, { level = c.level, volScale = 1, stepFactor = 1, newsRate = 1, events = DEFAULT_EVENTS } = {}) {
   const vol = VOL_LEVELS[Math.min(10, Math.max(1, level)) - 1] * volScale;
   const r = mulberry(hash(`px:${guild}:${c.id}:${tick}`));
   let ret = vol * Math.sqrt(stepFactor) * gauss(r);
-  const ev = eventAt(guild, c.id, tick, stepFactor, newsRate);
-  if (ev) ret += (ev.up ? 1 : -1) * ev.size * Math.min(2.5, Math.max(0.4, Math.sqrt(vol / VOL_LEVELS[4])));
+  const ev = eventAt(guild, c.id, tick, stepFactor, newsRate, events);
+  if (ev) ret += Math.log(1 + ev.pct / 100); // 出来事で、決まった割合だけ動く
   return Math.min(c.base * 6, Math.max(c.base * 0.15, price / Math.exp(ret)));
 }
 /** 上がった・下がった・変わらない、の矢印(上がったら 🔺、下がったら 🔻) */

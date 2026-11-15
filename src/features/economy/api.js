@@ -8,7 +8,7 @@ import { DEFAULT_RANKS, MAX_RANKS } from './ranks.js';
 import { POLICE_BONUS_CAP } from './wanted.js';
 import { SCHEMA, jobOf, wantedCfg } from './balance.js';
 import { FX_LABELS, SLOTS, MAX_SHOP_ITEMS, DEFAULT_SHOP, shopById } from './shop.js';
-import { COMPANIES, VOL_LABELS, VOL_LEVELS, DEFAULT_NAMES, DEFAULT_LEVELS, companyOf } from './stocks.js';
+import { COMPANIES, VOL_LABELS, VOL_LEVELS, DEFAULT_NAMES, DEFAULT_LEVELS, companyOf, DEFAULT_EVENTS, MAX_EVENTS } from './stocks.js';
 import { MAX_PETS, DEFAULT_PETS, PET_FX_KEYS, speciesOf } from './pets.js';
 import { itemById as marketItemById } from './market.js';
 import { MAX_LOTTERIES, DEFAULT_LOTTERY } from './lottery.js';
@@ -31,7 +31,7 @@ export function mountApi(router) {
   });
   // お店・ペット・株・宝くじ・不動産の設定画面に必要な、固定の情報
   router.get('/extras-meta', (req, res) => res.json({
-    fx: FX_LABELS, slots: SLOTS, maxShop: MAX_SHOP_ITEMS, defaultShop: DEFAULT_SHOP, maxPets: MAX_PETS, defaultPets: DEFAULT_PETS, petFx: PET_FX_KEYS,
+    fx: FX_LABELS, slots: SLOTS, maxShop: MAX_SHOP_ITEMS, defaultShop: DEFAULT_SHOP, maxEvents: MAX_EVENTS, defaultEvents: DEFAULT_EVENTS, maxPets: MAX_PETS, defaultPets: DEFAULT_PETS, petFx: PET_FX_KEYS,
     companies: COMPANIES.map((c) => ({ id: c.id, base: c.base, blurb: c.blurb })), volLabels: VOL_LABELS, volLevels: VOL_LEVELS, defaultNames: DEFAULT_NAMES, defaultLevels: DEFAULT_LEVELS,
     maxLotteries: MAX_LOTTERIES, defaultLottery: DEFAULT_LOTTERY, maxProperties: MAX_PROPERTIES, defaultEstate: DEFAULT_ESTATE,
   }));
