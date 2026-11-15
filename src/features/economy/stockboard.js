@@ -5,7 +5,7 @@ import { marketNow } from './stockmarket.js';
 import { companyOf } from './stocks.js';
 
 const COLORS = ['#f1c40f', '#e67e22', '#2ecc71', '#3498db', '#9b59b6', '#e74c3c', '#1abc9c', '#95a5a6'];
-export const BOARD_INTERVALS = [10, 30, 60, 180, 360, 720, 1440]; // 分
+export const BOARD_INTERVALS = [5, 10, 30, 60, 180, 360, 720, 1440]; // 分
 
 /** 24時間の株価を、折れ線グラフにする画像のURL(Discordが、画像を取りに行く)。会社ごとに値段が違うので、24時間前を100とした指数にする */
 export function chartUrl(s, rows) {

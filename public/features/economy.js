@@ -205,7 +205,7 @@ Dash.registerTab({
           <div class="card"><h2>株価のグラフ</h2><p class="hint">決めたチャンネルに、24時間の株価のグラフ(折れ線)と、いまの値段を出します。</p>
             <div class="grid2">
               <div class="field"><label class="f">グラフを出すチャンネル</label><select id="bch"><option value="">出さない</option>${chans.map((c) => `<option value="${c.id}" ${st.stockChannelId === c.id ? 'selected' : ''}>#${esc(c.name)}</option>`).join('')}</select></div>
-              <div class="field"><label class="f">出す間隔</label><select id="bmin">${[10, 30, 60, 180, 360, 720, 1440].map((m) => `<option value="${m}" ${st.stockBoardMin === m ? 'selected' : ''}>${m >= 60 ? m / 60 + '時間' : m + '分'}ごと</option>`).join('')}</select></div></div>
+              <div class="field"><label class="f">出す間隔</label><select id="bmin">${[5, 10, 30, 60, 180, 360, 720, 1440].map((m) => `<option value="${m}" ${st.stockBoardMin === m ? 'selected' : ''}>${m >= 60 ? m / 60 + '時間' : m + '分'}ごと</option>`).join('')}</select></div></div>
             <label class="sw"><input type="checkbox" id="bedit" ${st.stockBoardEdit ? 'checked' : ''}><i></i><span><b>1つのメッセージを更新する</b><small>オフにすると、毎回、新しいメッセージを出します(グラフが、残っていきます)</small></span></label></div>
           ${meta.companies.map((c) => `<div class="card" data-c="${c.id}"><div class="card-h"><h2>${esc(names[c.id].emoji)} ${esc(names[c.id].ticker)} <span class="mut small">基準 ${c.base.toLocaleString()} ・ ${esc(c.blurb)}</span></h2></div>
             <div class="grid2">
