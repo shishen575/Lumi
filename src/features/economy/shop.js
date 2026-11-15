@@ -16,10 +16,11 @@ export const DEFAULT_SHOP = [
   { id: 'shop_disguise', slot: 'other', name: '変装セット', emoji: '🕶️', price: 400, minutes: 30, effects: { arrestChance: -0.15, workPay: -0.05 }, desc: '帽子とサングラスで、別人のふり。警察に、見つかりにくい(動きにくくて、バイトの給料が少し下がる)' },
   { id: 'shop_badge', slot: 'other', name: '警察バッジ', emoji: '🏅', price: 600, minutes: 30, effects: { arrestSuccess: 0.15, arrestReward: 0.2 }, desc: '本物そっくりのバッジ。逮捕しやすくなり、報酬も増える' },
   { id: 'shop_lawyer', slot: 'other', name: '弁護士の名刺', emoji: '⚖️', price: 500, minutes: 30, effects: { arrestFine: -0.5 }, desc: '捕まっても、腕利きの弁護士が付く。逮捕されたときの罰金が、半分になる' },
+  { id: 'shop_gloves', slot: 'other', name: '怪しい手袋', emoji: '🧤', price: 700, minutes: 30, effects: { crimeReward: 0.25, heistReward: 0.15 }, desc: '指紋が付かず、仕事が丁寧になる。犯罪・大型犯罪で、報酬が増える' },
 ];
 
 // 効果の値の、許す範囲(足し算の値。0.05 = +5%)
-const RANGE = { crimeChance: [-0.5, 0.5], workPay: [-0.9, 3], begAmount: [-0.9, 3], heistTime: [-0.9, 2], ramenTime: [-0.9, 2], heistMistakes: [-5, 5], fineMult: [-0.9, 5], toolKeep: [-1, 1], arrestChance: [-0.5, 0.5], arrestFine: [-1, 5], arrestSuccess: [-0.5, 0.5], arrestReward: [-0.9, 5] };
+const RANGE = { crimeChance: [-0.5, 0.5], workPay: [-0.9, 3], begAmount: [-0.9, 3], heistTime: [-0.9, 2], ramenTime: [-0.9, 2], heistMistakes: [-5, 5], fineMult: [-0.9, 5], toolKeep: [-1, 1], arrestChance: [-0.5, 0.5], arrestFine: [-1, 5], arrestSuccess: [-0.5, 0.5], arrestReward: [-0.9, 5], crimeReward: [-0.9, 5], heistReward: [-0.9, 5] };
 const clean = (x, n) => String(x ?? '').replace(/[\r\n<>@`*_~|]/g, '').trim().slice(0, n);
 const num = (v, lo, hi, def) => { const n = Number(v); return Number.isFinite(n) ? Math.min(hi, Math.max(lo, n)) : def; };
 export function sanitizeEffects(input) {

@@ -189,7 +189,7 @@ export const crimeCommand = {
     const starsNow = s.wantedEnabled ? starsOf(getHeat(g, u, s.wantedDecayMin), wc.heatPerStar) : 0; // 指名手配の星が多いほど、成功しにくい
     const r = resolveCrime(c, rng, chanceDelta(starsNow, wc.penalty) + fx.crimeChance);
     if (r.success) {
-      const p = pay(g, u, r.amount, s);
+      const p = pay(g, u, Math.round(r.amount * Math.max(0, 1 + fx.crimeReward)), s); // お店の品・ペットの効果で、報酬が増減
       if (p.paid > 0) setCooldown(g, u, `crime:${key}`, c.cd);
       return i.reply({ embeds: [card(i, s, GREEN, `${c.emoji} ${c.name} 成功!`, `${r.text}\n\n**+ ${money(s, p.paid)}**${shortNote(s, p)}${wantedLine(s, g, u, wc.heatCrime(key))}${toolLine(keepTool(s, toolUsed, 'success', g, u, rng, fx.toolKeep))}`)] });
     }
@@ -513,7 +513,7 @@ export const heistCommand = {
     if (budgetEmpty(s, g)) return refuse(i, BUDGET_EMPTY);
     const toolUsed = takeTool(i, s, 'heist', T.id); if (toolUsed === false) return; // 闇マーケットがオンのとき、道具が必要
     const fx = userFx(s, g, u); // お店の消耗品・ペットの効果(時間・ミスの許容・罰金・道具の持ち帰り)
-    const st = { target: T.id, tool: toolUsed?.id ?? null, limit: Math.max(0, T.maxMistakes + fx.heistMistakes), fineMult: fx.fineMult, toolKeep: fx.toolKeep, steps: makeSteps(rng, T.steps, T.makers), idx: 0, mistakes: 0, wrong: [], reward: heistBase(rng, T), name: i.member?.displayName ?? i.user.username, avatar: i.user.displayAvatarURL?.() };
+    const st = { target: T.id, tool: toolUsed?.id ?? null, limit: Math.max(0, T.maxMistakes + fx.heistMistakes), fineMult: fx.fineMult, toolKeep: fx.toolKeep, steps: makeSteps(rng, T.steps, T.makers), idx: 0, mistakes: 0, wrong: [], reward: Math.round(heistBase(rng, T) * Math.max(0, 1 + fx.heistReward)), name: i.member?.displayName ?? i.user.username, avatar: i.user.displayAvatarURL?.() };
     const deadline = (i.createdTimestamp ?? Date.now()) + Math.max(10_000, Math.round(T.timeMs * (1 + fx.heistTime))); // コマンドを打った時刻から数える(BOTの処理の遅れで、短くならない)
     setCooldown(g, u, key, T.cd);
     saveHeist(g, u, { channelId: i.channelId, state: st, deadline });  // 先に保存してから返信する
