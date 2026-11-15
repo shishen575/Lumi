@@ -10,6 +10,28 @@ import { hasAccessSync } from './access.js';
 const hiddenProviders = [];
 export const registerHiddenCommands = (fn) => hiddenProviders.push(fn);
 const hiddenFor = (guildId) => Object.assign({}, ...hiddenProviders.map((f) => { try { return f(guildId) ?? {}; } catch { return {}; } }));
+/**
+ * 廃止されたコマンドの名前(`/market` など)が、返事の文に出てきたら、パネルへの案内に、置き換える(ボタンの結果に、使えないコマンドが出ないように)。
+ * 文章・欄の値は、リンク([パネル](URL))にして、題名・欄の名前・フッターは、ただの「パネル」にする
+ */
+const escRe = (t) => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+export function rewriteHidden(hid, payload) {
+  const names = Object.keys(hid); if (!names.length || payload === null || payload === undefined) return payload;
+  const alt = names.map(escRe).join('|'), re = new RegExp('`/(' + alt + ')(?: [^`]*)?`|(?<![\\w:./-])/(' + alt + ')(?![\\w-])', 'g');
+  const link = (n) => String(hid[n]).match(/\((https:\/\/discord\.com\/channels\/[^)]+)\)/)?.[1];
+  const sub = (str, rich) => (typeof str === 'string' ? str.replace(re, (m, a, b) => { const l = rich && link(a ?? b); return l ? `[パネル](${l})` : 'パネル'; }) : str);
+  if (typeof payload === 'string') return sub(payload, true);
+  if (typeof payload !== 'object') return payload;
+  if (typeof payload.content === 'string') payload.content = sub(payload.content, true);
+  for (const e of payload.embeds ?? []) {
+    const d = e?.data ?? e; if (!d) continue;
+    d.title = sub(d.title, false); d.description = sub(d.description, true);
+    if (d.footer?.text) d.footer.text = sub(d.footer.text, false);
+    for (const f of d.fields ?? []) { f.name = sub(f.name, false); f.value = sub(f.value, true); }
+  }
+  return payload;
+}
+
 let byNameRef = new Map(), catalogRef = [];
 /** 登録されている全コマンドの、名前・説明・項目(カスタムパネルで、コマンドを選ぶのに使う) */
 export const commandCatalog = () => catalogRef;
@@ -51,6 +73,8 @@ export function setupCommands(client, features) {
   client.on(Events.GuildCreate, register);
   // コマンドとボタンの共通の実行: 遅延の計測、10062(3秒超過)の扱い、エラー時の応答
   async function run(label, i, fn) {
+    const hid = i.guildId ? hiddenFor(i.guildId) : {}; // 廃止されたコマンドが、返事に出てきたら、パネルへの案内にする
+    if (Object.keys(hid).length) for (const m of ['reply', 'editReply', 'followUp', 'update']) if (typeof i[m] === 'function') { const orig = i[m].bind(i); i[m] = (p, ...rest) => orig(rewriteHidden(hid, p), ...rest); }
     const t0 = Date.now();
     const lag = t0 - i.createdTimestamp; // 送られてから、BOTが処理を始めるまで
     noteInteraction({ lagMs: lag });
