@@ -742,7 +742,7 @@ export const useCommand = {
     const prev = activeStatuses(g, u, now).find((st) => st.slot === it.slot);
     setStatus(g, u, it.slot, it.id, now + it.minutes * 60_000);
     const prevItem = prev && shopById(s, prev.item);
-    await i.reply({ embeds: [card(i, s, 0xb8860b, `${it.emoji} ${it.name}を使った`, `効果が **${it.minutes}分** つきます。\n${itemText(it)}${prevItem ? `\n-# ${prevItem.name}の効果を、上書きしました` : ''}`)], ...EPH });
+    await i.reply({ embeds: [card(i, s, 0xb8860b, `${it.emoji} ${it.name}を使った`, `効果が **${it.minutes}分** つきます。\n${itemText(it)}${prevItem ? `\n-# ${prevItem.name}の効果を、上書きしました` : ''}`)] });
   },
 };
 
@@ -1013,7 +1013,8 @@ export const arrestCommand = {
     if (jailLeft(g, target.id)) return refuse(i, `<@${target.id}> は、すでに留置場にいます。`);
     if (wc.bountyFine === 0 && budgetEmpty(s, g)) return refuse(i, BUDGET_EMPTY); // 罰金を取らない設定のときだけ、懸賞金は、予算(または何もないところ)から払われる
     setCooldown(g, me, 'arrest', wc.arrestCd);
-    if (rng() >= wc.arrestChance) {
+    const chance = Math.min(1, Math.max(0, wc.arrestChance + userFx(s, g, target.id).arrestChance)); // 相手の、お店の品・ペットの効果(捕まりやすい・にくい)
+    if (rng() >= chance) {
       return i.reply({ embeds: [card(i, s, RED, '👮 逮捕に失敗…', `<@${target.id}> に、まんまと逃げられた!\n-# 次の逮捕まで ${dur(wc.arrestCd)}`)], allowedMentions: NO_MENTIONS });
     }
     const bounty = bountyOf(heat, s.bountyPerStar, wc.heatPerStar), jailMs = Math.min(wc.jailMax, wc.jailPerStar * stars);

@@ -11,6 +11,7 @@ export const FX = {
   heistMistakes: { label: '大型犯罪の、間違えてよい回数', kind: 'count' },
   fineMult: { label: '失敗したときの罰金', kind: 'pct' },
   toolKeep: { label: '使った道具を持ち帰る確率', kind: 'pp' },
+  arrestChance: { label: '他の人に逮捕される確率', kind: 'pp' }, // プラスは、捕まりやすい(代償)。マイナスは、捕まりにくい
 };
 export const emptyFx = () => Object.fromEntries(Object.keys(FX).map((k) => [k, 0]));
 export const addFx = (a, b, scale = 1) => { const out = { ...a }; for (const k of Object.keys(FX)) out[k] = (out[k] ?? 0) + (b?.[k] ?? 0) * (k === 'heistMistakes' ? 1 : scale); return out; };

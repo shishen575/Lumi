@@ -28,7 +28,7 @@ export const DEFAULT_PETS = [
 ];
 const clean = (x, n) => String(x ?? '').replace(/[\r\n<>@`*_~|]/g, '').trim().slice(0, n);
 const num = (v, lo, hi, def) => { const n = Number(v); return Number.isFinite(n) ? Math.min(hi, Math.max(lo, n)) : def; };
-const PET_RANGE = { crimeChance: [-0.1, 0.1], workPay: [-0.5, 0.5], begAmount: [-0.5, 1], heistTime: [-0.2, 0.2], ramenTime: [-0.2, 0.5], fineMult: [-0.2, 0.5], toolKeep: [-0.2, 0.2] }; // レベル1つぶん(回数の効果は、ペットでは使えない)
+const PET_RANGE = { crimeChance: [-0.1, 0.1], workPay: [-0.5, 0.5], begAmount: [-0.5, 1], heistTime: [-0.2, 0.2], ramenTime: [-0.2, 0.5], fineMult: [-0.2, 0.5], toolKeep: [-0.2, 0.2], arrestChance: [-0.1, 0.1] }; // レベル1つぶん(回数の効果は、ペットでは使えない)
 export const PET_FX_KEYS = Object.keys(PET_RANGE);
 export function sanitizePetEffects(input) {
   const out = {};
