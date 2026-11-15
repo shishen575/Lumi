@@ -91,6 +91,7 @@ function buildSchema() {
   const kg = '📈 株';
   L.push(p('stock.tickMin', '株', kg, '株価が動く間隔', 5, 1, 1440, '分'));
   L.push(p('stock.volPct', '株', kg, '値動きの大きさ(100% = 初期値)', 100, 0, 500, '%'));
+  L.push(p('stock.newsRate', '株', kg, 'ニュース(株価が大きく上がる・下がる)の起きやすさ(100% = 初期値。1日に1〜2回ほど)', 100, 0, 1000, '%'));
   L.push(p('stock.feePermille', '株', kg, '売買の手数料(売り・買いそれぞれ)', 10, 0, 100, '‰'));
   L.push(p('stock.maxShares', '株', kg, '1つの会社で、持てる株の数', 10000, 1, 1e8, '株'));
   const eg = '🏢 不動産';
@@ -140,7 +141,7 @@ export const heistOf = (s, id) => {
 export const timeoutCfg = (s) => ({ finePct: val(s, 'heist.timeoutFinePct') / 100, jailPct: val(s, 'heist.timeoutJailPct') / 100 }); // 時間切れの扱い(100% = 失敗と同じ。0% = 罰なしの撤退)
 export const toolCfg = (s) => ({ success: val(s, 'tool.keepOnSuccess') / 100, fail: val(s, 'tool.keepOnFail') / 100, timeout: val(s, 'tool.keepOnTimeout') / 100 }); // 使った道具が、戻ってくる確率
 export const petCfg = (s) => ({ baseSlots: val(s, 'pet.baseSlots'), feedCd: val(s, 'pet.feedCd') * MIN, playCd: val(s, 'pet.playCd') * MIN, hungerDecay: val(s, 'pet.hungerDecay'), minHunger: val(s, 'pet.minHunger'), feedXp: val(s, 'pet.feedXp'), playXp: val(s, 'pet.playXp'), power: val(s, 'pet.power') });
-export const stockCfg = (s) => ({ tickMs: val(s, 'stock.tickMin') * MIN, volScale: val(s, 'stock.volPct') / 100, fee: val(s, 'stock.feePermille') / 1000, maxShares: val(s, 'stock.maxShares') });
+export const stockCfg = (s) => ({ tickMs: val(s, 'stock.tickMin') * MIN, volScale: val(s, 'stock.volPct') / 100, newsRate: val(s, 'stock.newsRate') / 100, fee: val(s, 'stock.feePermille') / 1000, maxShares: val(s, 'stock.maxShares') });
 export const estateCfg = (s) => ({ capHours: val(s, 'estate.capHours'), sellPct: val(s, 'estate.sellPct') / 100, feePct: val(s, 'estate.tradeFeePct') / 100 });
 export const itemOf = (s, item) => ({ ...item, price: val(s, `item.${item.id}.price`) });
 export const marketCfg = (s) => ({ range: [val(s, 'market.rateLow') / 100, val(s, 'market.rateHigh') / 100], maxStack: val(s, 'market.maxStack') });

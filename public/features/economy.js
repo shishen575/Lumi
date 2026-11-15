@@ -208,6 +208,8 @@ Dash.registerTab({
         const daily = (L) => (L >= 1 ? ['1.5', '2.5', '3.5', '5', '7', '9', '12', '16', '21', '28'][L - 1] : '');
         el.innerHTML = `${pageHeader('株', '架空の会社の株を、売り買いできます。株価は、5分ごとに動きます(間隔は「ゲームバランス」で変えられます)。会社の名前・ティッカー・絵文字と、値動きの大きさ(10段階)を、サーバーで決められます。')}
           <div class="card"><label class="sw"><input type="checkbox" id="on" ${st.stocksEnabled ? 'checked' : ''}><i></i><span><b>株を使う</b><small><code>/stock</code> が使えます。売買の手数料などは、「ゲームバランス」で変えられます</small></span></label></div>
+          <div class="card"><h2>新聞チャンネル</h2><p class="hint">株のニュース(新商品がヒット・不祥事など。株価が大きく上がったり、下がったりします)を、起きるたびに、決めたチャンネルに出します。起きやすさは、「ゲームバランス」の株で変えられます。</p>
+            <div class="field"><label class="f">新聞を出すチャンネル</label><select id="nch"><option value="">出さない</option>${chans.map((c) => `<option value="${c.id}" ${st.newsChannelId === c.id ? 'selected' : ''}>#${esc(c.name)}</option>`).join('')}</select></div></div>
           <div class="card"><h2>株価のグラフ</h2><p class="hint">決めたチャンネルに、24時間の株価のグラフ(折れ線)と、いまの値段を出します。</p>
             <div class="grid2">
               <div class="field"><label class="f">グラフを出すチャンネル</label><select id="bch"><option value="">出さない</option>${chans.map((c) => `<option value="${c.id}" ${st.stockChannelId === c.id ? 'selected' : ''}>#${esc(c.name)}</option>`).join('')}</select></div>
@@ -225,7 +227,7 @@ Dash.registerTab({
         el.querySelector('#save').onclick = async () => {
           const stockNames = {}, stockLevels = {};
           el.querySelectorAll('[data-c]').forEach((c) => { const id = c.dataset.c; stockNames[id] = { name: c.querySelector('.s-name').value, ticker: c.querySelector('.s-tick').value, emoji: c.querySelector('.s-emoji').value }; stockLevels[id] = Number(c.querySelector('.s-lv').value); });
-          await api('/settings', { method: 'PUT', body: { stocksEnabled: el.querySelector('#on').checked, stockNames, stockLevels, stockChannelId: el.querySelector('#bch').value || null, stockBoardMin: Number(el.querySelector('#bmin').value), stockBoardEdit: el.querySelector('#bedit').checked } }); toast('保存しました');
+          await api('/settings', { method: 'PUT', body: { stocksEnabled: el.querySelector('#on').checked, stockNames, stockLevels, stockChannelId: el.querySelector('#bch').value || null, newsChannelId: el.querySelector('#nch').value || null, stockBoardMin: Number(el.querySelector('#bmin').value), stockBoardEdit: el.querySelector('#bedit').checked } }); toast('保存しました');
         };
       } },
     /* ===== 宝くじ ===== */

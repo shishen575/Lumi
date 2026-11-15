@@ -57,6 +57,10 @@ CREATE TABLE IF NOT EXISTS eco_stock_prices (     -- 株価の履歴(時刻ご�
   guild_id TEXT NOT NULL, company TEXT NOT NULL, tick INTEGER NOT NULL, price REAL NOT NULL,
   PRIMARY KEY (guild_id, company, tick)
 );
+CREATE TABLE IF NOT EXISTS eco_news (             -- 株のニュース(新聞チャンネルに出す)。出したら posted = 1
+  guild_id TEXT NOT NULL, company TEXT NOT NULL, tick INTEGER NOT NULL, up INTEGER NOT NULL, text TEXT NOT NULL, before_px REAL NOT NULL, after_px REAL NOT NULL, posted INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (guild_id, company, tick)
+);
 CREATE TABLE IF NOT EXISTS eco_stock_holdings (   -- 持っている株
   guild_id TEXT NOT NULL, user_id TEXT NOT NULL, company TEXT NOT NULL, shares INTEGER NOT NULL DEFAULT 0, cost INTEGER NOT NULL DEFAULT 0,
   PRIMARY KEY (guild_id, user_id, company)
@@ -270,6 +274,15 @@ export const releasePet = (id) => Number(db.prepare('DELETE FROM eco_pets WHERE 
 export const updatePet = (id, { hunger, xpAdd = 0 }, now = Date.now()) => db.prepare('UPDATE eco_pets SET hunger=?, xp=xp+?, fed_at=? WHERE id=?').run(hunger, xpAdd, now, id);
 /* ---------- 株 ---------- */
 export const lastStockRow = (g, company) => db.prepare('SELECT tick, price FROM eco_stock_prices WHERE guild_id=? AND company=? ORDER BY tick DESC LIMIT 1').get(g, company) ?? null;
+export const addNews = (g, company, tick, up, text, before, after) => db.prepare('INSERT OR IGNORE INTO eco_news (guild_id,company,tick,up,text,before_px,after_px) VALUES (?,?,?,?,?,?,?)').run(g, company, tick, up ? 1 : 0, text, before, after);
+/** まだ出していないニュース(古い順)。fromTick より前のものは、出さずに済ませる(止まっていたあとに、どっと出ないように) */
+export function takeNews(g, fromTick, limit = 20) {
+  db.prepare('UPDATE eco_news SET posted=1 WHERE guild_id=? AND posted=0 AND tick<?').run(g, fromTick);
+  const rows = db.prepare('SELECT * FROM eco_news WHERE guild_id=? AND posted=0 ORDER BY tick ASC LIMIT ?').all(g, limit);
+  for (const r of rows) db.prepare('UPDATE eco_news SET posted=1 WHERE guild_id=? AND company=? AND tick=?').run(g, r.company, r.tick);
+  db.prepare('DELETE FROM eco_news WHERE guild_id=? AND tick<?').run(g, Date.now() / 60000 - 7 * 1440);
+  return rows;
+}
 export const firstStockRow = (g, company) => db.prepare('SELECT tick, price FROM eco_stock_prices WHERE guild_id=? AND company=? ORDER BY tick ASC LIMIT 1').get(g, company) ?? null;
 export const stockPriceAt = (g, company, tick) => db.prepare('SELECT price FROM eco_stock_prices WHERE guild_id=? AND company=? AND tick<=? ORDER BY tick DESC LIMIT 1').get(g, company, tick)?.price ?? null;
 export const stockRange = (g, company, fromTick) => db.prepare('SELECT MIN(price) lo, MAX(price) hi FROM eco_stock_prices WHERE guild_id=? AND company=? AND tick>=?').get(g, company, fromTick);

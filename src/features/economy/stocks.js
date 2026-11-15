@@ -46,9 +46,9 @@ const gauss = (r) => Math.sqrt(-2 * Math.log(Math.max(1e-12, r()))) * Math.cos(2
 export const NEWS_UP = ['新商品が大ヒット!', '好決算を発表', '大型契約を獲得', '人気の経営者が、就任'];
 export const NEWS_DOWN = ['不祥事が発覚', '工場でトラブルが発生', '決算が、予想を下回った', 'ライバルに、顧客を奪われた'];
 /** その時刻(tick)の、ニュース(なければ null): 確率 3% で、株価が大きく動く */
-export function eventAt(guild, companyId, tick, stepFactor = 1) {
+export function eventAt(guild, companyId, tick, stepFactor = 1, newsRate = 1) {
   const r = mulberry(hash(`ev:${guild}:${companyId}:${tick}`));
-  if (r() >= 0.015 * stepFactor) return null; // 15分あたり 1.5%(1日に1〜2回ほど)。間隔が短ければ、1回あたりは、その割合で小さく
+  if (r() >= 0.015 * stepFactor * newsRate) return null; // 15分あたり 1.5%(1日に1〜2回ほど)。間隔が短ければ、1回あたりは、その割合で小さく
   const up = r() < 0.5, size = 0.04 + r() * 0.06; // 基本の大きさ(±4〜10%)。荒い株ほど、大きく動く(nextPrice で調整)
   const list = up ? NEWS_UP : NEWS_DOWN;
   return { up, size, text: list[Math.floor(r() * list.length)] };
@@ -57,11 +57,11 @@ export function eventAt(guild, companyId, tick, stepFactor = 1) {
  * 1つ前の価格から、次の時刻の価格を決める。
  *   level: 変動の10段階(1〜10)/ volScale: サーバー全体の倍率 / stepFactor: 更新間隔 ÷ 15分(間隔が短いほど、1回の動きは小さい)
  */
-export function nextPrice(guild, c, tick, prev, { level = c.level, volScale = 1, stepFactor = 1 } = {}) {
+export function nextPrice(guild, c, tick, prev, { level = c.level, volScale = 1, stepFactor = 1, newsRate = 1 } = {}) {
   const vol = VOL_LEVELS[Math.min(10, Math.max(1, level)) - 1] * volScale;
   const r = mulberry(hash(`px:${guild}:${c.id}:${tick}`));
   let ret = (c.drift - REVERT * Math.log(prev / c.base)) * stepFactor + vol * Math.sqrt(stepFactor) * gauss(r);
-  const ev = eventAt(guild, c.id, tick, stepFactor);
+  const ev = eventAt(guild, c.id, tick, stepFactor, newsRate);
   if (ev) ret += (ev.up ? 1 : -1) * ev.size * Math.min(2.5, Math.max(0.4, Math.sqrt(vol / VOL_LEVELS[4]))); // 荒い株ほど、ニュースで大きく動く
   return Math.min(c.base * 6, Math.max(c.base * 0.15, prev * Math.exp(ret)));
 }
@@ -69,11 +69,11 @@ export function nextPrice(guild, c, tick, prev, { level = c.level, volScale = 1,
  * 1つ後の価格から、1つ前の時刻の価格を、さかのぼって決める(履歴が24時間に足りないときに、過去のぶんを作る)。
  * 同じ乱数(その時刻の動き)を使い、逆向きに戻すので、いまの価格とつながる。ほぼ正確(平均への戻りの小さな項は、無視する)
  */
-export function prevPrice(guild, c, tick, price, { level = c.level, volScale = 1, stepFactor = 1 } = {}) {
+export function prevPrice(guild, c, tick, price, { level = c.level, volScale = 1, stepFactor = 1, newsRate = 1 } = {}) {
   const vol = VOL_LEVELS[Math.min(10, Math.max(1, level)) - 1] * volScale;
   const r = mulberry(hash(`px:${guild}:${c.id}:${tick}`));
   let ret = vol * Math.sqrt(stepFactor) * gauss(r);
-  const ev = eventAt(guild, c.id, tick, stepFactor);
+  const ev = eventAt(guild, c.id, tick, stepFactor, newsRate);
   if (ev) ret += (ev.up ? 1 : -1) * ev.size * Math.min(2.5, Math.max(0.4, Math.sqrt(vol / VOL_LEVELS[4])));
   return Math.min(c.base * 6, Math.max(c.base * 0.15, price / Math.exp(ret)));
 }

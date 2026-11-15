@@ -1,5 +1,5 @@
 import { COMPANIES, MAX_TICK_STEPS, KEEP_MINUTES, BASE_STEP, nextPrice, prevPrice, eventAt, DEFAULT_LEVELS } from './stocks.js';
-import { lastStockRow, firstStockRow, stockPriceAt, stockRange, insertStockPrices } from './db.js';
+import { addNews, lastStockRow, firstStockRow, stockPriceAt, stockRange, insertStockPrices } from './db.js';
 import { stockCfg } from './balance.js';
 
 const MIN = 60_000, BARS = '▁▂▃▄▅▆▇█';
@@ -21,7 +21,10 @@ export function marketNow(s, g, now = Date.now()) {
     if (n > 0) {
       const rows = []; let price = last.price, m = last.tick;
       if (n > MAX_TICK_STEPS) { m = last.tick + (n - MAX_TICK_STEPS) * step; n = MAX_TICK_STEPS; } // 長く見ていなかったときは、直近の分だけ計算する
-      for (let j = 0; j < n; j++) { m += step; price = nextPrice(g, c, m, price, { level, volScale: cfg.volScale, stepFactor: factor }); rows.push({ tick: m, price }); }
+      for (let j = 0; j < n; j++) {
+        m += step; const before = price; price = nextPrice(g, c, m, price, { level, volScale: cfg.volScale, stepFactor: factor, newsRate: cfg.newsRate }); rows.push({ tick: m, price });
+        const ev = eventAt(g, c.id, m, factor, cfg.newsRate); if (ev && s.newsChannelId) addNews(g, c.id, m, ev.up, ev.text, before, price); // 新聞に出す、ニュースの記録
+      }
       insertStockPrices(g, c.id, rows, nowMin - KEEP_MINUTES);
       last = rows.at(-1);
     }
@@ -29,14 +32,14 @@ export function marketNow(s, g, now = Date.now()) {
     const first = firstStockRow(g, c.id), target = nowMin - 1440;
     if (first && first.tick > target + step) {
       const rows = []; let price = first.price, m = first.tick;
-      while (m - step >= target) { price = prevPrice(g, c, m, price, { level, volScale: cfg.volScale, stepFactor: factor }); m -= step; rows.push({ tick: m, price }); }
+      while (m - step >= target) { price = prevPrice(g, c, m, price, { level, volScale: cfg.volScale, stepFactor: factor, newsRate: cfg.newsRate }); m -= step; rows.push({ tick: m, price }); }
       insertStockPrices(g, c.id, rows, nowMin - KEEP_MINUTES);
     }
     const day = stockPriceAt(g, c.id, nowMin - 1440) ?? last.price; // 24時間前の株価(なければ、いまの値)
     const range = stockRange(g, c.id, nowMin - 1440);
     const spark = Array.from({ length: 24 }, (_, k) => stockPriceAt(g, c.id, nowMin - (23 - k) * 60) ?? last.price);
     const news = [];
-    for (let j = 0; j < Math.ceil(30 / step); j++) { const m = last.tick - j * step, ev = eventAt(g, c.id, m, factor); if (ev) news.push({ ...ev, minutesAgo: Math.max(0, nowMin - m) }); } // 直近30分のニュース
+    for (let j = 0; j < Math.ceil(30 / step); j++) { const m = last.tick - j * step, ev = eventAt(g, c.id, m, factor, cfg.newsRate); if (ev) news.push({ ...ev, minutesAgo: Math.max(0, nowMin - m) }); } // 直近30分のニュース
     return { company: c, level, price: last.price, change: last.price / day - 1, hi: Math.max(range.hi ?? last.price, last.price), lo: Math.min(range.lo ?? last.price, last.price), spark, news };
   });
 }

@@ -28,6 +28,7 @@ export const DEFAULTS = {
   estate: DEFAULT_ESTATE,  // 物件の一覧(名前・値段・家賃・維持費などを、サーバーごとに変えられる)
   lotteryEnabled: false,   // 宝くじ。オンのとき、/lottery が使え、決まった時刻に、自動で抽選する
   lotteries: [DEFAULT_LOTTERY], // くじの一覧(サーバーごとに、自由に、最大6つ。名前・値段・間隔・桁数・賞金などを変えられる)
+  newsChannelId: null,     // 新聞チャンネル(株のニュースを出す)
   priceChannelId: null,    // 値段表(ペット・不動産・闇市)を出すチャンネル
   priceBoardMin: 30,       // 値段表を出す間隔(分)
   priceBoardReplace: true, // true: いつも一番下に最新の1つだけ(前のは書き換え/削除) / false: 毎回、新しく出す
@@ -75,6 +76,7 @@ export function saveSettings(guildId, s) {
     lotteryChannelId: s.lotteryChannelId === undefined ? cur.lotteryChannelId : (/^\d{15,25}$/.test(String(s.lotteryChannelId ?? '')) ? String(s.lotteryChannelId) : null),
     stocksEnabled: s.stocksEnabled === undefined ? cur.stocksEnabled : !!s.stocksEnabled,
     stockNames: s.stockNames === undefined ? cur.stockNames : sanitizeNames(s.stockNames, cur.stockNames),
+    newsChannelId: s.newsChannelId === undefined ? cur.newsChannelId : (/^\d{15,25}$/.test(String(s.newsChannelId ?? '')) ? String(s.newsChannelId) : null),
     priceChannelId: s.priceChannelId === undefined ? cur.priceChannelId : (/^\d{15,25}$/.test(String(s.priceChannelId ?? '')) ? String(s.priceChannelId) : null),
     priceBoardMin: s.priceBoardMin === undefined ? cur.priceBoardMin : clamp(s.priceBoardMin, 5, 1440, DEFAULTS.priceBoardMin),
     priceBoardReplace: s.priceBoardReplace === undefined ? cur.priceBoardReplace : !!s.priceBoardReplace,
