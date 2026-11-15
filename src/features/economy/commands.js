@@ -656,6 +656,34 @@ export const blackjackEndCommand = {
   },
 };
 
+/* ================= クールダウン一覧 ================= */
+export const cooldownsCommand = {
+  data: guildOnly(new SlashCommandBuilder().setName('cooldowns').setDescription('犯罪・バイト・乞食・大型犯罪などの、待ち時間の一覧を見ます')
+    .addBooleanOption((o) => o.setName('public').setDescription('全員に表示する(省略すると自分だけ)'))),
+  async execute(i) {
+    const s = await open(i); if (!s) return;
+    const g = i.guildId, u = i.user.id, now = Date.now();
+    // いまできる: ✅ / あと何分: ⏳ + その時刻(Discordの相対表示)
+    const line = (label, left) => (left > 0 ? `⏳ ${label} — あと **${dur(left)}**(<t:${Math.floor((now + left) / 1000)}:R>)` : `✅ ${label}`);
+    const jl = jailLeft(g, u);
+    const fields = [
+      { name: '🚨 犯罪', value: Object.entries(CRIMES).map(([k, c]) => line(`${c.emoji} ${c.name}`, cooldownLeft(g, u, `crime:${k}`))).join('\n') },
+      { name: '💼 バイト', value: Object.entries(JOBS).map(([k, j]) => line(`${j.emoji} ${j.name}`, cooldownLeft(g, u, `work:${k}`))).join('\n') },
+      { name: '🙏 乞食', value: line('乞食', cooldownLeft(g, u, 'beg')) },
+      { name: '🏦 大型犯罪', value: Object.values(HEISTS).map((T) => line(`${T.emoji} ${T.short}`, cooldownLeft(g, u, heistKey(T.id)))).join('\n') },
+    ];
+    if (s.wantedEnabled) {
+      const wc = wantedCfg(s), heat = getHeat(g, u, s.wantedDecayMin), n = starsOf(heat, wc.heatPerStar);
+      fields.push({ name: '👮 指名手配', value: `${line('逮捕(/arrest)', cooldownLeft(g, u, 'arrest'))}\n${n ? `${starText(n)} あなたは **指名手配 Lv${n}** です(手配度 ${heat})` : `手配されていません(手配度 ${heat})`}` });
+    }
+    const ready = fields.flatMap((f) => f.value.split('\n')).filter((x) => x.startsWith('✅')).length;
+    const e = new EmbedBuilder().setColor(jl ? RED : BLUE).setTitle('⏱️ クールダウン一覧').addFields(fields)
+      .setDescription(jl ? `🚔 **留置場にいます**(あと ${dur(jl)})。犯罪・バイトなどは、出てからです。\`/bail\` で保釈できます。` : `いま使えるものは **${ready}件** です。`)
+      .setFooter({ text: `所持金 ${money(s, wallet(i))}` });
+    await i.reply({ embeds: [e], ...(i.options.getBoolean('public') ? {} : EPH) });
+  },
+};
+
 /* ================= 指名手配 ================= */
 const wantedOff = (i) => refuse(i, 'このサーバーでは、指名手配はオフです。管理者が、ダッシュボードの「通貨 → 指名手配」でオンにできます。');
 export const wantedCommand = {
@@ -705,4 +733,4 @@ export const arrestCommand = {
   },
 };
 
-export const commands = [balanceCommand, depositCommand, withdrawCommand, richestCommand, crimeCommand, workCommand, begCommand, bailCommand, chinchiroCommand, slotCommand, blackjackCommand, blackjackEndCommand, heistCommand, jobCommand, wantedCommand, arrestCommand, marketCommand, releaseCommand, payCommand, balanceEditCommand, cooldownResetCommand];
+export const commands = [balanceCommand, depositCommand, withdrawCommand, richestCommand, crimeCommand, workCommand, begCommand, bailCommand, chinchiroCommand, slotCommand, blackjackCommand, blackjackEndCommand, heistCommand, cooldownsCommand, jobCommand, wantedCommand, arrestCommand, marketCommand, releaseCommand, payCommand, balanceEditCommand, cooldownResetCommand];
