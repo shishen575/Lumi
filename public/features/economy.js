@@ -151,7 +151,7 @@ Dash.registerTab({
           el.innerHTML = `${pageHeader('お店・ペット', 'お店(タバコ・お酒など。使うと、しばらく効果がつく)と、ペット(育てるとボーナスがつく)を、サーバーでオン・オフします。お店の品は、名前・値段・効果を、自由に変えられます。')}
             <div class="card"><label class="sw"><input type="checkbox" id="so" ${shopOn ? 'checked' : ''}><i></i><span><b>お店を使う</b><small><code>/shop</code> と <code>/use</code> が使えます。品は、番号で選びます</small></span></label>
               <label class="sw"><input type="checkbox" id="po" ${petsOn ? 'checked' : ''}><i></i><span><b>ペットを使う</b><small><code>/pet</code> が使えます(種類・値段・餌・ボーナスは、下で変えられます。ボーナスの強さなどは、「ゲームバランス」で)</small></span></label></div>
-            <div class="card"><h2>値段表のチャンネル</h2><p class="hint">ペット・不動産・闇市の、いまの値段を、決めたチャンネルに出します(オンになっているものだけ)。闇市は、今日の相場です。</p>
+            <div class="card"><h2>値段表のチャンネル</h2><p class="hint">お店・ペット・不動産・闇市の、いまの値段を、決めたチャンネルに出します(オンになっているものだけ)。闇市は、今日の相場です。</p>
               <div class="grid2">
                 <div class="field"><label class="f">値段表を出すチャンネル</label><select id="pch"><option value="">出さない</option>${chans.map((c) => `<option value="${c.id}" ${pch === c.id ? 'selected' : ''}>#${esc(c.name)}</option>`).join('')}</select></div>
                 <div class="field"><label class="f">出す間隔</label><select id="pmin">${[5, 10, 30, 60, 180, 360, 720, 1440].map((m) => `<option value="${m}" ${pmin === m ? 'selected' : ''}>${m >= 60 ? m / 60 + '時間' : m + '分'}ごと</option>`).join('')}</select></div></div>

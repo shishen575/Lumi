@@ -5,13 +5,18 @@ import { petsOpen, bonusLabel } from './pets.js';
 import { estateOf, hourlyNet } from './estate.js';
 import { ITEMS, marketRate, priceOf } from './market.js';
 import { itemOf, marketCfg, petCfg } from './balance.js';
+import { shopItems, itemText } from './shop.js';
 
 export const PRICE_INTERVALS = [5, 10, 30, 60, 180, 360, 720, 1440];
 const cut = (t, n = 4000) => (t.length > n ? `${t.slice(0, n - 1)}…` : t);
 
-/** 値段表: ペット・不動産・闇市の、いまの値段(オンになっているものだけ) */
+/** 値段表: お店・ペット・不動産・闇市の、いまの値段(オンになっているものだけ) */
 export function priceEmbeds(s, g, now = Date.now()) {
   const out = [], m = (n) => money(s, n);
+  if (s.shopEnabled) {
+    const list = shopItems(s);
+    if (list.length) out.push(new EmbedBuilder().setColor(0xb8860b).setTitle('🛒 お店').setDescription(cut(list.map((x) => `${x.emoji} **${x.name}** ${m(x.price)} ・ ${x.minutes}分\n-# ${itemText(x)}`).join('\n'))).setFooter({ text: '`/shop` で買って、`/use` で使います' }));
+  }
   if (s.petsEnabled) {
     const pc = petCfg(s), list = petsOpen(s);
     if (list.length) out.push(new EmbedBuilder().setColor(0xe67e22).setTitle('🐾 ペット').setDescription(cut(list.map((x) => `${x.emoji} **${x.name}** ${m(x.price)} ・ 餌 ${x.foodEmoji}${x.foodName} ${m(x.feedCost)}\n-# ${bonusLabel(x, pc.power)} / レベル`).join('\n')))
