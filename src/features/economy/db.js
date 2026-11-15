@@ -217,6 +217,15 @@ export const itemQty = (g, u, item) => db.prepare('SELECT qty FROM eco_items WHE
 export const allItems = (g, u) => Object.fromEntries(db.prepare('SELECT item, qty FROM eco_items WHERE guild_id=? AND user_id=? AND qty>0').all(g, u).map((r) => [r.item, r.qty]));
 export const addItem = (g, u, item, n = 1) => db.prepare(`INSERT INTO eco_items (guild_id,user_id,item,qty) VALUES (?,?,?,?)
   ON CONFLICT(guild_id,user_id,item) DO UPDATE SET qty=qty+excluded.qty`).run(g, u, item, n);
+/** 道具を、ほかの人に渡す。渡せたら 'ok'、持っている数が足りなければ 'short'、相手が持てる上限を超えるなら 'full'(途中で止まっても、片方だけ減ったり増えたりしない) */
+export function transferItem(g, from, to, item, n, maxStack) {
+  db.exec('BEGIN');
+  try {
+    if (itemQty(g, to, item) + n > maxStack) { db.exec('ROLLBACK'); return 'full'; }
+    if (!db.prepare('UPDATE eco_items SET qty=qty-? WHERE guild_id=? AND user_id=? AND item=? AND qty>=? RETURNING qty').get(n, g, from, item, n)) { db.exec('ROLLBACK'); return 'short'; }
+    addItem(g, to, item, n); db.exec('COMMIT'); return 'ok';
+  } catch (e) { db.exec('ROLLBACK'); throw e; }
+}
 /** 道具を1つ使う。あれば true(同時に2回使っても、1つしかなければ、片方しか通らない) */
 export const useItem = (g, u, item) => !!db.prepare('UPDATE eco_items SET qty=qty-1 WHERE guild_id=? AND user_id=? AND item=? AND qty>=1 RETURNING qty').get(g, u, item);
 /* ---------- 職業の出勤回数 ---------- */

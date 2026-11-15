@@ -1,6 +1,6 @@
 import { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, MessageFlags } from 'discord.js';
 import { getSettings, money } from './settings.js';
-import { estateHoldings, estateCount, addEstate, takeEstate, rentAt, setRentAt, addTicket, userTickets, userTicketCount, roundSales, lotteryJackpot, lastDraw, holdings, holding, addHolding, takeHolding, getPets, adoptPet, renamePet, releasePet, updatePet, setStatus, activeStatuses, shiftsOf, allShifts, addShift, getHeat, addHeat, clearHeat, topWanted, itemQty, allItems, addItem, useItem, transfer, adjustBalance, clearCooldowns, audit, peek, deposit, withdraw, cooldownLeft, setCooldown, jailLeft, jail, release, richestPage, getBj, saveBj, deleteBj, allBj, claimBj, getRamen, saveRamen, claimRamen, getHeist, saveHeist, claimHeist, expiredHeists, setHeistDeadline, releaseAll } from './db.js';
+import { transferItem, estateHoldings, estateCount, addEstate, takeEstate, rentAt, setRentAt, addTicket, userTickets, userTicketCount, roundSales, lotteryJackpot, lastDraw, holdings, holding, addHolding, takeHolding, getPets, adoptPet, renamePet, releasePet, updatePet, setStatus, activeStatuses, shiftsOf, allShifts, addShift, getHeat, addHeat, clearHeat, topWanted, itemQty, allItems, addItem, useItem, transfer, adjustBalance, clearCooldowns, audit, peek, deposit, withdraw, cooldownLeft, setCooldown, jailLeft, jail, release, richestPage, getBj, saveBj, deleteBj, allBj, claimBj, getRamen, saveRamen, claimRamen, getHeist, saveHeist, claimHeist, expiredHeists, setHeistDeadline, releaseAll } from './db.js';
 import { ensureAccount, pay, collect, fine, treasury } from './ledger.js';
 import { hasAccessSync, isOperator } from '../../core/access.js';
 import { PermissionFlagsBits } from 'discord.js';
@@ -777,6 +777,39 @@ export const useCommand = {
   },
 };
 
+/* ================= 贈り物(持っている品を、ほかの人にあげる) ================= */
+export const giveCommand = {
+  data: guildOnly(new SlashCommandBuilder().setName('give').setDescription('持っている品を、ほかの人にあげます')
+    .addSubcommand((c) => c.setName('shop').setDescription('お店で買った品を、あげます')
+      .addUserOption((o) => o.setName('user').setDescription('あげる相手').setRequired(true))
+      .addIntegerOption((o) => o.setName('item').setDescription('品の番号(/shop list の番号)').setRequired(true).setMinValue(1).setMaxValue(MAX_SHOP_ITEMS))
+      .addIntegerOption((o) => o.setName('amount').setDescription('個数(省略すると1)').setMinValue(1).setMaxValue(SHOP_MAX_STACK)))
+    .addSubcommand((c) => c.setName('market').setDescription('闇マーケットで買った道具を、あげます')
+      .addUserOption((o) => o.setName('user').setDescription('あげる相手').setRequired(true))
+      .addStringOption((o) => o.setName('item').setDescription('道具').setRequired(true).addChoices(...ITEMS.map((x) => ({ name: `${x.emoji} ${x.name}`, value: x.id }))))
+      .addIntegerOption((o) => o.setName('amount').setDescription('個数(省略すると1)').setMinValue(1).setMaxValue(99)))),
+  async execute(i) {
+    const s = await open(i); if (!s) return;
+    const g = i.guildId, me = i.user.id, to = i.options.getUser('user', true), sub = i.options.getSubcommand(), n = i.options.getInteger('amount') ?? 1;
+    if (to.bot) return refuse(i, 'Botには、あげられません。');
+    if (to.id === me) return refuse(i, '自分には、あげられません。');
+    let item, max, label;
+    if (sub === 'shop') {
+      if (!s.shopEnabled) return shopOff(i);
+      item = shopItems(s)[i.options.getInteger('item', true) - 1]; if (!item) return refuse(i, `${i.options.getInteger('item')} 番の品は、ありません。(/shop list の番号を指定してください)`);
+      max = SHOP_MAX_STACK; label = 'お店';
+    } else {
+      if (!s.blackMarket) return refuse(i, 'このサーバーでは、闇マーケットはオフです。');
+      item = itemById(i.options.getString('item', true)); if (!item) return refuse(i, 'その道具は、ありません。');
+      max = marketCfg(s).maxStack; label = '闇市';
+    }
+    const r = transferItem(g, me, to.id, item.id, n, max);
+    if (r === 'short') return refuse(i, `${item.emoji} ${item.name}を、${n}個は持っていません。(いま ${itemQty(g, me, item.id)}個)`);
+    if (r === 'full') return refuse(i, `<@${to.id}> は、${item.emoji} ${item.name}を、これ以上持てません。(最大${max}個。いま ${itemQty(g, to.id, item.id)}個)`);
+    await i.reply({ content: `<@${to.id}>`, embeds: [card(i, s, 0xe91e63, '🎁 贈り物', `${item.emoji} **${item.name}** を **${n}個**、<@${to.id}> にあげました!\n-# ${label}の品 ・ ${i.user.username} の残り ${itemQty(g, me, item.id)}個`)], allowedMentions: { users: [to.id] } });
+  },
+};
+
 /* ================= ペット ================= */
 const MAX_SLOTS = 40;
 const petOff = (i) => refuse(i, 'このサーバーでは、ペットはオフです。管理者が、ダッシュボードの「通貨 → お店・ペット・株など」でオンにできます。');
@@ -1062,4 +1095,4 @@ export const arrestCommand = {
   },
 };
 
-export const commands = [balanceCommand, depositCommand, withdrawCommand, richestCommand, crimeCommand, workCommand, begCommand, bailCommand, chinchiroCommand, slotCommand, blackjackCommand, blackjackEndCommand, heistCommand, shopCommand, useCommand, petCommand, stockCommand, lotteryCommand, estateCommand, cooldownsCommand, jobCommand, wantedCommand, arrestCommand, marketCommand, releaseCommand, payCommand, balanceEditCommand, cooldownResetCommand];
+export const commands = [balanceCommand, depositCommand, withdrawCommand, richestCommand, crimeCommand, workCommand, begCommand, bailCommand, chinchiroCommand, slotCommand, blackjackCommand, blackjackEndCommand, heistCommand, shopCommand, useCommand, giveCommand, petCommand, stockCommand, lotteryCommand, estateCommand, cooldownsCommand, jobCommand, wantedCommand, arrestCommand, marketCommand, releaseCommand, payCommand, balanceEditCommand, cooldownResetCommand];
