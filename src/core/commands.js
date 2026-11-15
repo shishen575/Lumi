@@ -32,6 +32,9 @@ export function rewriteHidden(hid, payload) {
   return payload;
 }
 
+/** /help の「パネル」欄など、機能が、ヘルプに足す欄: (guildId) => [{ name, value }] */
+const helpExtras = [];
+export const registerHelpExtras = (fn) => helpExtras.push(fn);
 let byNameRef = new Map(), catalogRef = [];
 /** 登録されている全コマンドの、名前・説明・項目(カスタムパネルで、コマンドを選ぶのに使う) */
 export const commandCatalog = () => catalogRef;
@@ -155,6 +158,7 @@ function helpCommand(cmds, features) {
       for (const line of lines) { if (chunk && chunk.length + line.length + 1 > 1000) pushChunk(); chunk += (chunk ? '\n' : '') + line; }
       if (chunk) pushChunk();
       for (const f of features) if (f.help) embed.addFields({ name: f.title ?? f.name, value: f.help });
+      for (const fn of helpExtras) { try { for (const fld of fn(i.guildId) ?? []) embed.addFields({ name: String(fld.name).slice(0, 256), value: String(fld.value).slice(0, 1024) }); } catch { /* 足せなくても、ヘルプは出す */ } }
       if (topics.length) embed.addFields({ name: '詳しい説明', value: '`/help` の `topic` で選べます:\n' + topics.map((tp) => `・${tp.label}`).join('\n') });
       const base = process.env.BASE_URL;
       const pub = i.options.getBoolean('public') ?? false;

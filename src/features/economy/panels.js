@@ -1,6 +1,6 @@
 import { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, UserSelectMenuBuilder, ModalBuilder, TextInputBuilder, TextInputStyle, MessageFlags } from 'discord.js';
 import { getKV, setKV } from '../../core/db.js';
-import { registerHiddenCommands, resyncGuildCommands } from '../../core/commands.js';
+import { registerHiddenCommands, registerHelpExtras, resyncGuildCommands } from '../../core/commands.js';
 import { getSettings, money } from './settings.js';
 import { CRIMES, JOBS } from './jobs.js';
 import { HEISTS } from './heist.js';
@@ -46,6 +46,17 @@ registerHiddenCommands((g) => {
     for (const name of retiredOf(kind, st)) out[name] = `このサーバーでは、\`/${name}\` は廃止されました。パネル(${link(g, st)})から使えます。`;
   }
   return out;
+});
+
+// /help に、置いてあるパネルを載せる(どこで、何ができるか)。廃止したコマンドの名前は、「/」なしで書く(/ が付くと、パネルへのリンクに置き換わってしまう)
+registerHelpExtras((g) => {
+  const lines = [];
+  for (const [kind, st] of Object.entries(panelState(g))) {
+    if (!PANELS[kind] || !st?.msg) continue;
+    const gone = retiredOf(kind, st);
+    lines.push(`[${PANELS[kind].title}](${link(g, st)}) — <#${st.ch}>${gone.length ? ` ・ 廃止: ${gone.join(' ')}` : ''}`);
+  }
+  return lines.length ? [{ name: '🧩 パネル(ボタンで使う)', value: lines.join('\n') }] : [];
 });
 
 /** コマンドの代わりに、ボタンの操作で、同じ処理を動かすための包み: i.options が、決まった値を返す */

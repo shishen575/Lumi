@@ -1,6 +1,6 @@
 import { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle, StringSelectMenuBuilder, MessageFlags } from 'discord.js';
 import { getKV, setKV } from '../../core/db.js';
-import { commandCatalog, findCommand, registerHiddenCommands, resyncGuildCommands } from '../../core/commands.js';
+import { commandCatalog, findCommand, registerHiddenCommands, registerHelpExtras, resyncGuildCommands } from '../../core/commands.js';
 import { asCommand } from './panels.js';
 
 /**
@@ -110,6 +110,11 @@ registerHiddenCommands((g) => {
     for (const name of retiredOfCustom(p)) out[name] = `このサーバーでは、\`/${name}\` は廃止されました。パネル(https://discord.com/channels/${g}/${p.ch}/${p.msg})から使えます。`;
   }
   return out;
+});
+
+registerHelpExtras((g) => {
+  const lines = Object.values(customPanels(g)).filter((p) => p.msg).map((p) => `[${p.title}](https://discord.com/channels/${g}/${p.ch}/${p.msg}) — <#${p.ch}>${retiredOfCustom(p).length ? ` ・ 廃止: ${retiredOfCustom(p).join(' ')}` : ''}`);
+  return lines.length ? [{ name: '🧩 カスタムパネル', value: lines.join('\n') }] : [];
 });
 
 /** 置く・更新する(id が無ければ、新しく作る) */
