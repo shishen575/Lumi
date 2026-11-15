@@ -3,7 +3,7 @@ import { CRIMES, JOBS } from './jobs.js';
 import { POLICE_BONUS_CAP } from './wanted.js';
 import { RAMEN, GRADES } from './ramen.js';
 import { SLOTS, shopItems, itemText } from './shop.js';
-import { SPECIES } from './pets.js';
+import { petsOpen, bonusLabel } from './pets.js';
 import { VOL_LABELS, companyOf, COMPANIES } from './stocks.js';
 import { lotteriesOf } from './lottery.js';
 import { estateOf } from './estate.js';
@@ -110,7 +110,7 @@ export function lifeHelp({ guildId }) {
   const cut = (text) => (text.length > 1000 ? text.slice(0, 997) + '…' : text);
   if (s.shopEnabled) sections.push({ name: '🏪 お店 `/shop` `/use`', value: cut(['買って、`/use` で使うと、しばらく効果がつきます(良いことと、代償)。同じ枠(' + Object.values(SLOTS).join('・') + ')の品は、同時に1つだけ効きます。', '', ...shopItems(s).map((it, n) => `${n + 1}. ${it.emoji} **${it.name}** ${money(s, it.price)}(${it.minutes}分)— ${itemText(it)}`)].join('\n')) });
   else sections.push(off('🏪 お店', 'お店・ペット'));
-  if (s.petsEnabled) { const pc = petCfg(s); sections.push({ name: '🐾 ペット `/pet`', value: cut([`飼う値段 ${money(s, pc.price)}、餌代 ${money(s, pc.feedCost)}。餌と遊びで、なつき度が上がり、レベルが上がると、ボーナスがつきます(おなかがすいていると、ボーナスは出ません)。`, '', ...Object.values(SPECIES).map((x) => `${x.emoji} **${x.name}** — ${x.text} +${Math.round(x.per * 1000 * pc.power / 100) / 10}% / レベル`)].join('\n')) }); }
+  if (s.petsEnabled) { const pc = petCfg(s); sections.push({ name: '🐾 ペット `/pet`', value: cut(['餌と遊びで、なつき度が上がり、レベルが上がると、ボーナスがつきます(おなかがすいていると、ボーナスは出ません)。', '', ...petsOpen(s).map((x, n) => `${n + 1}. ${x.emoji} **${x.name}** ${money(s, x.price)} — ${bonusLabel(x, pc.power)} / レベル(餌 ${x.foodEmoji}${x.foodName} ${money(s, x.feedCost)})`)].join('\n')) }); }
   else sections.push(off('🐾 ペット', 'お店・ペット'));
   if (s.stocksEnabled) { const sc = stockCfg(s); sections.push({ name: '📈 株 `/stock`', value: cut([`株価は **${Math.round(sc.tickMs / 60000)}分ごと**に動きます。売買の手数料は ${(sc.fee * 100).toFixed(1)}%。値動きの大きさは、会社ごとに10段階です。`, '', ...COMPANIES.map((c0, n) => { const c = companyOf(s, c0), lv = s.stockLevels?.[c.id] ?? c0.level; return `${n + 1}. ${c.emoji} **${c.ticker}** ${c.name} — 変動 Lv${lv}(${VOL_LABELS[lv - 1]})`; })].join('\n')) }); }
   else sections.push(off('📈 株', '株'));

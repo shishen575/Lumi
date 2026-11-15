@@ -17,7 +17,7 @@ import { VOL_LABELS, companyOf } from './stocks.js';
 import { MAX_PROPERTIES, estateOf, estateById, hourlyNet, accrued } from './estate.js';
 import { MAX_LOTTERIES, lotteriesOf, estimateRtp, roundOf, drawTimeOf, pad, drawNumber } from './lottery.js';
 import { settleGuild, announce, drawEmbed } from './lotteryengine.js';
-import { SPECIES, levelOf, nextXp, MAX_LEVEL, hungerNow, hungerBar, petFx } from './pets.js';
+import { MAX_PETS, petsOpen, speciesOf, bonusLabel, levelOf, nextXp, MAX_LEVEL, hungerNow, hungerBar, petFx } from './pets.js';
 import { SLOTS, MAX_SHOP_ITEMS, SHOP_MAX_STACK, shopItems, shopById, itemText } from './shop.js';
 import { describeFx } from './effects.js';
 import { estateCfg, stockCfg, petCfg, toolCfg, timeoutCfg, ramenCfg, crimeOf, jobOf, begOf, heistOf, itemOf, marketCfg, wantedCfg, bailPerMin } from './balance.js';
@@ -753,7 +753,7 @@ export const petCommand = {
   data: guildOnly(new SlashCommandBuilder().setName('pet').setDescription('ペットを飼って、育てます(育つと、ボーナスがつきます)')
     .addSubcommand((c) => c.setName('status').setDescription('ペットの様子を見ます(まだなら、飼える動物の一覧)'))
     .addSubcommand((c) => c.setName('adopt').setDescription('ペットを飼います(お金がかかります)')
-      .addStringOption((o) => o.setName('species').setDescription('動物').setRequired(true).addChoices(...Object.values(SPECIES).map((x) => ({ name: `${x.emoji} ${x.name}(${x.text}が上がる)`, value: x.id }))))
+      .addIntegerOption((o) => o.setName('species').setDescription('動物の番号(/pet status の一覧の番号)').setRequired(true).setMinValue(1).setMaxValue(MAX_PETS))
       .addStringOption((o) => o.setName('name').setDescription('名前(省略すると、動物の名前)').setMaxLength(12)))
     .addSubcommand((c) => c.setName('feed').setDescription('餌をあげます(お金がかかります)'))
     .addSubcommand((c) => c.setName('play').setDescription('遊びます(お金はかかりません)'))
@@ -763,36 +763,38 @@ export const petCommand = {
     const s = await open(i); if (!s) return;
     if (!s.petsEnabled) return petOff(i);
     const g = i.guildId, u = i.user.id, cfg = petCfg(s), now = Date.now(), sub = i.options.getSubcommand(), pet = getPet(g, u);
-    const bonusText = (row) => { const sp = SPECIES[row.species], v = petFx(row, cfg, now)[sp.bonus]; return v ? `${sp.text} **${sp.bonus === 'toolKeep' ? '+' : '+'}${Math.round(v * 1000) / 10}%**` : `${sp.text}のボーナスは、おなかがすいていて、出ていません(満腹度 ${cfg.minHunger} 以上で出ます)`; };
+    const bonusText = (row, sp) => { const fx = petFx(row, cfg, sp, now); return Object.values(fx).some((v) => v) ? `**${bonusLabel(sp, cfg.power, levelOf(row.xp))}**` : `ボーナスは、おなかがすいていて、出ていません(満腹度 ${cfg.minHunger} 以上で出ます)`; };
     if (sub === 'status') {
       if (!pet) {
-        const e = new EmbedBuilder().setColor(0xe67e22).setTitle('🐾 ペット').setDescription(`まだ、ペットがいません。\`/pet adopt\` で飼えます(**${money(s, cfg.price)}**)。育てると、ボーナスがつきます。`)
-          .addFields(Object.values(SPECIES).map((x) => ({ name: `${x.emoji} ${x.name}`, value: `${x.text} +${Math.round(x.per * 1000 * cfg.power / 100) / 10}% / レベル`, inline: true })));
+        const open_ = petsOpen(s);
+        if (!open_.length) return refuse(i, '飼えるペットが、まだ用意されていません。管理者が、ダッシュボードで追加できます。');
+        const list = open_.slice(0, 24).map((x, n) => ({ name: `${n + 1}. ${x.emoji} ${x.name} ・ ${money(s, x.price)}`, value: `${bonusLabel(x, cfg.power)} / レベル\n餌: ${x.foodEmoji} ${x.foodName}(${money(s, x.feedCost)})`, inline: true }));
+        const e = new EmbedBuilder().setColor(0xe67e22).setTitle('🐾 ペット').setDescription('まだ、ペットがいません。`/pet adopt species:番号` で飼えます。育てると、ボーナスがつきます。').addFields(list);
         return i.reply({ embeds: [e], ...EPH });
       }
-      const sp = SPECIES[pet.species], h = hungerNow(pet, cfg.hungerDecay, now), lv = levelOf(pet.xp), nx = nextXp(pet.xp);
+      const sp = speciesOf(s, pet.species), h = hungerNow(pet, cfg.hungerDecay, now), lv = levelOf(pet.xp), nx = nextXp(pet.xp);
       const fcd = cooldownLeft(g, u, 'pet:feed'), pcd = cooldownLeft(g, u, 'pet:play');
       const e = new EmbedBuilder().setColor(0xe67e22).setTitle(`${sp.emoji} ${pet.name}(${sp.name})`).setAuthor({ name: i.member?.displayName ?? i.user.username, iconURL: i.user.displayAvatarURL?.() })
         .addFields({ name: 'レベル', value: `**Lv ${lv}**${lv >= MAX_LEVEL ? '(最大)' : ` ・ なつき度 ${pet.xp} / ${nx}`}`, inline: true }, { name: '満腹度', value: hungerBar(h), inline: true },
-          { name: 'ボーナス', value: bonusText({ ...pet, hunger: pet.hunger }) }, { name: '世話', value: `🍖 餌 ${fcd ? `あと ${dur(fcd)}` : `**あげられます**(${money(s, cfg.feedCost)})`} ・ 🎾 遊び ${pcd ? `あと ${dur(pcd)}` : '**できます**'}` });
+          { name: 'ボーナス', value: bonusText(pet, sp) }, { name: '世話', value: `${sp.foodEmoji} ${sp.foodName} ${fcd ? `あと ${dur(fcd)}` : `**あげられます**(${money(s, sp.feedCost)})`} ・ 🎾 遊び ${pcd ? `あと ${dur(pcd)}` : '**できます**'}` });
       return i.reply({ embeds: [e], ...EPH });
     }
     if (sub === 'adopt') {
       if (pet) return refuse(i, `すでに **${pet.name}** を飼っています。手放すなら \`/pet release\` です。`);
-      const sp = SPECIES[i.options.getString('species', true)]; if (!sp) return refuse(i, 'その動物は、いません。');
-      if (!collect(g, u, cfg.price, s)) return refuse(i, `お金が足りません。(必要 ${money(s, cfg.price)} / 手持ち ${money(s, Math.max(0, wallet(i)))})`);
+      const sp = petsOpen(s)[i.options.getInteger('species', true) - 1]; if (!sp) return refuse(i, 'その番号の動物は、いません。`/pet status` で、番号を確かめてください。');
+      if (!collect(g, u, sp.price, s)) return refuse(i, `お金が足りません。(必要 ${money(s, sp.price)} / 手持ち ${money(s, Math.max(0, wallet(i)))})`);
       const name = cleanName(i.options.getString('name'), sp.name); adoptPet(g, u, sp.id, name, now);
-      return i.reply({ embeds: [card(i, s, 0xe67e22, `${sp.emoji} ${name} が、仲間になった!`, `${sp.name}を飼いました。\n**- ${money(s, cfg.price)}**\n餌と遊びで、なつき度が上がり、レベルが上がると、**${sp.text}**にボーナスがつきます。\`/pet status\` で様子を見られます。`)] });
+      return i.reply({ embeds: [card(i, s, 0xe67e22, `${sp.emoji} ${name} が、仲間になった!`, `${sp.name}を飼いました。\n**- ${money(s, sp.price)}**\n餌と遊びで、なつき度が上がり、レベルが上がると、ボーナスがつきます(${bonusLabel(sp, cfg.power)} / レベル)。\`/pet status\` で様子を見られます。`)] });
     }
     if (!pet) return refuse(i, 'ペットがいません。`/pet adopt` で飼えます。');
-    const sp = SPECIES[pet.species], h = hungerNow(pet, cfg.hungerDecay, now), lv0 = levelOf(pet.xp);
-    const lvText = (xpAdd) => { const lv1 = levelOf(pet.xp + xpAdd); return lv1 > lv0 ? `\n🎉 **レベルアップ!** Lv ${lv1}(${sp.text} +${Math.round(sp.per * lv1 * cfg.power * 10) / 10}%)` : ''; };
+    const sp = speciesOf(s, pet.species), h = hungerNow(pet, cfg.hungerDecay, now), lv0 = levelOf(pet.xp);
+    const lvText = (xpAdd) => { const lv1 = levelOf(pet.xp + xpAdd); return lv1 > lv0 ? `\n🎉 **レベルアップ!** Lv ${lv1}(${bonusLabel(sp, cfg.power, lv1)})` : ''; };
     if (sub === 'feed') {
       const cd = cooldownLeft(g, u, 'pet:feed'); if (cd) return refuse(i, `${pet.name}は、まだおなかがいっぱいです。あと ${dur(cd)}。`);
       if (h >= 100) return refuse(i, `${pet.name}は、おなかがいっぱいです。`);
-      if (!collect(g, u, cfg.feedCost, s)) return refuse(i, `餌代が足りません。(必要 ${money(s, cfg.feedCost)})`);
-      const hungerAfter = Math.min(100, h + cfg.feedHunger); updatePet(g, u, { hunger: hungerAfter, xpAdd: cfg.feedXp }, now); setCooldown(g, u, 'pet:feed', cfg.feedCd);
-      return i.reply({ embeds: [card(i, s, 0xe67e22, `🍖 ${pet.name}に餌をあげた`, `満腹度 ${h} → **${hungerAfter}**、なつき度 +${cfg.feedXp}\n**- ${money(s, cfg.feedCost)}**${lvText(cfg.feedXp)}`)] });
+      if (!collect(g, u, sp.feedCost, s)) return refuse(i, `餌代が足りません。(必要 ${money(s, sp.feedCost)})`);
+      const hungerAfter = Math.min(100, h + sp.feedHunger); updatePet(g, u, { hunger: hungerAfter, xpAdd: cfg.feedXp }, now); setCooldown(g, u, 'pet:feed', cfg.feedCd);
+      return i.reply({ embeds: [card(i, s, 0xe67e22, `${sp.foodEmoji} ${pet.name}に${sp.foodName}をあげた`, `満腹度 ${h} → **${hungerAfter}**、なつき度 +${cfg.feedXp}\n**- ${money(s, sp.feedCost)}**${lvText(cfg.feedXp)}`)] });
     }
     if (sub === 'play') {
       const cd = cooldownLeft(g, u, 'pet:play'); if (cd) return refuse(i, `${pet.name}は、少し休んでいます。あと ${dur(cd)}。`);

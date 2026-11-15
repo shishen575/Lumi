@@ -2,6 +2,7 @@ import { getKV, setKV } from '../../core/db.js';
 import { DEFAULT_RANKS, sanitizeRanks } from './ranks.js';
 import { sanitizeBalance } from './balance.js';
 import { DEFAULT_NAMES, sanitizeNames, DEFAULT_LEVELS, sanitizeLevels } from './stocks.js';
+import { DEFAULT_PETS, sanitizePets } from './pets.js';
 import { DEFAULT_SHOP, sanitizeShopItems } from './shop.js';
 import { DEFAULT_LOTTERY, sanitizeLotteries } from './lottery.js';
 import { DEFAULT_ESTATE, sanitizeEstate } from './estate.js';
@@ -32,6 +33,7 @@ export const DEFAULTS = {
   stockBoardEdit: true,    // true: 1つのメッセージを更新 / false: 毎回、新しく出す
   lotteryMention: true,    // 抽選の発表で、くじを買った人にメンションする
   lotteryChannelId: null,  // 抽選の結果を発表するチャンネル(くじごとに、別のチャンネルも選べる)
+  petSpecies: DEFAULT_PETS, // ペットの種類(名前・値段・餌・ボーナス・有効/無効)
   petsEnabled: false,      // ペット。オンのとき、/pet が使え、育てるとボーナスがつく
   shopItems: DEFAULT_SHOP, // お店の品(名前・値段・効果などを、サーバーごとに変えられる)
   shopEnabled: false,      // お店(タバコ・お酒)。オンのとき、/shop と /use が使える
@@ -59,6 +61,7 @@ export function saveSettings(guildId, s) {
     allowDebt: s.allowDebt === undefined ? cur.allowDebt : !!s.allowDebt,
     shopEnabled: s.shopEnabled === undefined ? cur.shopEnabled : !!s.shopEnabled,
     shopItems: s.shopItems === undefined ? cur.shopItems : sanitizeShopItems(s.shopItems, cur.shopItems),
+    petSpecies: s.petSpecies === undefined ? cur.petSpecies : sanitizePets(s.petSpecies, cur.petSpecies),
     petsEnabled: s.petsEnabled === undefined ? cur.petsEnabled : !!s.petsEnabled,
     estateEnabled: s.estateEnabled === undefined ? cur.estateEnabled : !!s.estateEnabled,
     estate: s.estate === undefined ? cur.estate : sanitizeEstate(s.estate, cur.estate),

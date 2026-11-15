@@ -144,12 +144,12 @@ Dash.registerTab({
     { id: 'shop', title: 'お店・ペット', icon: 'coin',
       async render(el, { api, esc, toast, pageHeader }) {
         const [st, meta] = await Promise.all([api('/settings'), api('/extras-meta')]);
-        let items = JSON.parse(JSON.stringify(st.shopItems)), shopOn = st.shopEnabled, petsOn = st.petsEnabled;
+        let items = JSON.parse(JSON.stringify(st.shopItems)), pets = JSON.parse(JSON.stringify(st.petSpecies)), shopOn = st.shopEnabled, petsOn = st.petsEnabled;
         const kinds = meta.fx, toUi = (k, v) => (kinds[k].kind === 'count' ? v : Math.round(v * 1000) / 10), fromUi = (k, v) => (kinds[k].kind === 'count' ? Math.round(Number(v)) : Number(v) / 100);
         const draw = () => {
           el.innerHTML = `${pageHeader('お店・ペット', 'お店(タバコ・お酒など。使うと、しばらく効果がつく)と、ペット(育てるとボーナスがつく)を、サーバーでオン・オフします。お店の品は、名前・値段・効果を、自由に変えられます。')}
             <div class="card"><label class="sw"><input type="checkbox" id="so" ${shopOn ? 'checked' : ''}><i></i><span><b>お店を使う</b><small><code>/shop</code> と <code>/use</code> が使えます。品は、番号で選びます</small></span></label>
-              <label class="sw"><input type="checkbox" id="po" ${petsOn ? 'checked' : ''}><i></i><span><b>ペットを使う</b><small><code>/pet</code> が使えます(値段・餌代・ボーナスの強さは、「ゲームバランス」で変えられます)</small></span></label></div>
+              <label class="sw"><input type="checkbox" id="po" ${petsOn ? 'checked' : ''}><i></i><span><b>ペットを使う</b><small><code>/pet</code> が使えます(種類・値段・餌・ボーナスは、下で変えられます。ボーナスの強さなどは、「ゲームバランス」で)</small></span></label></div>
             <h2 class="sec" style="margin:18px 0 8px">お店の品(最大${meta.maxShop}品)</h2>
             ${items.map((it, n) => `<div class="card" data-i="${n}"><div class="card-h"><h2>${n + 1}. ${esc(it.emoji)} ${esc(it.name)}</h2><button class="btn danger icon" type="button" data-rm="${n}" aria-label="削除">✕</button></div>
               <div class="grid2">
@@ -161,16 +161,36 @@ Dash.registerTab({
                 <div class="field"><label class="f">説明</label><input class="f-desc" type="text" maxlength="60" value="${esc(it.desc)}"></div></div>
               <p class="hint" style="margin:6px 0">効果: プラスは良いこと、マイナスは代償です(空欄は、効果なし)。％で入力します(回数は、そのまま)。</p>
               <div class="grid2">${Object.entries(kinds).map(([k, d]) => `<div class="field" style="margin:0"><label class="f">${esc(d.label)}${d.kind === 'count' ? '(回)' : '(%)'}</label><input class="f-fx" data-k="${k}" type="number" step="${d.kind === 'count' ? 1 : 0.5}" value="${it.effects?.[k] ? toUi(k, it.effects[k]) : ''}"></div>`).join('')}</div></div>`).join('')}
+            <h2 class="sec" style="margin:18px 0 8px">ペットの種類(最大${meta.maxPets}種類)</h2>
+            <p class="hint" style="margin:0 0 8px">「有効」をオフにした種類は、新しく飼えなくなります(すでに飼っている人は、そのまま)。ボーナスは「レベル1つぶん」の％です(レベルが上がるほど、効果が増えます)。</p>
+            ${pets.map((p, n) => `<div class="card" data-p="${n}"><div class="card-h"><h2>${n + 1}. ${esc(p.emoji)} ${esc(p.name)}${p.enabled ? '' : ' <span class="mut small">(無効)</span>'}</h2><button class="btn danger icon" type="button" data-prm="${n}" aria-label="削除">✕</button></div>
+              <label class="sw"><input type="checkbox" class="p-on" ${p.enabled ? 'checked' : ''}><i></i><span><b>有効(飼える)</b></span></label>
+              <div class="grid2">
+                <div class="field"><label class="f">名前</label><input class="p-name" type="text" maxlength="12" value="${esc(p.name)}"></div>
+                <div class="field"><label class="f">絵文字</label><input class="p-emoji" type="text" maxlength="8" value="${esc(p.emoji)}"></div>
+                <div class="field"><label class="f">飼う値段</label><input class="p-price" type="number" min="0" value="${p.price}"></div>
+                <div class="field"><label class="f">餌の名前</label><input class="p-food" type="text" maxlength="12" value="${esc(p.foodName)}"></div>
+                <div class="field"><label class="f">餌の絵文字</label><input class="p-foode" type="text" maxlength="8" value="${esc(p.foodEmoji)}"></div>
+                <div class="field"><label class="f">餌代(1回)</label><input class="p-fc" type="number" min="0" value="${p.feedCost}"></div>
+                <div class="field"><label class="f">餌1回で増える満腹度</label><input class="p-fh" type="number" min="1" max="100" value="${p.feedHunger}"></div></div>
+              <p class="hint" style="margin:6px 0">ボーナス(レベル1つぶん・％。空欄は、なし)</p>
+              <div class="grid2">${meta.petFx.map((k) => `<div class="field" style="margin:0"><label class="f">${esc(kinds[k].label)}(%)</label><input class="p-fx" data-k="${k}" type="number" step="0.1" value="${p.effects?.[k] ? Math.round(p.effects[k] * 1000) / 10 : ''}"></div>`).join('')}</div></div>`).join('')}
+            <div class="acts"><button class="btn ghost" id="padd" type="button" ${pets.length >= meta.maxPets ? 'disabled' : ''}>ペットを追加</button><button class="btn ghost" id="preset" type="button">初期のペットに戻す</button></div>
             <div class="acts"><button class="btn ghost" id="add" type="button" ${items.length >= meta.maxShop ? 'disabled' : ''}>品を追加</button><button class="btn ghost" id="reset" type="button">初期の品に戻す</button><button class="btn" id="save" type="button">保存</button></div>`;
           const collect = () => {
             shopOn = el.querySelector('#so').checked; petsOn = el.querySelector('#po').checked;
+            pets = [...el.querySelectorAll('[data-p]')].map((c, n) => ({ id: pets[n]?.id, enabled: c.querySelector('.p-on').checked, name: c.querySelector('.p-name').value, emoji: c.querySelector('.p-emoji').value, price: c.querySelector('.p-price').value, foodName: c.querySelector('.p-food').value, foodEmoji: c.querySelector('.p-foode').value, feedCost: c.querySelector('.p-fc').value, feedHunger: c.querySelector('.p-fh').value,
+              effects: Object.fromEntries([...c.querySelectorAll('.p-fx')].filter((x) => x.value !== '').map((x) => [x.dataset.k, Number(x.value) / 100])) }));
             items = [...el.querySelectorAll('[data-i]')].map((c, n) => ({ id: items[n]?.id, name: c.querySelector('.f-name').value, emoji: c.querySelector('.f-emoji').value, slot: c.querySelector('.f-slot').value, price: c.querySelector('.f-price').value, minutes: c.querySelector('.f-min').value, desc: c.querySelector('.f-desc').value,
               effects: Object.fromEntries([...c.querySelectorAll('.f-fx')].filter((x) => x.value !== '').map((x) => [x.dataset.k, fromUi(x.dataset.k, x.value)])) }));
           };
+          el.querySelector('#padd').onclick = () => { collect(); pets.push({ name: '新しいペット', emoji: '🐾', enabled: true, price: 1000, foodName: 'ごはん', foodEmoji: '🍖', feedCost: 150, feedHunger: 40, effects: {} }); draw(); };
+          el.querySelector('#preset').onclick = () => { collect(); pets = JSON.parse(JSON.stringify(meta.defaultPets)); draw(); };
+          el.querySelectorAll('[data-prm]').forEach((b) => (b.onclick = () => { collect(); pets.splice(Number(b.dataset.prm), 1); draw(); }));
           el.querySelector('#add').onclick = () => { collect(); items.push({ name: '新しい品', emoji: '🛍️', slot: 'other', price: 100, minutes: 15, effects: {}, desc: '' }); draw(); };
           el.querySelector('#reset').onclick = () => { collect(); items = JSON.parse(JSON.stringify(meta.defaultShop)); draw(); };
           el.querySelectorAll('[data-rm]').forEach((b) => (b.onclick = () => { collect(); items.splice(Number(b.dataset.rm), 1); draw(); }));
-          el.querySelector('#save').onclick = async () => { collect(); const r = await api('/settings', { method: 'PUT', body: { shopEnabled: shopOn, petsEnabled: petsOn, shopItems: items } }); items = JSON.parse(JSON.stringify(r.shopItems)); toast('保存しました'); draw(); };
+          el.querySelector('#save').onclick = async () => { collect(); const r = await api('/settings', { method: 'PUT', body: { shopEnabled: shopOn, petsEnabled: petsOn, shopItems: items, petSpecies: pets } }); items = JSON.parse(JSON.stringify(r.shopItems)); pets = JSON.parse(JSON.stringify(r.petSpecies)); toast('保存しました'); draw(); };
         };
         draw();
       } },
