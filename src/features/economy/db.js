@@ -44,6 +44,10 @@ CREATE TABLE IF NOT EXISTS eco_ramen (            -- 進行中のラーメン屋
   guild_id TEXT NOT NULL, user_id TEXT NOT NULL, state TEXT NOT NULL, deadline INTEGER NOT NULL, started_at INTEGER NOT NULL,
   PRIMARY KEY (guild_id, user_id)
 );
+CREATE TABLE IF NOT EXISTS eco_status (           -- お店の消耗品の効果(タバコ・お酒の枠ごとに1つ)
+  guild_id TEXT NOT NULL, user_id TEXT NOT NULL, slot TEXT NOT NULL, item TEXT NOT NULL, until INTEGER NOT NULL,
+  PRIMARY KEY (guild_id, user_id, slot)
+);
 CREATE TABLE IF NOT EXISTS eco_audit (            -- 管理者の操作の記録(だれが・だれに・何を・いくら)
   id INTEGER PRIMARY KEY AUTOINCREMENT, guild_id TEXT NOT NULL, actor_id TEXT NOT NULL, actor_name TEXT NOT NULL,
   target_id TEXT, action TEXT NOT NULL, amount INTEGER, note TEXT, at INTEGER NOT NULL
@@ -191,6 +195,10 @@ export const saveRamen = (g, u, state, deadline) => db.prepare(`INSERT INTO eco_
   ON CONFLICT(guild_id,user_id) DO UPDATE SET state=excluded.state`).run(g, u, JSON.stringify(state), deadline, Date.now());
 /** ゲームを終わらせる。取れたら、そのゲームを返す(同時に2か所から終わらせても、片方しか取れない=二重に給料が出ない) */
 export const claimRamen = (g, u) => ramenRow(db.prepare('DELETE FROM eco_ramen WHERE guild_id=? AND user_id=? RETURNING *').get(g, u));
+/* ---------- お店の消耗品の効果 ---------- */
+export const setStatus = (g, u, slot, item, until) => db.prepare(`INSERT INTO eco_status (guild_id,user_id,slot,item,until) VALUES (?,?,?,?,?)
+  ON CONFLICT(guild_id,user_id,slot) DO UPDATE SET item=excluded.item, until=excluded.until`).run(g, u, slot, item, until);
+export const activeStatuses = (g, u, now = Date.now()) => db.prepare('SELECT slot, item, until FROM eco_status WHERE guild_id=? AND user_id=? AND until>?').all(g, u, now);
 export const setHeistDeadline = (g, u, deadline) => db.prepare('UPDATE eco_heist SET deadline=? WHERE guild_id=? AND user_id=?').run(deadline, g, u);
 /** ゲームを終わらせる。取れたら、そのゲームを返す(同時に2か所から終わらせても、片方しか取れない=二重に精算されない) */
 export const claimHeist = (g, u) => heistRow(db.prepare('DELETE FROM eco_heist WHERE guild_id=? AND user_id=? RETURNING *').get(g, u));

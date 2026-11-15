@@ -1,6 +1,7 @@
 import { CRIMES, JOBS, BEG } from './jobs.js';
 import { HEISTS } from './heist.js';
 import { ITEMS } from './market.js';
+import { SHOP } from './shop.js';
 import { HEAT, HEAT_PER_STAR, CHANCE_PENALTY_PER_STAR, ARREST } from './wanted.js';
 
 /**
@@ -79,6 +80,12 @@ function buildSchema() {
   L.push(p('wanted.jailMax', '指名手配', wg, '逮捕された人の留置場(上限)', ARREST.jailMax / MIN, 0, 1440, '分'));
   for (const [k, c] of Object.entries(CRIMES)) L.push(p(`heat.crime.${k}`, '指名手配', '🔥 成功したときに上がる手配度', `${c.emoji} ${c.name}`, HEAT.crime[k] ?? 1, 0, 100, ''));
   for (const T of Object.values(HEISTS)) L.push(p(`heat.heist.${T.id}`, '指名手配', '🔥 成功したときに上がる手配度', `${T.emoji} ${T.name}`, HEAT.heist[T.id] ?? 4, 0, 100, ''));
+  for (const it of SHOP) {
+    const g = `${it.emoji} お店: ${it.name}`;
+    L.push(p(`shop.${it.id}.price`, 'お店', g, '値段', it.price, 1, 1e9, '$'));
+    L.push(p(`shop.${it.id}.minutes`, 'お店', g, '効果が続く時間', it.minutes, 1, 1440, '分'));
+    L.push(p(`shop.${it.id}.power`, 'お店', g, '効果の強さ(良いことも代償も、同じ割合)', it.power, 0, 500, '%'));
+  }
   L.push(p('bail.perMin', 'その他', '🔓 保釈', '保釈金(留置場の残り1分あたり)', 100, 0, 1e6, '$'));
   return L;
 }
@@ -121,6 +128,7 @@ export const heistOf = (s, id) => {
 };
 export const timeoutCfg = (s) => ({ finePct: val(s, 'heist.timeoutFinePct') / 100, jailPct: val(s, 'heist.timeoutJailPct') / 100 }); // 時間切れの扱い(100% = 失敗と同じ。0% = 罰なしの撤退)
 export const toolCfg = (s) => ({ success: val(s, 'tool.keepOnSuccess') / 100, fail: val(s, 'tool.keepOnFail') / 100, timeout: val(s, 'tool.keepOnTimeout') / 100 }); // 使った道具が、戻ってくる確率
+export const shopItemOf = (s, it) => ({ ...it, price: val(s, `shop.${it.id}.price`), minutes: val(s, `shop.${it.id}.minutes`), power: val(s, `shop.${it.id}.power`) });
 export const itemOf = (s, item) => ({ ...item, price: val(s, `item.${item.id}.price`) });
 export const marketCfg = (s) => ({ range: [val(s, 'market.rateLow') / 100, val(s, 'market.rateHigh') / 100], maxStack: val(s, 'market.maxStack') });
 export const wantedCfg = (s) => {
