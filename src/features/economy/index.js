@@ -2,6 +2,7 @@ import { Events } from 'discord.js';
 import { commands, blackjackButton, heistButton, ramenButton, resolveExpiredHeists, holdHeistSweep } from './commands.js';
 import { mountApi } from './api.js';
 import { crimeHelp, jobHelp } from './help.js';
+import { settleAll } from './lotteryengine.js';
 import { pauseHeists, resumeHeists } from './db.js';
 import { onShutdownCleanup } from '../../core/shutdown.js';
 
@@ -26,6 +27,10 @@ export default {
     onShutdownCleanup(() => { const n = pauseHeists(); if (n) console.log(`[economy] 進行中の大型銀行強盗 ${n}件の残り時間を記録しました`); });
     // 制限時間を過ぎて放置された大型銀行強盗を、15秒ごとに失敗として精算する(放置で罰を逃れられないように)
     // 起動した直後の30秒は、保留する(BOTが止まっていた間に、制限時間が過ぎた強盗を、すぐ失敗にしない)
-    client.once(Events.ClientReady, () => { holdHeistSweep(30_000); setInterval(() => resolveExpiredHeists(client), 15_000).unref?.(); });
+    client.once(Events.ClientReady, () => {
+      holdHeistSweep(30_000); setInterval(() => resolveExpiredHeists(client), 15_000).unref?.();
+      // 宝くじ: 1分ごとに、抽選の時刻を過ぎた回を、抽選して、発表する(起動直後にも1回。止まっていた間の分)
+      settleAll(client); setInterval(() => settleAll(client), 60_000).unref?.();
+    });
   },
 };

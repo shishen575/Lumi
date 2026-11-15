@@ -3,6 +3,7 @@ import { DEFAULT_RANKS, sanitizeRanks } from './ranks.js';
 import { sanitizeBalance } from './balance.js';
 import { DEFAULT_NAMES, sanitizeNames, DEFAULT_LEVELS, sanitizeLevels } from './stocks.js';
 import { DEFAULT_SHOP, sanitizeShopItems } from './shop.js';
+import { DEFAULT_LOTTERY, sanitizeLotteries } from './lottery.js';
 
 // サーバーごとの設定。既定はオフ(管理者がダッシュボードでオンにする)
 export const DEFAULTS = {
@@ -21,6 +22,9 @@ export const DEFAULTS = {
   stocksEnabled: false,    // 株。オンのとき、/stock が使える
   stockLevels: DEFAULT_LEVELS, // 会社ごとの変動の大きさ(1〜10の10段階)
   stockNames: DEFAULT_NAMES, // 会社の名前・ティッカー・絵文字(サーバーごとに変えられる)
+  lotteryEnabled: false,   // 宝くじ。オンのとき、/lottery が使え、決まった時刻に、自動で抽選する
+  lotteries: [DEFAULT_LOTTERY], // くじの一覧(サーバーごとに、自由に、最大6つ。名前・値段・間隔・桁数・賞金などを変えられる)
+  lotteryChannelId: null,  // 抽選の結果を発表するチャンネル(くじごとに、別のチャンネルも選べる)
   petsEnabled: false,      // ペット。オンのとき、/pet が使え、育てるとボーナスがつく
   shopItems: DEFAULT_SHOP, // お店の品(名前・値段・効果などを、サーバーごとに変えられる)
   shopEnabled: false,      // お店(タバコ・お酒)。オンのとき、/shop と /use が使える
@@ -49,6 +53,9 @@ export function saveSettings(guildId, s) {
     shopEnabled: s.shopEnabled === undefined ? cur.shopEnabled : !!s.shopEnabled,
     shopItems: s.shopItems === undefined ? cur.shopItems : sanitizeShopItems(s.shopItems, cur.shopItems),
     petsEnabled: s.petsEnabled === undefined ? cur.petsEnabled : !!s.petsEnabled,
+    lotteryEnabled: s.lotteryEnabled === undefined ? cur.lotteryEnabled : !!s.lotteryEnabled,
+    lotteries: s.lotteries === undefined ? cur.lotteries : sanitizeLotteries(s.lotteries, cur.lotteries),
+    lotteryChannelId: s.lotteryChannelId === undefined ? cur.lotteryChannelId : (/^\d{15,25}$/.test(String(s.lotteryChannelId ?? '')) ? String(s.lotteryChannelId) : null),
     stocksEnabled: s.stocksEnabled === undefined ? cur.stocksEnabled : !!s.stocksEnabled,
     stockNames: s.stockNames === undefined ? cur.stockNames : sanitizeNames(s.stockNames, cur.stockNames),
     stockLevels: s.stockLevels === undefined ? cur.stockLevels : sanitizeLevels(s.stockLevels, cur.stockLevels),

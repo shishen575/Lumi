@@ -61,6 +61,18 @@ CREATE TABLE IF NOT EXISTS eco_stock_holdings (   -- 持っている株
   guild_id TEXT NOT NULL, user_id TEXT NOT NULL, company TEXT NOT NULL, shares INTEGER NOT NULL DEFAULT 0, cost INTEGER NOT NULL DEFAULT 0,
   PRIMARY KEY (guild_id, user_id, company)
 );
+CREATE TABLE IF NOT EXISTS eco_lottery_tickets (   -- 買ったくじ(くじの種類・回・番号ごと。price = 買ったときのくじ代)
+  guild_id TEXT NOT NULL, lottery TEXT NOT NULL, round INTEGER NOT NULL, user_id TEXT NOT NULL, number INTEGER NOT NULL, price INTEGER NOT NULL, qty INTEGER NOT NULL DEFAULT 1,
+  PRIMARY KEY (guild_id, lottery, round, user_id, number, price)
+);
+CREATE TABLE IF NOT EXISTS eco_lottery_state (     -- ジャックポット(サーバー・くじの種類ごと)
+  guild_id TEXT NOT NULL, lottery TEXT NOT NULL, jackpot INTEGER NOT NULL, PRIMARY KEY (guild_id, lottery)
+);
+CREATE TABLE IF NOT EXISTS eco_lottery_draws (     -- 抽選の結果の記録
+  guild_id TEXT NOT NULL, lottery TEXT NOT NULL, round INTEGER NOT NULL, winning INTEGER NOT NULL, jackpot INTEGER NOT NULL, jackpot_won INTEGER NOT NULL,
+  tickets INTEGER NOT NULL, sales INTEGER NOT NULL, paid INTEGER NOT NULL, winners TEXT NOT NULL, at INTEGER NOT NULL,
+  PRIMARY KEY (guild_id, lottery, round)
+);
 CREATE TABLE IF NOT EXISTS eco_audit (            -- 管理者の操作の記録(だれが・だれに・何を・いくら)
   id INTEGER PRIMARY KEY AUTOINCREMENT, guild_id TEXT NOT NULL, actor_id TEXT NOT NULL, actor_name TEXT NOT NULL,
   target_id TEXT, action TEXT NOT NULL, amount INTEGER, note TEXT, at INTEGER NOT NULL
@@ -242,6 +254,21 @@ export function takeHolding(g, u, company, shares) {
   const r = db.prepare('UPDATE eco_stock_holdings SET shares=shares-?, cost=cost-? WHERE guild_id=? AND user_id=? AND company=? AND shares>=?').run(shares, Math.round(cur.cost * shares / Math.max(1, cur.shares)), g, u, company, shares);
   return Number(r.changes) > 0 ? Math.round(cur.cost * shares / Math.max(1, cur.shares)) : null;
 }
+/* ---------- 宝くじ(くじの種類 = lottery ごと) ---------- */
+export const lotteryJackpot = (g, lot, base) => db.prepare('SELECT jackpot FROM eco_lottery_state WHERE guild_id=? AND lottery=?').get(g, lot)?.jackpot ?? base;
+export const setLotteryJackpot = (g, lot, v) => db.prepare('INSERT INTO eco_lottery_state (guild_id,lottery,jackpot) VALUES (?,?,?) ON CONFLICT(guild_id,lottery) DO UPDATE SET jackpot=excluded.jackpot').run(g, lot, v);
+export const addTicket = (g, lot, round, u, number, price, qty) => db.prepare(`INSERT INTO eco_lottery_tickets (guild_id,lottery,round,user_id,number,price,qty) VALUES (?,?,?,?,?,?,?)
+  ON CONFLICT(guild_id,lottery,round,user_id,number,price) DO UPDATE SET qty=qty+excluded.qty`).run(g, lot, round, u, number, price, qty);
+export const userTickets = (g, lot, round, u) => db.prepare('SELECT number, qty FROM eco_lottery_tickets WHERE guild_id=? AND lottery=? AND round=? AND user_id=? ORDER BY number').all(g, lot, round, u);
+export const userTicketCount = (g, lot, round, u) => db.prepare('SELECT COALESCE(SUM(qty),0) c FROM eco_lottery_tickets WHERE guild_id=? AND lottery=? AND round=? AND user_id=?').get(g, lot, round, u).c;
+export const roundSales = (g, lot, round) => db.prepare('SELECT COALESCE(SUM(qty),0) c FROM eco_lottery_tickets WHERE guild_id=? AND lottery=? AND round=?').get(g, lot, round).c;
+/** 締め切った回のくじを、まとめて取り出して消す(取れたときだけ精算する = 二重に払わない) */
+export const claimLotteryRounds = (g, lot, upToRound) => db.prepare('DELETE FROM eco_lottery_tickets WHERE guild_id=? AND lottery=? AND round<=? RETURNING round, user_id, number, qty, price').all(g, lot, upToRound);
+/** 設定から消されたくじの、売れ残り(払い戻し用)。keepIds 以外のくじを、すべて取り出して消す */
+export const claimOrphanTickets = (g, keepIds) => db.prepare(`DELETE FROM eco_lottery_tickets WHERE guild_id=? AND lottery NOT IN (${keepIds.map(() => '?').join(',') || "''"}) RETURNING user_id, qty, price`).all(g, ...keepIds);
+export const pendingLotteryGuilds = () => db.prepare('SELECT DISTINCT guild_id FROM eco_lottery_tickets').all().map((r) => r.guild_id);
+export const recordDraw = (g, lot, r) => db.prepare('INSERT OR REPLACE INTO eco_lottery_draws (guild_id,lottery,round,winning,jackpot,jackpot_won,tickets,sales,paid,winners,at) VALUES (?,?,?,?,?,?,?,?,?,?,?)').run(g, lot, r.round, r.winning, r.jackpot, r.jackpotWon ? 1 : 0, r.tickets, r.sales, r.paid, JSON.stringify(r.winners), Date.now());
+export const lastDraw = (g, lot) => { const r = db.prepare('SELECT * FROM eco_lottery_draws WHERE guild_id=? AND lottery=? ORDER BY round DESC LIMIT 1').get(g, lot); return r && { ...r, winners: JSON.parse(r.winners) }; };
 export const setHeistDeadline = (g, u, deadline) => db.prepare('UPDATE eco_heist SET deadline=? WHERE guild_id=? AND user_id=?').run(deadline, g, u);
 /** ゲームを終わらせる。取れたら、そのゲームを返す(同時に2か所から終わらせても、片方しか取れない=二重に精算されない) */
 export const claimHeist = (g, u) => heistRow(db.prepare('DELETE FROM eco_heist WHERE guild_id=? AND user_id=? RETURNING *').get(g, u));

@@ -32,8 +32,8 @@ export function sanitizeEffects(input) {
 export function sanitizeShopItems(input, current = DEFAULT_SHOP) {
   if (!Array.isArray(input)) return current;
   const used = new Set(), out = [];
-  for (const raw of input.slice(0, MAX_SHOP_ITEMS)) {
-    const name = clean(raw?.name, 12); if (!name) continue;
+  for (const raw of input.filter((x) => clean(x?.name, 12)).slice(0, MAX_SHOP_ITEMS)) { // 名前が空のものは捨ててから、最大12品
+    const name = clean(raw?.name, 12);
     let id = /^shop_[a-z0-9]{1,12}$/.test(String(raw?.id ?? '')) ? raw.id : null;
     if (!id || used.has(id)) { let n = 1; while (used.has(`shop_n${n}`) || out.some((x) => x.id === `shop_n${n}`)) n++; id = `shop_n${n}`; }
     used.add(id);

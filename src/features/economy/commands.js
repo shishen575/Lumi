@@ -1,6 +1,6 @@
 import { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, MessageFlags } from 'discord.js';
 import { getSettings, money } from './settings.js';
-import { holdings, holding, addHolding, takeHolding, getPet, adoptPet, renamePet, releasePet, updatePet, setStatus, activeStatuses, shiftsOf, allShifts, addShift, getHeat, addHeat, clearHeat, topWanted, itemQty, allItems, addItem, useItem, transfer, adjustBalance, clearCooldowns, audit, peek, deposit, withdraw, cooldownLeft, setCooldown, jailLeft, jail, release, richest, getBj, saveBj, deleteBj, allBj, claimBj, getRamen, saveRamen, claimRamen, getHeist, saveHeist, claimHeist, expiredHeists, setHeistDeadline, releaseAll } from './db.js';
+import { addTicket, userTickets, userTicketCount, roundSales, lotteryJackpot, lastDraw, holdings, holding, addHolding, takeHolding, getPet, adoptPet, renamePet, releasePet, updatePet, setStatus, activeStatuses, shiftsOf, allShifts, addShift, getHeat, addHeat, clearHeat, topWanted, itemQty, allItems, addItem, useItem, transfer, adjustBalance, clearCooldowns, audit, peek, deposit, withdraw, cooldownLeft, setCooldown, jailLeft, jail, release, richest, getBj, saveBj, deleteBj, allBj, claimBj, getRamen, saveRamen, claimRamen, getHeist, saveHeist, claimHeist, expiredHeists, setHeistDeadline, releaseAll } from './db.js';
 import { ensureAccount, pay, collect, fine, treasury } from './ledger.js';
 import { hasAccessSync, isOperator } from '../../core/access.js';
 import { PermissionFlagsBits } from 'discord.js';
@@ -14,6 +14,8 @@ import { POLICE_BONUS_CAP } from './wanted.js';
 import { userFx } from './userfx.js';
 import { marketNow, unitPrice, sparkline } from './stockmarket.js';
 import { VOL_LABELS, companyOf } from './stocks.js';
+import { MAX_LOTTERIES, lotteriesOf, estimateRtp, roundOf, drawTimeOf, pad, drawNumber } from './lottery.js';
+import { settleGuild, announce, drawEmbed } from './lotteryengine.js';
 import { SPECIES, levelOf, nextXp, MAX_LEVEL, hungerNow, hungerBar, petFx } from './pets.js';
 import { SLOTS, MAX_SHOP_ITEMS, SHOP_MAX_STACK, shopItems, shopById, itemText } from './shop.js';
 import { describeFx } from './effects.js';
@@ -852,6 +854,59 @@ export const stockCommand = {
   },
 };
 
+/* ================= 宝くじ(サーバーごとに、自由に、複数のくじを作れる) ================= */
+const lotteryOff = (i) => refuse(i, 'このサーバーでは、宝くじはオフです。管理者が、ダッシュボードの「通貨 → お店・ペット・株など」でオンにできます。');
+export const lotteryCommand = {
+  data: guildOnly(new SlashCommandBuilder().setName('lottery').setDescription('宝くじ(番号を選んで買います。決まった時刻に、自動で抽選します)')
+    .addSubcommand((c) => c.setName('info').setDescription('くじの一覧、または、1つのくじの詳しい情報(次の抽選・ジャックポット・自分のくじ)')
+      .addIntegerOption((o) => o.setName('lottery').setDescription('くじの番号(省略すると、一覧)').setMinValue(1).setMaxValue(MAX_LOTTERIES)))
+    .addSubcommand((c) => c.setName('buy').setDescription('くじを買います')
+      .addIntegerOption((o) => o.setName('lottery').setDescription('くじの番号(/lottery info の番号。省略すると 1)').setMinValue(1).setMaxValue(MAX_LOTTERIES))
+      .addIntegerOption((o) => o.setName('count').setDescription('枚数(省略すると1枚)').setMinValue(1).setMaxValue(100))
+      .addIntegerOption((o) => o.setName('number').setDescription('番号(省略すると、ランダム。指定すると、その番号を枚数ぶん買います)').setMinValue(0).setMaxValue(9999)))
+    .addSubcommand((c) => c.setName('results').setDescription('前回の抽選結果を見ます')
+      .addIntegerOption((o) => o.setName('lottery').setDescription('くじの番号(省略すると 1)').setMinValue(1).setMaxValue(MAX_LOTTERIES)))),
+  async execute(i) {
+    const s = await open(i); if (!s) return;
+    const g = i.guildId, u = i.user.id, now = Date.now(), sub = i.options.getSubcommand(), all = lotteriesOf(s);
+    for (const d of settleGuild(s, g, now)) await announce(i.client, s, g, d); // 抽選の時刻を過ぎていれば、ここでも抽選する(止まっていた間の取りこぼし防止)
+    if (!s.lotteryEnabled && sub !== 'results') return lotteryOff(i);
+    const pick = i.options.getInteger('lottery');
+    if (sub === 'info' && pick === null) {
+      const e = new EmbedBuilder().setColor(0xf1c40f).setTitle('🎟️ 宝くじ').setDescription('`/lottery buy lottery:番号` で買えます。詳しくは `/lottery info lottery:番号`。')
+        .addFields(all.map((L, n) => { const at = Math.floor(drawTimeOf(roundOf(now, L), L) / 1000); return { name: `${n + 1}. ${L.emoji} ${L.name}`, value: `1枚 **${money(s, L.price)}** ・ ${L.digits}桁 ・ 抽選 <t:${at}:R>\n🥇 ジャックポット **${money(s, lotteryJackpot(g, L.id, L.jackpotBase))}**`, inline: false }; }))
+        .setFooter({ text: `所持金 ${wallet(i).toLocaleString()}` });
+      return i.reply({ embeds: [e], ...EPH });
+    }
+    const n = pick ?? 1, L = all[n - 1]; if (!L) return refuse(i, `${n} 番のくじは、ありません。(/lottery info で一覧を見られます)`);
+    const round = roundOf(now, L), drawAt = drawTimeOf(round, L), mine = userTickets(g, L.id, round, u), count = userTicketCount(g, L.id, round, u);
+    if (sub === 'results') {
+      const d = lastDraw(g, L.id); if (!d) return refuse(i, `${L.emoji} ${L.name}は、まだ抽選が行われていません。`);
+      return i.reply({ embeds: [drawEmbed(s, { ...d, lottery: L, jackpotWon: !!d.jackpot_won, short: 0, nextJackpot: lotteryJackpot(g, L.id, L.jackpotBase) })], ...EPH });
+    }
+    if (sub === 'info') {
+      const est = estimateRtp(L);
+      const e = new EmbedBuilder().setColor(0xf1c40f).setTitle(`${L.emoji} ${L.name}`)
+        .setDescription(`次の抽選: <t:${Math.floor(drawAt / 1000)}:F>(<t:${Math.floor(drawAt / 1000)}:R>)\n1枚 **${money(s, L.price)}** ・ ${L.digits}桁(${pad(0, L.digits)}〜${'9'.repeat(L.digits)})・ 1人 最大 ${L.maxTickets}枚まで`)
+        .addFields({ name: `🥇 1等(${L.digits}桁一致)`, value: `**${money(s, lotteryJackpot(g, L.id, L.jackpotBase))}**\n当たりが出なければ、持ち越し(確率 ${(est.win1 * 100).toFixed(est.win1 < 0.001 ? 2 : 1)}%)`, inline: true },
+          { name: `🥈 2等(下${L.digits - 1}桁)${L.digits >= 3 ? ' / 🥉 3等(下' + (L.digits - 2) + '桁)' : ''}`, value: `くじ代の **×${L.prize2}**${L.digits >= 3 ? `\nくじ代の **×${L.prize3}**` : ''}`, inline: true },
+          { name: `あなたのくじ(${count}枚)`, value: mine.length ? mine.map((t) => `${pad(t.number, L.digits)}${t.qty > 1 ? `×${t.qty}` : ''}`).join('  ').slice(0, 1000) : 'まだ買っていません。' })
+        .setFooter({ text: `この回の販売 ${roundSales(g, L.id, round).toLocaleString()}枚 ・ 所持金 ${wallet(i).toLocaleString()}` });
+      return i.reply({ embeds: [e], ...EPH });
+    }
+    const k = i.options.getInteger('count') ?? 1, picked = i.options.getInteger('number'), maxNum = 10 ** L.digits - 1;
+    if (picked !== null && picked > maxNum) return refuse(i, `${L.name}の番号は、${pad(0, L.digits)}〜${maxNum} です。`);
+    if (count + k > L.maxTickets) return refuse(i, `1回の抽選で買えるのは、最大 ${L.maxTickets}枚までです。(いま ${count}枚)`);
+    const total = L.price * k;
+    if (!collect(g, u, total, s)) return refuse(i, `お金が足りません。(必要 ${money(s, total)} / 手持ち ${money(s, Math.max(0, wallet(i)))})`);
+    const bought = new Map();
+    if (picked !== null) bought.set(picked, k); else for (let q = 0; q < k; q++) { const num = drawNumber(L.digits); bought.set(num, (bought.get(num) ?? 0) + 1); }
+    for (const [num, qty] of bought) addTicket(g, L.id, round, u, num, L.price, qty);
+    const list = [...bought].sort((a, b) => a[0] - b[0]).map(([num, qty]) => `${pad(num, L.digits)}${qty > 1 ? `×${qty}` : ''}`).join('  ');
+    await i.reply({ embeds: [card(i, s, 0xf1c40f, `${L.emoji} ${L.name}を買いました`, `**${k}枚**(番号: ${list.slice(0, 900)})\n**- ${money(s, total)}**\n抽選: <t:${Math.floor(drawAt / 1000)}:R>`)], ...EPH });
+  },
+};
+
 /* ================= 指名手配 ================= */
 const wantedOff = (i) => refuse(i, 'このサーバーでは、指名手配はオフです。管理者が、ダッシュボードの「通貨 → 指名手配」でオンにできます。');
 export const wantedCommand = {
@@ -901,4 +956,4 @@ export const arrestCommand = {
   },
 };
 
-export const commands = [balanceCommand, depositCommand, withdrawCommand, richestCommand, crimeCommand, workCommand, begCommand, bailCommand, chinchiroCommand, slotCommand, blackjackCommand, blackjackEndCommand, heistCommand, shopCommand, useCommand, petCommand, stockCommand, cooldownsCommand, jobCommand, wantedCommand, arrestCommand, marketCommand, releaseCommand, payCommand, balanceEditCommand, cooldownResetCommand];
+export const commands = [balanceCommand, depositCommand, withdrawCommand, richestCommand, crimeCommand, workCommand, begCommand, bailCommand, chinchiroCommand, slotCommand, blackjackCommand, blackjackEndCommand, heistCommand, shopCommand, useCommand, petCommand, stockCommand, lotteryCommand, cooldownsCommand, jobCommand, wantedCommand, arrestCommand, marketCommand, releaseCommand, payCommand, balanceEditCommand, cooldownResetCommand];
