@@ -34,9 +34,11 @@ const pending = new Map();
 export function stickBoards(client, repost) {
   // repost: { stock: (g) => Promise, price: (g) => Promise } / それぞれ、設定を見て、出し直す(チャンネルが違う・オフなら何もしない)
   return (msg) => {
-    if (!msg.guildId || msg.author?.id === client.user?.id) return;
+    if (!msg.guildId) return;
+    // 自分(Bot)のメッセージは、ボード自身なので無視する。ただし、コマンドの返事(スラッシュコマンドへの返信)は、数える(返事のあとに、ボードが下へ戻る)
+    if (msg.author?.id === client.user?.id && !msg.interactionMetadata && !msg.interaction) return;
     for (const [kind, fn] of Object.entries(repost)) {
-      const st = getKV(msg.guildId, `board:${kind}`, {}); if (!st.ch || st.ch !== msg.channelId) continue; // 「一番下に出す」がオフなら、出し直す側(repost)が、何もしない
+      const st = getKV(msg.guildId, `board:${kind}`, {}); if (!st.ch || st.ch !== msg.channelId || st.msg === msg.id) continue; // 「一番下に出す」がオフなら、出し直す側(repost)が、何もしない
       const key = `${msg.guildId}:${kind}`, now = Date.now(), cur = pending.get(key) ?? { first: now };
       clearTimeout(cur.t);
       cur.t = setTimeout(() => { pending.delete(key); fn(msg.guildId).catch((e) => console.warn(`[board:${kind}] 出し直せませんでした:`, e.message)); }, Math.min(8000, Math.max(1000, 30000 - (now - cur.first))));
