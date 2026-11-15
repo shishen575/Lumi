@@ -58,10 +58,11 @@ export function notesEmbed(notes, page) {
     .setDescription(`**${n.title}**(${n.date})\n\n${body.length > 3800 ? body.slice(0, 3797) + '…' : body}`)
     .setFooter({ text: `${page + 1} / ${notes.length}(新しい順)${page === 0 ? ' ・ 最新' : ''}${base ? ` ・ 更新履歴: ${base}/changelog.html` : ''}${version ? ` ・ 実行中 ${version}` : ''}` });
 }
+// ボタンの識別番号(custom_id)は、1つのメッセージの中で、重複してはいけない(重複すると、Discordがエラーにする)。動作の名前を、末尾に付けて、必ず別にする
 const navRow = (notes, page, uid) => new ActionRowBuilder().addComponents(
-  new ButtonBuilder().setCustomId(`rn:0:${uid}`).setEmoji('⏮').setLabel('最新').setStyle(ButtonStyle.Secondary).setDisabled(page <= 0),
-  new ButtonBuilder().setCustomId(`rn:${page - 1}:${uid}`).setLabel('新しい版').setStyle(ButtonStyle.Primary).setDisabled(page <= 0),
-  new ButtonBuilder().setCustomId(`rn:${page + 1}:${uid}`).setLabel('古い版').setStyle(ButtonStyle.Primary).setDisabled(page >= notes.length - 1),
+  new ButtonBuilder().setCustomId(`rn:0:${uid}:first`).setEmoji('⏮').setLabel('最新').setStyle(ButtonStyle.Secondary).setDisabled(page <= 0),
+  new ButtonBuilder().setCustomId(`rn:${Math.max(0, page - 1)}:${uid}:prev`).setLabel('新しい版').setStyle(ButtonStyle.Primary).setDisabled(page <= 0),
+  new ButtonBuilder().setCustomId(`rn:${Math.min(notes.length - 1, page + 1)}:${uid}:next`).setLabel('古い版').setStyle(ButtonStyle.Primary).setDisabled(page >= notes.length - 1),
 );
 export const releaseNotesCommand = {
   data: (() => {
