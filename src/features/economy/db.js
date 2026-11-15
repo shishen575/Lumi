@@ -222,6 +222,7 @@ export const updatePet = (g, u, { hunger, xpAdd = 0 }, now = Date.now()) => db.p
 /* ---------- 株 ---------- */
 export const lastStockRow = (g, company) => db.prepare('SELECT tick, price FROM eco_stock_prices WHERE guild_id=? AND company=? ORDER BY tick DESC LIMIT 1').get(g, company) ?? null;
 export const stockPriceAt = (g, company, tick) => db.prepare('SELECT price FROM eco_stock_prices WHERE guild_id=? AND company=? AND tick<=? ORDER BY tick DESC LIMIT 1').get(g, company, tick)?.price ?? null;
+export const stockRange = (g, company, fromTick) => db.prepare('SELECT MIN(price) lo, MAX(price) hi FROM eco_stock_prices WHERE guild_id=? AND company=? AND tick>=?').get(g, company, fromTick);
 export const insertStockPrices = (g, company, rows, keepFromTick) => {
   db.exec('BEGIN');
   try {

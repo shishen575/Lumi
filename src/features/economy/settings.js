@@ -1,7 +1,7 @@
 import { getKV, setKV } from '../../core/db.js';
 import { DEFAULT_RANKS, sanitizeRanks } from './ranks.js';
 import { sanitizeBalance } from './balance.js';
-import { DEFAULT_NAMES, sanitizeNames } from './stocks.js';
+import { DEFAULT_NAMES, sanitizeNames, DEFAULT_LEVELS, sanitizeLevels } from './stocks.js';
 import { DEFAULT_SHOP, sanitizeShopItems } from './shop.js';
 
 // サーバーごとの設定。既定はオフ(管理者がダッシュボードでオンにする)
@@ -19,6 +19,7 @@ export const DEFAULTS = {
   arrestMinShifts: 5,      // /arrest を使うのに必要な、警察のバイトの出勤回数
   balance: {},             // ゲームバランスの上書き({ キー: 数値 })。ダッシュボードの「ゲームバランス」で変える。なければ初期値
   stocksEnabled: false,    // 株。オンのとき、/stock が使える
+  stockLevels: DEFAULT_LEVELS, // 会社ごとの変動の大きさ(1〜10の10段階)
   stockNames: DEFAULT_NAMES, // 会社の名前・ティッカー・絵文字(サーバーごとに変えられる)
   petsEnabled: false,      // ペット。オンのとき、/pet が使え、育てるとボーナスがつく
   shopItems: DEFAULT_SHOP, // お店の品(名前・値段・効果などを、サーバーごとに変えられる)
@@ -30,6 +31,7 @@ const clamp = (v, lo, hi, def) => { const n = Math.floor(Number(v)); return Numb
 export const getSettings = (guildId) => {
   const s = { ...DEFAULTS, ...getKV(guildId, 'economy', {}) };
   s.stockNames = { ...DEFAULT_NAMES, ...s.stockNames };
+  s.stockLevels = { ...DEFAULT_LEVELS, ...s.stockLevels };
   s.jobRanks = { ...DEFAULT_RANKS, ...s.jobRanks }; // あとから増えた職業(ラーメン屋など)の階級は、初期値で補う
   return s;
 };
@@ -49,6 +51,7 @@ export function saveSettings(guildId, s) {
     petsEnabled: s.petsEnabled === undefined ? cur.petsEnabled : !!s.petsEnabled,
     stocksEnabled: s.stocksEnabled === undefined ? cur.stocksEnabled : !!s.stocksEnabled,
     stockNames: s.stockNames === undefined ? cur.stockNames : sanitizeNames(s.stockNames, cur.stockNames),
+    stockLevels: s.stockLevels === undefined ? cur.stockLevels : sanitizeLevels(s.stockLevels, cur.stockLevels),
     blackMarket: s.blackMarket === undefined ? cur.blackMarket : !!s.blackMarket,
     balance: s.balance === undefined ? cur.balance : sanitizeBalance(s.balance, cur.balance),
     promotionEnabled: s.promotionEnabled === undefined ? cur.promotionEnabled : !!s.promotionEnabled,

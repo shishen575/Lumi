@@ -12,8 +12,8 @@ import { rankFor, scalePay } from './ranks.js';
 import { RAMEN, makeOrder, gradeRamen, GRADES } from './ramen.js';
 import { POLICE_BONUS_CAP } from './wanted.js';
 import { userFx } from './userfx.js';
-import { marketNow, unitPrice } from './stockmarket.js';
-import { COMPANIES, companyOf } from './stocks.js';
+import { marketNow, unitPrice, sparkline } from './stockmarket.js';
+import { VOL_LABELS, companyOf } from './stocks.js';
 import { SPECIES, levelOf, nextXp, MAX_LEVEL, hungerNow, hungerBar, petFx } from './pets.js';
 import { SLOTS, MAX_SHOP_ITEMS, SHOP_MAX_STACK, shopItems, shopById, itemText } from './shop.js';
 import { describeFx } from './effects.js';
@@ -828,7 +828,7 @@ export const stockCommand = {
       const fields = market.map((m, n) => {
         const c = companyOf(s, m.company), px = unitPrice(m.price), h = mine[c.id], ev = m.news[0];
         if (h) { total += px * h.shares; cost += h.cost; }
-        return { name: `${n + 1}. ${c.emoji} ${c.ticker}  ${c.name}`, value: `**${money(s, px)}** ${arrow(m.change)} ${pct(m.change)}(24時間)\n${h ? `持ち株 **${h.shares}株**(取得 ${money(s, Math.round(h.cost / h.shares))}/株 ・ 損益 **${money(s, px * h.shares - h.cost)}**)` : '持ち株なし'}${ev ? `\n📰 ${ev.minutesAgo}分前: ${ev.up ? '🔺' : '🔻'} ${ev.text}` : ''}\n-# ${COMPANIES_BLURB[c.id]}`, inline: false };
+        return { name: `${n + 1}. ${c.emoji} ${c.ticker}  ${c.name}`, value: `**${money(s, px)}** ${arrow(m.change)} ${pct(m.change)}(24時間)\n\`${sparkline(m.spark)}\` 24時間: 高 ${unitPrice(m.hi).toLocaleString()} / 安 ${unitPrice(m.lo).toLocaleString()}\n${h ? `持ち株 **${h.shares}株**(取得 ${money(s, Math.round(h.cost / h.shares))}/株 ・ 損益 **${money(s, px * h.shares - h.cost)}**)` : '持ち株なし'}${ev ? `\n📰 ${ev.minutesAgo}分前: ${ev.up ? '🔺' : '🔻'} ${ev.text}` : ''}\n-# 変動 ${'■'.repeat(m.level)}${'□'.repeat(10 - m.level)} Lv${m.level}(${VOL_LABELS[m.level - 1]})`, inline: false };
       });
       const e = new EmbedBuilder().setColor(0x2ecc71).setTitle('📈 株式市場').setDescription(`株価は、**${Math.round(cfg.tickMs / 60000)}分ごと**に動きます。売買の手数料は、それぞれ ${(cfg.fee * 100).toFixed(1)}%。\`/stock buy\` \`/stock sell\``).addFields(fields)
         .setFooter({ text: `持ち株の評価額 ${total.toLocaleString()}(損益 ${(total - cost).toLocaleString()})・ 手持ち ${wallet(i).toLocaleString()}` });
@@ -851,7 +851,6 @@ export const stockCommand = {
     return i.reply({ embeds: [card(i, s, profit >= 0 ? GREEN : RED, `${c.emoji} ${c.name} を売りました`, `**${n}株** × ${money(s, px)}\n**+ ${money(s, p.paid)}**(手数料 ${money(s, fee)} 引き)${shortNote(s, p)}\n損益: **${profit >= 0 ? '+' : ''}${money(s, profit)}**(取得費 ${money(s, basis)})`)] });
   },
 };
-const COMPANIES_BLURB = Object.fromEntries(COMPANIES.map((c) => [c.id, c.blurb]));
 
 /* ================= 指名手配 ================= */
 const wantedOff = (i) => refuse(i, 'このサーバーでは、指名手配はオフです。管理者が、ダッシュボードの「通貨 → 指名手配」でオンにできます。');

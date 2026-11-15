@@ -91,7 +91,7 @@ function buildSchema() {
   L.push(p('pet.playXp', 'ペット', pg, '遊び1回で増える、なつき度', 5, 0, 1000, ''));
   L.push(p('pet.power', 'ペット', pg, 'ボーナスの強さ(100% = 初期値)', 100, 0, 500, '%'));
   const kg = '📈 株';
-  L.push(p('stock.tickMin', '株', kg, '株価が動く間隔', 15, 1, 1440, '分'));
+  L.push(p('stock.tickMin', '株', kg, '株価が動く間隔', 5, 1, 1440, '分'));
   L.push(p('stock.volPct', '株', kg, '値動きの大きさ(100% = 初期値)', 100, 0, 500, '%'));
   L.push(p('stock.feePermille', '株', kg, '売買の手数料(売り・買いそれぞれ)', 10, 0, 100, '‰'));
   L.push(p('stock.maxShares', '株', kg, '1つの会社で、持てる株の数', 10000, 1, 1e8, '株'));
