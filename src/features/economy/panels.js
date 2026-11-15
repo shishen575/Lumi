@@ -1,13 +1,17 @@
-import { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, MessageFlags } from 'discord.js';
+import { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, ModalBuilder, TextInputBuilder, TextInputStyle, MessageFlags } from 'discord.js';
 import { getKV, setKV } from '../../core/db.js';
 import { registerHiddenCommands, resyncGuildCommands } from '../../core/commands.js';
 import { getSettings, money } from './settings.js';
 import { CRIMES, JOBS } from './jobs.js';
 import { HEISTS } from './heist.js';
-import { crimeOf, jobOf, heistOf, begOf } from './balance.js';
+import { crimeOf, jobOf, heistOf, begOf, petCfg } from './balance.js';
 import { shopItems, itemText } from './shop.js';
-import { allItems } from './db.js';
-import { crimeCommand, heistCommand, workCommand, begCommand, shopCommand, useCommand } from './commands.js';
+import { allItems, getPets } from './db.js';
+import { petsOpen, bonusLabel } from './pets.js';
+import { estateOf } from './estate.js';
+import { ITEMS as MARKET_ITEMS } from './market.js';
+import { COMPANIES, companyOf } from './stocks.js';
+import { crimeCommand, heistCommand, workCommand, begCommand, shopCommand, useCommand, estateCommand, marketCommand, petCommand, stockCommand } from './commands.js';
 
 /**
  * パネル: チャンネルに置く、ボタンつきのメッセージ。コマンドを打たなくても、ボタンで、犯罪・バイト・お店が使える。
@@ -16,8 +20,13 @@ import { crimeCommand, heistCommand, workCommand, begCommand, shopCommand, useCo
 export const PANELS = {
   crime: { title: '犯罪パネル', commands: ['crime', 'heist'] },
   work: { title: 'バイトパネル', commands: ['work', 'beg'] },
-  shop: { title: 'お店パネル', commands: ['shop', 'use'] },
+  // お店パネルは、お店・不動産・闇市をまとめたもの(v2 から)。v1 のパネルは、お店だけだったので、廃止するコマンドも、お店だけ
+  shop: { title: 'お店パネル(お店・不動産・闇市)', commands: ['shop', 'use', 'estate', 'market'], v1: ['shop', 'use'] },
+  pet: { title: 'ペットパネル', commands: ['pet'] },
+  stock: { title: '株パネル', commands: ['stock'] },
 };
+export const PANEL_VERSION = 2;
+const commandsOf = (kind, st) => (st?.v >= 2 || !PANELS[kind].v1 ? PANELS[kind].commands : PANELS[kind].v1);
 const KEY = 'panels';
 export const panelState = (g) => getKV(g, KEY, {});
 const link = (g, st) => `https://discord.com/channels/${g}/${st.ch}/${st.msg}`;
@@ -27,7 +36,7 @@ registerHiddenCommands((g) => {
   const out = {};
   for (const [kind, st] of Object.entries(panelState(g))) {
     if (!st?.hide || !PANELS[kind]) continue;
-    for (const name of PANELS[kind].commands) out[name] = `このサーバーでは、\`/${name}\` は廃止されました。パネル(${link(g, st)})から使えます。`;
+    for (const name of commandsOf(kind, st)) out[name] = `このサーバーでは、\`/${name}\` は廃止されました。パネル(${link(g, st)})から使えます。`;
   }
   return out;
 });
@@ -66,11 +75,44 @@ export function panelMessage(kind, g) {
       components: rows([...jobs.map(({ k, j }) => btn(`panel:work:j:${k}`, j.name, j.emoji, ButtonStyle.Primary)), btn('panel:work:beg', '乞食', '🙏')]),
     };
   }
-  const items = shopItems(s);
+  const sel = (id, placeholder, options) => new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId(id).setPlaceholder(placeholder).addOptions(options.slice(0, 25)));
+  const opt = (label, value, description) => ({ label: String(label).slice(0, 100), value, ...(description ? { description: String(description).slice(0, 100) } : {}) });
+  if (kind === 'pet') {
+    const list = petsOpen(s), pc = petCfg(s);
+    return {
+      embeds: [new EmbedBuilder().setColor(0xe67e22).setTitle('🐾 ペットパネル').setDescription(`下のメニューで、ペットを飼えます(最初は ${pc.baseSlots}匹まで。不動産を買うと増えます)。育てると、ボーナスがつきます。`)
+        .addFields({ name: '飼える動物', value: list.map((x) => `${x.emoji} **${x.name}** ${M(x.price)} ・ ${x.foodEmoji}${x.foodName} ${M(x.feedCost)}\n-# ${bonusLabel(x, pc.power)} / レベル`).join('\n').slice(0, 1024) || '(いません)' })],
+      components: [...(list.length ? [sel('panel:pet:adopt', '🐾 ペットを飼う', list.map((x) => ({ ...opt(`${x.emoji} ${x.name} ${x.price.toLocaleString()}`, x.id, `${bonusLabel(x, pc.power)} / レベル`) })))] : []),
+        new ActionRowBuilder().addComponents(btn('panel:pet:status', 'ようす', '🐾'), btn('panel:pet:feed', '餌', '🍖', ButtonStyle.Primary), btn('panel:pet:play', '遊ぶ', '🎾', ButtonStyle.Primary), btn('panel:pet:rename', '名前', '✏️'), btn('panel:pet:release', '手放す', '👋', ButtonStyle.Danger))],
+    };
+  }
+  if (kind === 'stock') {
+    return {
+      embeds: [new EmbedBuilder().setColor(0x2ecc71).setTitle('📈 株パネル').setDescription('架空の会社の株を、売り買いできます。株価は、決まった間隔で動きます。')
+        .addFields({ name: '会社', value: COMPANIES.map((c0, n) => { const c = companyOf(s, c0); return `${n + 1}. ${c.emoji} **${c.ticker}** ${c.name}`; }).join('\n') })],
+      components: [new ActionRowBuilder().addComponents(btn('panel:stock:list', '株価・持ち株', '📈'), btn('panel:stock:buy', '買う', '🛒', ButtonStyle.Success), btn('panel:stock:sell', '売る', '💰', ButtonStyle.Danger))],
+    };
+  }
+  // お店パネル(お店・不動産・闇市)
+  const items = shopItems(s), props = estateOf(s), fields = [], comps = [];
+  if (s.shopEnabled && items.length) {
+    fields.push({ name: '🏪 お店', value: items.map((it) => `${it.emoji} **${it.name}** ${M(it.price)} ・ ${it.minutes}分\n-# ${itemText(it)}`).join('\n').slice(0, 1024) });
+    comps.push(sel('panel:shop:buy', '🏪 お店の品を買う', items.map((it) => opt(`${it.emoji} ${it.name} ${it.price.toLocaleString()}`, it.id, itemText(it)))));
+  }
+  if (s.estateEnabled && props.length) {
+    fields.push({ name: '🏢 不動産', value: props.map((p) => `${p.emoji} **${p.name}** ${M(p.price)} ・ 家賃 ${M(p.rent)}/時 − 維持費 ${M(p.upkeep)}`).join('\n').slice(0, 1024) });
+    comps.push(sel('panel:shop:estate', '🏢 不動産を買う', props.map((p) => opt(`${p.emoji} ${p.name} ${p.price.toLocaleString()}`, p.id, `家賃 ${p.rent}/時 − 維持費 ${p.upkeep} ・ 最大 ${p.maxOwn}件`))));
+  }
+  if (s.blackMarket) {
+    fields.push({ name: '🕶️ 闇市', value: MARKET_ITEMS.map((x) => `${x.emoji} **${x.name}** — ${x.desc}`).join('\n').slice(0, 1024) + '\n-# 値段は、毎日少し変わります(「闇市の相場」で確認)' });
+    comps.push(sel('panel:shop:market', '🕶️ 闇市で道具を買う', MARKET_ITEMS.map((x) => opt(`${x.emoji} ${x.name}`, x.id, x.desc))));
+  }
+  const ctl = [btn('panel:shop:list', 'お店の一覧', '📋'), btn('panel:shop:use', '使う', '🎒', ButtonStyle.Success)];
+  if (s.estateEnabled) ctl.push(btn('panel:shop:collect', '家賃を受け取る', '💰', ButtonStyle.Success), btn('panel:shop:estlist', '不動産の一覧', '🏢'));
+  if (s.blackMarket) ctl.push(btn('panel:shop:mlist', '闇市の相場', '🕶️'));
   return {
-    embeds: [new EmbedBuilder().setColor(0xb8860b).setTitle('🏪 お店パネル').setDescription('品のボタンを押すと、1つ買います。買った品は、「🎒 使う」で使います(しばらく、効果がつきます)。')
-      .addFields({ name: '品物', value: items.map((it) => `${it.emoji} **${it.name}** ${M(it.price)} ・ ${it.minutes}分\n-# ${itemText(it)}`).join('\n').slice(0, 1024) || '(品がありません)' })],
-    components: [...rows(items.map((it) => btn(`panel:shop:buy:${it.id}`, `${it.name} ${it.price.toLocaleString()}`, it.emoji))), new ActionRowBuilder().addComponents(btn('panel:shop:list', '一覧', '📋'), btn('panel:shop:use', '使う', '🎒', ButtonStyle.Success))],
+    embeds: [new EmbedBuilder().setColor(0xb8860b).setTitle('🏪 お店パネル').setDescription('下のメニューで、品を1つ買います(買う品を選ぶと、すぐに買います)。買った品は、「🎒 使う」で使います(しばらく、効果がつきます)。').addFields(...(fields.length ? fields : [{ name: '品物', value: '(いま、売っているものは、ありません)' }]))],
+    components: [...comps, new ActionRowBuilder().addComponents(ctl.slice(0, 5))],
   };
 }
 
@@ -85,7 +127,7 @@ export async function installPanel(client, g, kind, channelId, hide, sticky = tr
     if (old?.msg && old.ch !== ch.id) { try { await (await client.channels.cache.get(old.ch)?.messages.fetch(old.msg))?.delete(); } catch { /* もう無い */ } }
     msg = await ch.send({ ...payload, allowedMentions: { parse: [] } });
   }
-  setKV(g, KEY, { ...st, [kind]: { ch: ch.id, msg: msg.id, hide: !!hide, sticky: !!sticky, at: Date.now() } });
+  setKV(g, KEY, { ...st, [kind]: { ch: ch.id, msg: msg.id, hide: !!hide, sticky: !!sticky, v: PANEL_VERSION, at: Date.now() } });
   await resyncGuildCommands(g);
   return panelState(g)[kind];
 }
@@ -112,23 +154,69 @@ export async function removePanel(client, g, kind) {
   return true;
 }
 
-/** パネルのボタン・選択メニューの処理 */
+/** パネルのボタン・選択メニュー・入力欄(モーダル)の処理 */
+const EPH = { flags: MessageFlags.Ephemeral };
+const modal = (id, title, label, placeholder, required = true) => new ModalBuilder().setCustomId(id).setTitle(title).addComponents(new ActionRowBuilder().addComponents(
+  new TextInputBuilder().setCustomId('v').setLabel(label).setStyle(TextInputStyle.Short).setRequired(required).setMaxLength(20).setPlaceholder(placeholder)));
+const intOf = (i) => { const n = Math.floor(Number(String(i.fields.getTextInputValue('v') ?? '').normalize('NFKC').replace(/[,\s]/g, ''))); return Number.isFinite(n) ? n : null; };
+const selectRow = (id, placeholder, options) => new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId(id).setPlaceholder(placeholder).addOptions(options.slice(0, 25)));
 export const panelComponent = {
   id: 'panel',
   async execute(i) {
-    const [, kind, action, arg] = i.customId.split(':');
+    const [, kind, action, arg, arg2] = i.customId.split(':'), v0 = i.values?.[0], isModal = i.isModalSubmit?.();
+    const say = (content, extra = {}) => i.reply({ content, ...EPH, ...extra });
+    const s = getSettings(i.guildId);
     if (kind === 'crime') return action === 'h' ? heistCommand.execute(asCommand(i, { target: arg })) : crimeCommand.execute(asCommand(i, { type: arg }));
     if (kind === 'work') return action === 'beg' ? begCommand.execute(asCommand(i)) : workCommand.execute(asCommand(i, { job: arg }));
-    if (kind !== 'shop') return;
-    const s = getSettings(i.guildId), items = shopItems(s), gone = () => i.reply({ content: 'この品は、もうありません。パネルが古くなっています(管理者が、置き直せます)。', flags: MessageFlags.Ephemeral });
-    if (action === 'buy') { const n = items.findIndex((x) => x.id === arg) + 1; return n ? shopCommand.execute(asCommand(i, { item: n, amount: 1 }, 'buy')) : gone(); }
-    if (action === 'list') return shopCommand.execute(asCommand(i, {}, 'list'));
-    if (action === 'use') {
-      const own = allItems(i.guildId, i.user.id), have = items.filter((x) => own[x.id] > 0);
-      if (!have.length) return i.reply({ content: '使える品を、持っていません。品のボタンで買えます。', flags: MessageFlags.Ephemeral });
-      return i.reply({ content: '使う品を、選んでください。', flags: MessageFlags.Ephemeral,
-        components: [new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId('panel:shop:usesel').setPlaceholder('品を選ぶ').addOptions(have.slice(0, 25).map((x) => ({ label: `${x.name}(持っている数 ${own[x.id]})`.slice(0, 100), value: x.id, description: itemText(x).slice(0, 100) || undefined }))))] });
+
+    if (kind === 'shop') {
+      const items = shopItems(s), gone = () => say('この品は、もうありません。パネルが古くなっています(管理者が、置き直せます)。');
+      if (action === 'buy') { const id = arg ?? v0, n = items.findIndex((x) => x.id === id) + 1; return n ? shopCommand.execute(asCommand(i, { item: n, amount: 1 }, 'buy')) : gone(); } // arg: 古いパネルのボタン / v0: 選択メニュー
+      if (action === 'list') return shopCommand.execute(asCommand(i, {}, 'list'));
+      if (action === 'estate') { const n = estateOf(s).findIndex((x) => x.id === v0) + 1; return n ? estateCommand.execute(asCommand(i, { property: n, count: 1 }, 'buy')) : gone(); }
+      if (action === 'estlist') return estateCommand.execute(asCommand(i, {}, 'list'));
+      if (action === 'collect') return estateCommand.execute(asCommand(i, {}, 'collect'));
+      if (action === 'market') return MARKET_ITEMS.some((x) => x.id === v0) ? marketCommand.execute(asCommand(i, { item: v0, amount: 1 }, 'buy')) : gone();
+      if (action === 'mlist') return marketCommand.execute(asCommand(i, {}, 'list'));
+      if (action === 'use') {
+        const own = allItems(i.guildId, i.user.id), have = items.filter((x) => own[x.id] > 0);
+        if (!have.length) return say('使える品を、持っていません。メニューで買えます。');
+        return say('使う品を、選んでください。', { components: [selectRow('panel:shop:usesel', '品を選ぶ', have.map((x) => ({ label: `${x.name}(持っている数 ${own[x.id]})`.slice(0, 100), value: x.id, description: itemText(x).slice(0, 100) || undefined })))] });
+      }
+      if (action === 'usesel') { const n = items.findIndex((x) => x.id === v0) + 1; return n ? useCommand.execute(asCommand(i, { item: n })) : gone(); }
+      return;
     }
-    if (action === 'usesel') { const n = items.findIndex((x) => x.id === i.values?.[0]) + 1; return n ? useCommand.execute(asCommand(i, { item: n })) : gone(); }
+
+    if (kind === 'pet') {
+      const pets = getPets(i.guildId, i.user.id), list = petsOpen(s);
+      const run = (act, n) => {
+        if (act === 'feed' || act === 'play') return petCommand.execute(asCommand(i, { pet: n }, act));
+        if (act === 'rename') return i.showModal(modal(`panel:pet:renamem:${n}`, '名前を変える', '新しい名前(12文字まで)', 'ポチ'));
+        if (act === 'release') return say(`${pets[n - 1].name} を、手放しますか?(お金は戻りません)`, { components: [new ActionRowBuilder().addComponents(btn(`panel:pet:releasec:${n}`, '手放す', '👋', ButtonStyle.Danger))] });
+      };
+      if (action === 'status') return petCommand.execute(asCommand(i, {}, 'status'));
+      if (action === 'adopt') { const n = list.findIndex((x) => x.id === v0) + 1; return n ? petCommand.execute(asCommand(i, { species: n }, 'adopt')) : say('その動物は、もういません。パネルが古くなっています。'); }
+      if (action === 'renamem') return petCommand.execute(asCommand(i, { name: i.fields.getTextInputValue('v'), pet: Number(arg) }, 'rename'));
+      if (action === 'releasec') return petCommand.execute(asCommand(i, { confirm: true, pet: Number(arg) }, 'release'));
+      if (['feed', 'play', 'rename', 'release'].includes(action)) {
+        if (!pets.length) return say('ペットがいません。メニューで飼えます。');
+        if (pets.length === 1) return run(action, 1);
+        return say('どの子にしますか?', { components: [selectRow(`panel:pet:pick:${action}`, 'ペットを選ぶ', pets.map((p, n) => ({ label: `${n + 1}. ${p.name}`, value: String(n + 1) })))] });
+      }
+      if (action === 'pick') return run(arg, Number(v0));
+      return;
+    }
+
+    if (kind === 'stock') {
+      const names = COMPANIES.map((c0) => { const c = companyOf(s, c0); return `${c.emoji} ${c.ticker} ${c.name}`; });
+      if (action === 'list') return stockCommand.execute(asCommand(i, {}, 'list'));
+      if (action === 'buy' || action === 'sell') return say(action === 'buy' ? 'どの会社の株を、買いますか?' : 'どの会社の株を、売りますか?', { components: [selectRow(`panel:stock:pick:${action}`, '会社を選ぶ', names.map((nm, n) => ({ label: nm.slice(0, 100), value: String(n + 1) })))] });
+      if (action === 'pick') return i.showModal(modal(`panel:stock:m:${arg}:${v0}`, arg === 'buy' ? '株を買う' : '株を売る', arg === 'buy' ? '株数' : '株数(空欄で、持っている全部)', '10', arg === 'buy'));
+      if (action === 'm') {
+        const n = intOf(i);
+        if (arg === 'buy' && (n === null || n < 1)) return say('株数は、1以上の数字で入れてください。');
+        return stockCommand.execute(asCommand(i, { company: Number(arg2), shares: n && n > 0 ? n : null }, arg));
+      }
+    }
   },
 };

@@ -71,7 +71,7 @@ export function setupCommands(client, features) {
       const hidden = cmd && hiddenFor(i.guildId)[i.commandName]; // 廃止されたコマンド(古い表示が残っていた場合)
       if (hidden) return void i.reply({ content: hidden, flags: MessageFlags.Ephemeral }).catch(() => {});
       if (cmd) run(`/${i.commandName}`, i, (x) => cmd.execute(x));
-    } else if (i.isButton() || i.isStringSelectMenu()) {
+    } else if (i.isButton() || i.isStringSelectMenu() || i.isModalSubmit()) {
       const c = comps.find((x) => x.id === i.customId || i.customId.startsWith(`${x.id}:`));
       if (c) run(`button ${i.customId}`, i, (x) => c.execute(x));
     }
