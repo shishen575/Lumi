@@ -29,7 +29,8 @@ export function settleGuild(s, g, now = Date.now(), rng = null) {
         setLotteryJackpot(g, L.id, next);
         const count = tickets.reduce((a, t) => a + t.qty, 0);
         recordDraw(g, L.id, { round, winning, jackpot: res.jackpot, jackpotWon: res.jackpotWon, tickets: count, sales: res.sales, paid, winners });
-        out.push({ lottery: L, round, drawAt: drawTimeOf(round, L), winning, jackpot: res.jackpot, jackpotWon: res.jackpotWon, tickets: count, sales: res.sales, paid, short, winners, nextJackpot: next });
+        const buyers = [...new Set(tickets.map((t) => t.user_id))];
+        out.push({ lottery: L, round, buyers, drawAt: drawTimeOf(round, L), winning, jackpot: res.jackpot, jackpotWon: res.jackpotWon, tickets: count, sales: res.sales, paid, short, winners, nextJackpot: next });
         jackpot = next;
       }
     }
@@ -53,8 +54,10 @@ export async function announce(client, s, g, d) {
   if (d.refund) return false;
   const id = d.lottery.channelId ?? s.lotteryChannelId; if (!id) return false;
   const ch = client.channels.cache.get(id); if (!ch?.isTextBased?.() || ch.guildId !== g) return false;
-  const users = [...new Set(d.winners.map((x) => x.user))].slice(0, 10);
-  try { await ch.send({ embeds: [drawEmbed(s, d)], allowedMentions: { users } }); return true; }
+  // 買った人全員にメンション(1通のメンションは100人まで・文字数の上限もあるので、多いときは先頭から80人)
+  const all = s.lotteryMention === false ? [] : (d.buyers ?? d.winners.map((x) => x.user)), users = all.slice(0, 80);
+  const content = users.length ? `${users.map((u) => `<@${u}>`).join(' ')}${all.length > users.length ? ` ほか${all.length - users.length}人` : ''} ${d.lottery.emoji} ${d.lottery.name} の抽選結果です!` : undefined;
+  try { await ch.send({ content, embeds: [drawEmbed(s, d)], allowedMentions: { users } }); return true; }
   catch (e) { console.warn(`[lottery] 発表を送れませんでした (${g}): ${e.message}`); return false; }
 }
 /** くじが残っているサーバーを、順に抽選して、発表する(1分ごとに呼ぶ) */

@@ -206,13 +206,14 @@ Dash.registerTab({
     { id: 'lottery', title: '宝くじ', icon: 'coin',
       async render(el, { api, channels: getChannels, esc, toast, pageHeader }) {
         const [st, meta, chans] = await Promise.all([api('/settings'), api('/extras-meta'), getChannels()]);
-        let lots = JSON.parse(JSON.stringify(st.lotteries)), on = st.lotteryEnabled, ch = st.lotteryChannelId || '';
+        let lots = JSON.parse(JSON.stringify(st.lotteries)), on = st.lotteryEnabled, mention = st.lotteryMention !== false, ch = st.lotteryChannelId || '';
         const rtp = (L) => { const d = Number(L.digits), p1 = 1 / 10 ** d, q2 = 1 / 10 ** (d - 1), p2 = q2 - p1, q3 = d >= 3 ? 1 / 10 ** (d - 2) : q2, p3 = d >= 3 ? q3 - q2 : 0; return (p1 * (L.jackpotBase / L.price) + p2 * L.prize2 + p3 * L.prize3) * 100; };
         const chOpts = (sel, blank) => `<option value="">${blank}</option>${chans.map((c) => `<option value="${c.id}" ${sel === c.id ? 'selected' : ''}>#${esc(c.name)}</option>`).join('')}`;
         const draw = () => {
           el.innerHTML = `${pageHeader('宝くじ', '番号(2〜4桁)のくじを買って、決まった時刻に、自動で抽選します。くじは、サーバーで、自由に、複数作れます(名前・値段・抽選の間隔と時刻・桁数・賞金・発表のチャンネル)。')}
             <div class="card"><label class="sw"><input type="checkbox" id="on" ${on ? 'checked' : ''}><i></i><span><b>宝くじを使う</b><small><code>/lottery</code> が使えます</small></span></label>
-              <div class="field" style="margin-top:12px"><label class="f">抽選結果を発表するチャンネル(共通)</label><select id="ch">${chOpts(ch, '発表しない')}</select><p class="hint">くじごとに、別のチャンネルも選べます。</p></div></div>
+              <div class="field" style="margin-top:12px"><label class="f">抽選結果を発表するチャンネル(共通)</label><select id="ch">${chOpts(ch, '発表しない')}</select><p class="hint">くじごとに、別のチャンネルも選べます。</p></div>
+              <label class="sw" style="margin-top:12px"><input type="checkbox" id="mention" ${mention ? 'checked' : ''}><i></i><span><b>買った人にメンションする</b><small>発表のとき、その回にくじを買った人全員に、メンションします(多いときは先頭の80人まで)</small></span></label></div>
             <h2 class="sec" style="margin:18px 0 8px">くじ(最大${meta.maxLotteries}つ)</h2>
             ${lots.map((L, n) => `<div class="card" data-i="${n}"><div class="card-h"><h2>${n + 1}. ${esc(L.emoji)} ${esc(L.name)}</h2><button class="btn danger icon" type="button" data-rm="${n}" aria-label="削除">✕</button></div>
               <div class="grid2">
@@ -232,12 +233,12 @@ Dash.registerTab({
             <div class="card"><h2>仕組み</h2><ul style="margin:0;padding-left:1.2em"><li><b>1等</b>: 全部の桁が一致。ジャックポットを、当たりのくじの枚数で、等分します。当たりが出なければ、次回に持ち越しです</li><li><b>2等・3等</b>: くじ代の倍率が、当選金です(買ったときのくじ代で計算)</li><li>くじを<b>削除</b>すると、売れ残りのくじは、買ったときの値段で、払い戻されます</li></ul></div>
             <div class="acts"><button class="btn ghost" id="add" type="button" ${lots.length >= meta.maxLotteries ? 'disabled' : ''}>くじを追加</button><button class="btn" id="save" type="button">保存</button></div>`;
           const collect = () => {
-            on = el.querySelector('#on').checked; ch = el.querySelector('#ch').value;
+            on = el.querySelector('#on').checked; ch = el.querySelector('#ch').value; mention = el.querySelector('#mention').checked;
             lots = [...el.querySelectorAll('[data-i]')].map((c, n) => ({ id: lots[n]?.id, name: c.querySelector('.l-name').value, emoji: c.querySelector('.l-emoji').value, price: c.querySelector('.l-price').value, maxTickets: c.querySelector('.l-max').value, drawHours: c.querySelector('.l-hours').value, drawAtHour: c.querySelector('.l-at').value, digits: c.querySelector('.l-digits').value, jackpotBase: c.querySelector('.l-jp').value, jackpotShare: c.querySelector('.l-share').value, prize2: c.querySelector('.l-p2').value, prize3: c.querySelector('.l-p3').value, channelId: c.querySelector('.l-ch').value || null }));
           };
           el.querySelector('#add').onclick = () => { collect(); lots.push({ ...meta.defaultLottery, id: undefined, name: '新しいくじ' }); draw(); };
           el.querySelectorAll('[data-rm]').forEach((b) => (b.onclick = () => { collect(); lots.splice(Number(b.dataset.rm), 1); draw(); }));
-          el.querySelector('#save').onclick = async () => { collect(); const r = await api('/settings', { method: 'PUT', body: { lotteryEnabled: on, lotteryChannelId: ch || null, lotteries: lots } }); lots = JSON.parse(JSON.stringify(r.lotteries)); toast('保存しました'); draw(); };
+          el.querySelector('#save').onclick = async () => { collect(); const r = await api('/settings', { method: 'PUT', body: { lotteryEnabled: on, lotteryChannelId: ch || null, lotteryMention: mention, lotteries: lots } }); lots = JSON.parse(JSON.stringify(r.lotteries)); toast('保存しました'); draw(); };
         };
         draw();
       } },

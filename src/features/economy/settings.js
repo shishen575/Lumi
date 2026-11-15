@@ -30,6 +30,7 @@ export const DEFAULTS = {
   stockChannelId: null,    // 株価のグラフを出すチャンネル
   stockBoardMin: 60,       // グラフを出す間隔(分)
   stockBoardEdit: true,    // true: 1つのメッセージを更新 / false: 毎回、新しく出す
+  lotteryMention: true,    // 抽選の発表で、くじを買った人にメンションする
   lotteryChannelId: null,  // 抽選の結果を発表するチャンネル(くじごとに、別のチャンネルも選べる)
   petsEnabled: false,      // ペット。オンのとき、/pet が使え、育てるとボーナスがつく
   shopItems: DEFAULT_SHOP, // お店の品(名前・値段・効果などを、サーバーごとに変えられる)
@@ -63,6 +64,7 @@ export function saveSettings(guildId, s) {
     estate: s.estate === undefined ? cur.estate : sanitizeEstate(s.estate, cur.estate),
     lotteryEnabled: s.lotteryEnabled === undefined ? cur.lotteryEnabled : !!s.lotteryEnabled,
     lotteries: s.lotteries === undefined ? cur.lotteries : sanitizeLotteries(s.lotteries, cur.lotteries),
+    lotteryMention: s.lotteryMention === undefined ? cur.lotteryMention : !!s.lotteryMention,
     lotteryChannelId: s.lotteryChannelId === undefined ? cur.lotteryChannelId : (/^\d{15,25}$/.test(String(s.lotteryChannelId ?? '')) ? String(s.lotteryChannelId) : null),
     stocksEnabled: s.stocksEnabled === undefined ? cur.stocksEnabled : !!s.stocksEnabled,
     stockNames: s.stockNames === undefined ? cur.stockNames : sanitizeNames(s.stockNames, cur.stockNames),
