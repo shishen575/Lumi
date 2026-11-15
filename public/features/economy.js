@@ -408,7 +408,15 @@ Dash.registerTab({
               <div class="field"><label class="f" for="gm">操作</label><select id="gm"><option value="add">付ける</option><option value="remove">取り上げる</option></select></div>
               <div class="field"><label class="f" for="gn">個数</label><input id="gn" type="number" min="1" max="99" value="1"></div>
               <div class="field"><label class="f" for="gt">メモ(任意)</label><input id="gt" type="text" maxlength="100" placeholder="理由など"></div></div>
-            <div class="acts"><button class="btn" id="grant" type="button">実行する</button></div></div>`);
+            <div class="acts"><button class="btn" id="grant" type="button">実行する</button></div>
+            <div class="acts" style="margin-top:8px"><button class="btn ghost" id="grant-all" type="button">全部の品を、上の個数ずつ付ける</button><button class="btn ghost danger" id="revoke-all" type="button">全部の品を、上の個数ずつ取り上げる</button></div>
+            <p class="hint" style="margin:6px 0 0">「全部の品」は、お店と闇市の、すべての品が対象です(上限を超えるぶんは付きません)。全部を空にしたいときは、個数を 99 にして取り上げます。</p></div>`);
+          const bulk = (mode) => async () => {
+            const amount = q('#gn').value, nm = mode === 'add' ? '付与' : '回収';
+            if (!await confirm({ title: '全部の品を' + nm, message: `${a.name} ${mode === 'add' ? 'に' : 'から'}、お店と闇市の全部の品を、${amount}個ずつ ${mode === 'add' ? '付けます' : '取り上げます'}。`, ok: '実行する', danger: mode !== 'add' })) return;
+            const r = await api('/grant-item', { method: 'POST', body: { user_id: picked, item: 'all', mode, amount, note: q('#gt').value } }); toast(`${r.kinds}種類(${r.units}個)を${nm}しました`); await drawPanel(); drawLog();
+          };
+          q('#grant-all').onclick = bulk('add'); q('#revoke-all').onclick = bulk('remove');
           q('#grant').onclick = async () => {
             const it = a.items.find((x) => x.id === q('#gi').value), mode = q('#gm').value, amount = q('#gn').value;
             if (!await confirm({ title: 'アイテムを' + (mode === 'add' ? '付与' : '回収'), message: `${a.name} ${mode === 'add' ? 'に' : 'から'}、${it.emoji} ${it.name} を ${amount}個 ${mode === 'add' ? '付けます' : '取り上げます'}。`, ok: '実行する', danger: mode !== 'add' })) return;

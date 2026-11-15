@@ -131,7 +131,15 @@ export function mountApi(router) {
     if (!ID.test(uid)) return res.status(400).json({ error: 'ユーザーが不正です' });
     if (!['add', 'remove'].includes(b.mode)) return res.status(400).json({ error: '操作が不正です' });
     if (!Number.isFinite(n) || n < 1 || n > 99) return res.status(400).json({ error: '個数は、1〜99にしてください' });
-    const s = getSettings(g), it = grantables(s).find((x) => x.id === b.item);
+    const s = getSettings(g);
+    if (b.item === 'all') { // 全部の品を、1つずつ(または、指定の個数ずつ)付ける・取り上げる
+      let kinds = 0, units = 0;
+      for (const x of grantables(s)) { const r = adjustItem(g, uid, x.id, b.mode === 'add' ? n : -n, x.max); if (r.before !== r.after) { kinds++; units += Math.abs(r.after - r.before); } }
+      if (!kinds) return res.status(400).json({ error: b.mode === 'add' ? 'どの品も、これ以上は持てません' : '品を持っていません' });
+      audit(g, req.actor, uid, `全部の品を${b.mode === 'add' ? '付与' : '回収'}`, units, `${n}個ずつ / ${kinds}種類${b.note ? ` / ${b.note}` : ''}`);
+      return res.json({ items: heldItems(s, g, uid), kinds, units });
+    }
+    const it = grantables(s).find((x) => x.id === b.item);
     if (!it) return res.status(400).json({ error: 'その品は、ありません' });
     const { before, after } = adjustItem(g, uid, it.id, b.mode === 'add' ? n : -n, it.max);
     if (before === after) return res.status(400).json({ error: b.mode === 'add' ? `これ以上は持てません(最大${it.max}個)` : '持っていません' });
