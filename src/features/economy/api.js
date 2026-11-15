@@ -7,6 +7,10 @@ import { HEISTS } from './heist.js';
 import { DEFAULT_RANKS, MAX_RANKS } from './ranks.js';
 import { POLICE_BONUS_CAP } from './wanted.js';
 import { SCHEMA, jobOf, wantedCfg } from './balance.js';
+import { FX_LABELS, SLOTS, MAX_SHOP_ITEMS, DEFAULT_SHOP } from './shop.js';
+import { COMPANIES, VOL_LABELS, VOL_LEVELS, DEFAULT_NAMES, DEFAULT_LEVELS } from './stocks.js';
+import { MAX_LOTTERIES, DEFAULT_LOTTERY } from './lottery.js';
+import { MAX_PROPERTIES, DEFAULT_ESTATE } from './estate.js';
 import { SLOT_SYMBOLS, CHERRY_TWO, CHERRY_ONE, slotRtp, slotScale, chinchiroScale, bjScale, bjStats } from './games.js';
 
 /** router は /api/guilds/:gid/f/economy に載っていて、req.guild / req.access が使える */
@@ -23,6 +27,12 @@ export function mountApi(router) {
       bonusBase: Math.round(jobOf(s, 'police').bonus.chance * 100), bonusCap: Math.round(POLICE_BONUS_CAP * 100),
     });
   });
+  // お店・ペット・株・宝くじ・不動産の設定画面に必要な、固定の情報
+  router.get('/extras-meta', (req, res) => res.json({
+    fx: FX_LABELS, slots: SLOTS, maxShop: MAX_SHOP_ITEMS, defaultShop: DEFAULT_SHOP,
+    companies: COMPANIES.map((c) => ({ id: c.id, base: c.base, blurb: c.blurb })), volLabels: VOL_LABELS, volLevels: VOL_LEVELS, defaultNames: DEFAULT_NAMES, defaultLevels: DEFAULT_LEVELS,
+    maxLotteries: MAX_LOTTERIES, defaultLottery: DEFAULT_LOTTERY, maxProperties: MAX_PROPERTIES, defaultEstate: DEFAULT_ESTATE,
+  }));
   // ゲームバランス: 変えられる数字の一覧(初期値・いまの値)と、保存
   router.get('/balance', (req, res) => {
     const s = getSettings(req.guild.id);

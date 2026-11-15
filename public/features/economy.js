@@ -140,6 +140,132 @@ Dash.registerTab({
           inputs().forEach((i) => { const v = byKey.get(i.closest('.br').dataset.k); i.value = v ?? ''; i.dataset.init = v ?? ''; }); refresh();
         };
       } },
+    /* ===== お店・ペット ===== */
+    { id: 'shop', title: 'お店・ペット', icon: 'coin',
+      async render(el, { api, esc, toast, pageHeader }) {
+        const [st, meta] = await Promise.all([api('/settings'), api('/extras-meta')]);
+        let items = JSON.parse(JSON.stringify(st.shopItems)), shopOn = st.shopEnabled, petsOn = st.petsEnabled;
+        const kinds = meta.fx, toUi = (k, v) => (kinds[k].kind === 'count' ? v : Math.round(v * 1000) / 10), fromUi = (k, v) => (kinds[k].kind === 'count' ? Math.round(Number(v)) : Number(v) / 100);
+        const draw = () => {
+          el.innerHTML = `${pageHeader('お店・ペット', 'お店(タバコ・お酒など。使うと、しばらく効果がつく)と、ペット(育てるとボーナスがつく)を、サーバーでオン・オフします。お店の品は、名前・値段・効果を、自由に変えられます。')}
+            <div class="card"><label class="sw"><input type="checkbox" id="so" ${shopOn ? 'checked' : ''}><i></i><span><b>お店を使う</b><small><code>/shop</code> と <code>/use</code> が使えます。品は、番号で選びます</small></span></label>
+              <label class="sw"><input type="checkbox" id="po" ${petsOn ? 'checked' : ''}><i></i><span><b>ペットを使う</b><small><code>/pet</code> が使えます(値段・餌代・ボーナスの強さは、「ゲームバランス」で変えられます)</small></span></label></div>
+            <h2 class="sec" style="margin:18px 0 8px">お店の品(最大${meta.maxShop}品)</h2>
+            ${items.map((it, n) => `<div class="card" data-i="${n}"><div class="card-h"><h2>${n + 1}. ${esc(it.emoji)} ${esc(it.name)}</h2><button class="btn danger icon" type="button" data-rm="${n}" aria-label="削除">✕</button></div>
+              <div class="grid2">
+                <div class="field"><label class="f">名前</label><input class="f-name" type="text" maxlength="12" value="${esc(it.name)}"></div>
+                <div class="field"><label class="f">絵文字</label><input class="f-emoji" type="text" maxlength="8" value="${esc(it.emoji)}"></div>
+                <div class="field"><label class="f">枠(同じ枠は、同時に1つだけ効く)</label><select class="f-slot">${Object.entries(meta.slots).map(([k, v]) => `<option value="${k}" ${it.slot === k ? 'selected' : ''}>${esc(v)}</option>`).join('')}</select></div>
+                <div class="field"><label class="f">値段</label><input class="f-price" type="number" min="1" value="${it.price}"></div>
+                <div class="field"><label class="f">効果が続く時間(分)</label><input class="f-min" type="number" min="1" max="1440" value="${it.minutes}"></div>
+                <div class="field"><label class="f">説明</label><input class="f-desc" type="text" maxlength="60" value="${esc(it.desc)}"></div></div>
+              <p class="hint" style="margin:6px 0">効果: プラスは良いこと、マイナスは代償です(空欄は、効果なし)。％で入力します(回数は、そのまま)。</p>
+              <div class="grid2">${Object.entries(kinds).map(([k, d]) => `<div class="field" style="margin:0"><label class="f">${esc(d.label)}${d.kind === 'count' ? '(回)' : '(%)'}</label><input class="f-fx" data-k="${k}" type="number" step="${d.kind === 'count' ? 1 : 0.5}" value="${it.effects?.[k] ? toUi(k, it.effects[k]) : ''}"></div>`).join('')}</div></div>`).join('')}
+            <div class="acts"><button class="btn ghost" id="add" type="button" ${items.length >= meta.maxShop ? 'disabled' : ''}>品を追加</button><button class="btn ghost" id="reset" type="button">初期の品に戻す</button><button class="btn" id="save" type="button">保存</button></div>`;
+          const collect = () => {
+            shopOn = el.querySelector('#so').checked; petsOn = el.querySelector('#po').checked;
+            items = [...el.querySelectorAll('[data-i]')].map((c, n) => ({ id: items[n]?.id, name: c.querySelector('.f-name').value, emoji: c.querySelector('.f-emoji').value, slot: c.querySelector('.f-slot').value, price: c.querySelector('.f-price').value, minutes: c.querySelector('.f-min').value, desc: c.querySelector('.f-desc').value,
+              effects: Object.fromEntries([...c.querySelectorAll('.f-fx')].filter((x) => x.value !== '').map((x) => [x.dataset.k, fromUi(x.dataset.k, x.value)])) }));
+          };
+          el.querySelector('#add').onclick = () => { collect(); items.push({ name: '新しい品', emoji: '🛍️', slot: 'other', price: 100, minutes: 15, effects: {}, desc: '' }); draw(); };
+          el.querySelector('#reset').onclick = () => { collect(); items = JSON.parse(JSON.stringify(meta.defaultShop)); draw(); };
+          el.querySelectorAll('[data-rm]').forEach((b) => (b.onclick = () => { collect(); items.splice(Number(b.dataset.rm), 1); draw(); }));
+          el.querySelector('#save').onclick = async () => { collect(); const r = await api('/settings', { method: 'PUT', body: { shopEnabled: shopOn, petsEnabled: petsOn, shopItems: items } }); items = JSON.parse(JSON.stringify(r.shopItems)); toast('保存しました'); draw(); };
+        };
+        draw();
+      } },
+    /* ===== 株 ===== */
+    { id: 'stocks', title: '株', icon: 'coin',
+      async render(el, { api, esc, toast, pageHeader }) {
+        const [st, meta] = await Promise.all([api('/settings'), api('/extras-meta')]);
+        const names = JSON.parse(JSON.stringify(st.stockNames)), levels = { ...st.stockLevels };
+        const daily = (L) => (L >= 1 ? ['1.5', '2.5', '3.5', '5', '7', '9', '12', '16', '21', '28'][L - 1] : '');
+        el.innerHTML = `${pageHeader('株', '架空の会社の株を、売り買いできます。株価は、5分ごとに動きます(間隔は「ゲームバランス」で変えられます)。会社の名前・ティッカー・絵文字と、値動きの大きさ(10段階)を、サーバーで決められます。')}
+          <div class="card"><label class="sw"><input type="checkbox" id="on" ${st.stocksEnabled ? 'checked' : ''}><i></i><span><b>株を使う</b><small><code>/stock</code> が使えます。売買の手数料などは、「ゲームバランス」で変えられます</small></span></label></div>
+          ${meta.companies.map((c) => `<div class="card" data-c="${c.id}"><div class="card-h"><h2>${esc(names[c.id].emoji)} ${esc(names[c.id].ticker)} <span class="mut small">基準 ${c.base.toLocaleString()} ・ ${esc(c.blurb)}</span></h2></div>
+            <div class="grid2">
+              <div class="field"><label class="f">会社の名前</label><input class="s-name" type="text" maxlength="16" value="${esc(names[c.id].name)}"></div>
+              <div class="field"><label class="f">ティッカー(英数字2〜6文字)</label><input class="s-tick" type="text" maxlength="6" value="${esc(names[c.id].ticker)}"></div>
+              <div class="field"><label class="f">絵文字</label><input class="s-emoji" type="text" maxlength="8" value="${esc(names[c.id].emoji)}"></div>
+              <div class="field"><label class="f">値動きの大きさ(10段階)</label><select class="s-lv">${meta.volLabels.map((l, n) => `<option value="${n + 1}" ${levels[c.id] === n + 1 ? 'selected' : ''}>${n + 1}. ${esc(l)}(1日の目安 ${daily(n + 1)}%)</option>`).join('')}</select></div></div></div>`).join('')}
+          <div class="card"><h2>値動きの目安</h2><p class="hint" style="margin:0">1日の値動きの目安は、レベル1で約1.5%、レベル5で約7%、レベル10で約28%です。ときどき、ニュースで大きく動きます(荒い株ほど、大きく)。</p></div>
+          <div class="acts"><button class="btn ghost" id="reset" type="button">初期値に戻す</button><button class="btn" id="save" type="button">保存</button></div>`;
+        el.querySelector('#reset').onclick = () => { el.querySelectorAll('[data-c]').forEach((c) => { const id = c.dataset.c; c.querySelector('.s-name').value = meta.defaultNames[id].name; c.querySelector('.s-tick').value = meta.defaultNames[id].ticker; c.querySelector('.s-emoji').value = meta.defaultNames[id].emoji; c.querySelector('.s-lv').value = meta.defaultLevels[id]; }); };
+        el.querySelector('#save').onclick = async () => {
+          const stockNames = {}, stockLevels = {};
+          el.querySelectorAll('[data-c]').forEach((c) => { const id = c.dataset.c; stockNames[id] = { name: c.querySelector('.s-name').value, ticker: c.querySelector('.s-tick').value, emoji: c.querySelector('.s-emoji').value }; stockLevels[id] = Number(c.querySelector('.s-lv').value); });
+          await api('/settings', { method: 'PUT', body: { stocksEnabled: el.querySelector('#on').checked, stockNames, stockLevels } }); toast('保存しました');
+        };
+      } },
+    /* ===== 宝くじ ===== */
+    { id: 'lottery', title: '宝くじ', icon: 'coin',
+      async render(el, { api, channels: getChannels, esc, toast, pageHeader }) {
+        const [st, meta, chans] = await Promise.all([api('/settings'), api('/extras-meta'), getChannels()]);
+        let lots = JSON.parse(JSON.stringify(st.lotteries)), on = st.lotteryEnabled, ch = st.lotteryChannelId || '';
+        const rtp = (L) => { const d = Number(L.digits), p1 = 1 / 10 ** d, q2 = 1 / 10 ** (d - 1), p2 = q2 - p1, q3 = d >= 3 ? 1 / 10 ** (d - 2) : q2, p3 = d >= 3 ? q3 - q2 : 0; return (p1 * (L.jackpotBase / L.price) + p2 * L.prize2 + p3 * L.prize3) * 100; };
+        const chOpts = (sel, blank) => `<option value="">${blank}</option>${chans.map((c) => `<option value="${c.id}" ${sel === c.id ? 'selected' : ''}>#${esc(c.name)}</option>`).join('')}`;
+        const draw = () => {
+          el.innerHTML = `${pageHeader('宝くじ', '番号(2〜4桁)のくじを買って、決まった時刻に、自動で抽選します。くじは、サーバーで、自由に、複数作れます(名前・値段・抽選の間隔と時刻・桁数・賞金・発表のチャンネル)。')}
+            <div class="card"><label class="sw"><input type="checkbox" id="on" ${on ? 'checked' : ''}><i></i><span><b>宝くじを使う</b><small><code>/lottery</code> が使えます</small></span></label>
+              <div class="field" style="margin-top:12px"><label class="f">抽選結果を発表するチャンネル(共通)</label><select id="ch">${chOpts(ch, '発表しない')}</select><p class="hint">くじごとに、別のチャンネルも選べます。</p></div></div>
+            <h2 class="sec" style="margin:18px 0 8px">くじ(最大${meta.maxLotteries}つ)</h2>
+            ${lots.map((L, n) => `<div class="card" data-i="${n}"><div class="card-h"><h2>${n + 1}. ${esc(L.emoji)} ${esc(L.name)}</h2><button class="btn danger icon" type="button" data-rm="${n}" aria-label="削除">✕</button></div>
+              <div class="grid2">
+                <div class="field"><label class="f">名前</label><input class="l-name" type="text" maxlength="12" value="${esc(L.name)}"></div>
+                <div class="field"><label class="f">絵文字</label><input class="l-emoji" type="text" maxlength="8" value="${esc(L.emoji)}"></div>
+                <div class="field"><label class="f">くじ1枚の値段</label><input class="l-price" type="number" min="1" value="${L.price}"></div>
+                <div class="field"><label class="f">1人が、1回の抽選で買える枚数</label><input class="l-max" type="number" min="1" max="1000" value="${L.maxTickets}"></div>
+                <div class="field"><label class="f">抽選の間隔(時間)</label><input class="l-hours" type="number" min="1" max="168" value="${L.drawHours}"></div>
+                <div class="field"><label class="f">抽選の時刻の基準(日本時間の、何時)</label><input class="l-at" type="number" min="0" max="23" value="${L.drawAtHour}"></div>
+                <div class="field"><label class="f">桁数(2〜4)</label><input class="l-digits" type="number" min="2" max="4" value="${L.digits}"></div>
+                <div class="field"><label class="f">1等(ジャックポット)の最低額</label><input class="l-jp" type="number" min="0" value="${L.jackpotBase}"></div>
+                <div class="field"><label class="f">売上のうち、ジャックポットに積む割合(%)</label><input class="l-share" type="number" min="0" max="100" value="${L.jackpotShare}"></div>
+                <div class="field"><label class="f">2等(下の桁が、1桁を残して一致)の倍率</label><input class="l-p2" type="number" min="0" value="${L.prize2}"></div>
+                <div class="field"><label class="f">3等(下の桁が、2桁を残して一致。3桁以上)の倍率</label><input class="l-p3" type="number" min="0" value="${L.prize3}"></div>
+                <div class="field"><label class="f">このくじの発表チャンネル</label><select class="l-ch">${chOpts(L.channelId || '', '共通のチャンネル')}</select></div></div>
+              <p class="hint" style="margin:6px 0 0">還元率の目安(ジャックポットが最低額のとき): <b>${rtp(L).toFixed(0)}%</b>。100%を超えると、遊ぶほど、お金が増えます。</p></div>`).join('')}
+            <div class="card"><h2>仕組み</h2><ul style="margin:0;padding-left:1.2em"><li><b>1等</b>: 全部の桁が一致。ジャックポットを、当たりのくじの枚数で、等分します。当たりが出なければ、次回に持ち越しです</li><li><b>2等・3等</b>: くじ代の倍率が、当選金です(買ったときのくじ代で計算)</li><li>くじを<b>削除</b>すると、売れ残りのくじは、買ったときの値段で、払い戻されます</li></ul></div>
+            <div class="acts"><button class="btn ghost" id="add" type="button" ${lots.length >= meta.maxLotteries ? 'disabled' : ''}>くじを追加</button><button class="btn" id="save" type="button">保存</button></div>`;
+          const collect = () => {
+            on = el.querySelector('#on').checked; ch = el.querySelector('#ch').value;
+            lots = [...el.querySelectorAll('[data-i]')].map((c, n) => ({ id: lots[n]?.id, name: c.querySelector('.l-name').value, emoji: c.querySelector('.l-emoji').value, price: c.querySelector('.l-price').value, maxTickets: c.querySelector('.l-max').value, drawHours: c.querySelector('.l-hours').value, drawAtHour: c.querySelector('.l-at').value, digits: c.querySelector('.l-digits').value, jackpotBase: c.querySelector('.l-jp').value, jackpotShare: c.querySelector('.l-share').value, prize2: c.querySelector('.l-p2').value, prize3: c.querySelector('.l-p3').value, channelId: c.querySelector('.l-ch').value || null }));
+          };
+          el.querySelector('#add').onclick = () => { collect(); lots.push({ ...meta.defaultLottery, id: undefined, name: '新しいくじ' }); draw(); };
+          el.querySelectorAll('[data-rm]').forEach((b) => (b.onclick = () => { collect(); lots.splice(Number(b.dataset.rm), 1); draw(); }));
+          el.querySelector('#save').onclick = async () => { collect(); const r = await api('/settings', { method: 'PUT', body: { lotteryEnabled: on, lotteryChannelId: ch || null, lotteries: lots } }); lots = JSON.parse(JSON.stringify(r.lotteries)); toast('保存しました'); draw(); };
+        };
+        draw();
+      } },
+    /* ===== 不動産 ===== */
+    { id: 'estate', title: '不動産', icon: 'coin',
+      async render(el, { api, esc, toast, pageHeader }) {
+        const [st, meta] = await Promise.all([api('/settings'), api('/extras-meta')]);
+        let props = JSON.parse(JSON.stringify(st.estate)), on = st.estateEnabled;
+        const draw = () => {
+          el.innerHTML = `${pageHeader('不動産', '物件を買って、家賃(1時間ごとに溜まる)をもらえます。物件の名前・値段・家賃・維持費・持てる数を、サーバーで自由に決められます(最大${meta.maxProperties}件)。')}
+            <div class="card"><label class="sw"><input type="checkbox" id="on" ${on ? 'checked' : ''}><i></i><span><b>不動産を使う</b><small><code>/estate</code> が使えます。家賃が溜まる上限の時間・売るときの割合・手数料は、「ゲームバランス」で変えられます</small></span></label></div>
+            ${props.map((p, n) => `<div class="card" data-i="${n}"><div class="card-h"><h2>${n + 1}. ${esc(p.emoji)} ${esc(p.name)}</h2><button class="btn danger icon" type="button" data-rm="${n}" aria-label="削除">✕</button></div>
+              <div class="grid2">
+                <div class="field"><label class="f">名前</label><input class="e-name" type="text" maxlength="12" value="${esc(p.name)}"></div>
+                <div class="field"><label class="f">絵文字</label><input class="e-emoji" type="text" maxlength="8" value="${esc(p.emoji)}"></div>
+                <div class="field"><label class="f">値段</label><input class="e-price" type="number" min="1" value="${p.price}"></div>
+                <div class="field"><label class="f">持てる数の上限(最大20)</label><input class="e-max" type="number" min="1" max="20" value="${p.maxOwn}"></div>
+                <div class="field"><label class="f">家賃(1時間あたり)</label><input class="e-rent" type="number" min="0" value="${p.rent}"></div>
+                <div class="field"><label class="f">維持費(1時間あたり)</label><input class="e-up" type="number" min="0" value="${p.upkeep}"></div>
+                <div class="field" style="grid-column:1/-1"><label class="f">説明</label><input class="e-desc" type="text" maxlength="60" value="${esc(p.desc)}"></div></div>
+              <p class="hint" style="margin:6px 0 0">手取り <b>${Math.max(0, p.rent - p.upkeep).toLocaleString()}</b>/時間 ・ 1日の利回り <b>${(Math.max(0, p.rent - p.upkeep) * 24 / Math.max(1, p.price) * 100).toFixed(1)}%</b>${p.upkeep > p.rent ? '(<span style="color:var(--bad,#d33)">維持費が家賃より高いので、手取りは0です</span>)' : ''}</p></div>`).join('')}
+            <div class="acts"><button class="btn ghost" id="add" type="button" ${props.length >= meta.maxProperties ? 'disabled' : ''}>物件を追加</button><button class="btn ghost" id="reset" type="button">初期の物件に戻す</button><button class="btn" id="save" type="button">保存</button></div>`;
+          const collect = () => {
+            on = el.querySelector('#on').checked;
+            props = [...el.querySelectorAll('[data-i]')].map((c, n) => ({ id: props[n]?.id, name: c.querySelector('.e-name').value, emoji: c.querySelector('.e-emoji').value, price: c.querySelector('.e-price').value, maxOwn: c.querySelector('.e-max').value, rent: c.querySelector('.e-rent').value, upkeep: c.querySelector('.e-up').value, desc: c.querySelector('.e-desc').value }));
+          };
+          el.querySelector('#add').onclick = () => { collect(); props.push({ name: '新しい物件', emoji: '🏠', price: 10000, rent: 30, upkeep: 5, maxOwn: 5, desc: '' }); draw(); };
+          el.querySelector('#reset').onclick = () => { collect(); props = JSON.parse(JSON.stringify(meta.defaultEstate)); draw(); };
+          el.querySelectorAll('[data-rm]').forEach((b) => (b.onclick = () => { collect(); props.splice(Number(b.dataset.rm), 1); draw(); }));
+          el.querySelector('#save').onclick = async () => { collect(); const r = await api('/settings', { method: 'PUT', body: { estateEnabled: on, estate: props } }); props = JSON.parse(JSON.stringify(r.estate)); toast('保存しました'); draw(); };
+        };
+        draw();
+      } },
     /* ===== 留置場 ===== */
     { id: 'jail', title: '留置場', icon: 'alert',
       async render(el, { api, esc, ic, toast, confirm, pageHeader }) {

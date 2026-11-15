@@ -1,7 +1,7 @@
 import { Events } from 'discord.js';
 import { commands, blackjackButton, heistButton, ramenButton, resolveExpiredHeists, holdHeistSweep } from './commands.js';
 import { mountApi } from './api.js';
-import { crimeHelp, jobHelp } from './help.js';
+import { crimeHelp, jobHelp, lifeHelp } from './help.js';
 import { settleAll } from './lotteryengine.js';
 import { pauseHeists, resumeHeists } from './db.js';
 import { onShutdownCleanup } from '../../core/shutdown.js';
@@ -13,11 +13,11 @@ export default {
   ui: '/dashboard/features/economy.js',
   commands,
   components: [blackjackButton, heistButton, ramenButton],
-  helpTopics: [{ id: 'crime', label: '犯罪(犯罪・大型犯罪・闇マーケット)', sections: crimeHelp }, { id: 'job', label: '職業(バイト・昇進・指名手配)', sections: jobHelp }], // /help topic:犯罪 で、犯罪系の説明を全部表示
+  helpTopics: [{ id: 'crime', label: '犯罪(犯罪・大型犯罪・闇マーケット)', sections: crimeHelp }, { id: 'job', label: '職業(バイト・昇進・指名手配)', sections: jobHelp }, { id: 'life', label: '暮らし(お店・ペット・株・宝くじ・不動産)', sections: lifeHelp }], // /help topic:犯罪 で、犯罪系の説明を全部表示
   help: [
     '管理者が有効にしたサーバーで使えます。`/balance` で残高、`/cooldowns` で待ち時間の一覧、`/deposit` `/withdraw` で銀行、`/richest` でランキング。',
     '稼ぐ: `/work`(バイト: コンビニ・警察・ファーストフード)、`/beg`(乞食)、`/crime`(犯罪: コンビニ・ATM・銀行・宝石・海賊。失敗すると罰金と留置場。`/bail` で保釈)。',
-    '遊ぶ: `/chinchiro` `/slot` `/blackjack`。\n大型犯罪: `/heist`(ミニゲーム。現金輸送車・大型銀行・美術館・カジノ・宝物庫から選び、制限時間内に問題を解けば成功。大金を狙えますが、失敗すると重い罰金と留置場です)。\n闇マーケット: 管理者がオンにしたサーバーでは、犯罪に道具が必要です。`/market list` `/market buy` で買えます。\n昇進・指名手配: `/job`(階級)、`/wanted`(手配書)、`/arrest`(逮捕。警察のバイトを重ねた人)。管理者がオンにしたサーバーで使えます。',
+    '遊ぶ: `/chinchiro` `/slot` `/blackjack`。\n大型犯罪: `/heist`(ミニゲーム。現金輸送車・大型銀行・美術館・カジノ・宝物庫から選び、制限時間内に問題を解けば成功。大金を狙えますが、失敗すると重い罰金と留置場です)。\n闇マーケット: 管理者がオンにしたサーバーでは、犯罪に道具が必要です。`/market list` `/market buy` で買えます。\n暮らし: `/shop` `/pet` `/stock` `/lottery` `/estate`(管理者がオンにしたサーバーで使えます。`/help topic:暮らし` で詳しく)。\n昇進・指名手配: `/job`(階級)、`/wanted`(手配書)、`/arrest`(逮捕。警察のバイトを重ねた人)。管理者がオンにしたサーバーで使えます。',
   ].join('\n'),
   register({ client, router }) {
     mountApi(router);

@@ -2,7 +2,12 @@ import { getSettings, money } from './settings.js';
 import { CRIMES, JOBS } from './jobs.js';
 import { POLICE_BONUS_CAP } from './wanted.js';
 import { RAMEN, GRADES } from './ramen.js';
-import { toolCfg, timeoutCfg, ramenCfg, crimeOf, jobOf, heistOf, itemOf, marketCfg, wantedCfg, bailPerMin } from './balance.js';
+import { SLOTS, shopItems, itemText } from './shop.js';
+import { SPECIES } from './pets.js';
+import { VOL_LABELS, companyOf, COMPANIES } from './stocks.js';
+import { lotteriesOf } from './lottery.js';
+import { estateOf } from './estate.js';
+import { estateCfg, stockCfg, petCfg, toolCfg, timeoutCfg, ramenCfg, crimeOf, jobOf, heistOf, itemOf, marketCfg, wantedCfg, bailPerMin } from './balance.js';
 import { HEISTS } from './heist.js';
 import { ITEMS, toolFor, priceOf, marketRate } from './market.js';
 
@@ -96,5 +101,23 @@ export function jobHelp({ guildId }) {
     sections.push({ name: '🚨 指名手配', value: 'このサーバーでは、**オフ**です。管理者が、ダッシュボードの「通貨 → 指名手配」でオンにすると、犯罪で手配度が溜まり、警察のバイトを重ねた人が `/arrest` で逮捕して、懸賞金をもらえます。' });
   }
   sections.push({ name: '📋 関連コマンド', value: '`/work` `/job` — バイトと階級\n`/wanted` `/arrest` — 指名手配と逮捕\n`/crime` `/heist` — 犯罪(`/help topic:犯罪`)' });
+  return sections;
+}
+
+/** /help topic:暮らし の中身(お店・ペット・株・宝くじ・不動産)。サーバーの設定(名前・値段など)を、そのまま表示する */
+export function lifeHelp({ guildId }) {
+  const s = getSettings(guildId), sections = [], off = (name, where) => ({ name, value: `このサーバーでは、**オフ**です。管理者が、ダッシュボードの「通貨 → ${where}」でオンにできます。` });
+  const cut = (text) => (text.length > 1000 ? text.slice(0, 997) + '…' : text);
+  if (s.shopEnabled) sections.push({ name: '🏪 お店 `/shop` `/use`', value: cut(['買って、`/use` で使うと、しばらく効果がつきます(良いことと、代償)。同じ枠(' + Object.values(SLOTS).join('・') + ')の品は、同時に1つだけ効きます。', '', ...shopItems(s).map((it, n) => `${n + 1}. ${it.emoji} **${it.name}** ${money(s, it.price)}(${it.minutes}分)— ${itemText(it)}`)].join('\n')) });
+  else sections.push(off('🏪 お店', 'お店・ペット'));
+  if (s.petsEnabled) { const pc = petCfg(s); sections.push({ name: '🐾 ペット `/pet`', value: cut([`飼う値段 ${money(s, pc.price)}、餌代 ${money(s, pc.feedCost)}。餌と遊びで、なつき度が上がり、レベルが上がると、ボーナスがつきます(おなかがすいていると、ボーナスは出ません)。`, '', ...Object.values(SPECIES).map((x) => `${x.emoji} **${x.name}** — ${x.text} +${Math.round(x.per * 1000 * pc.power / 100) / 10}% / レベル`)].join('\n')) }); }
+  else sections.push(off('🐾 ペット', 'お店・ペット'));
+  if (s.stocksEnabled) { const sc = stockCfg(s); sections.push({ name: '📈 株 `/stock`', value: cut([`株価は **${Math.round(sc.tickMs / 60000)}分ごと**に動きます。売買の手数料は ${(sc.fee * 100).toFixed(1)}%。値動きの大きさは、会社ごとに10段階です。`, '', ...COMPANIES.map((c0, n) => { const c = companyOf(s, c0), lv = s.stockLevels?.[c.id] ?? c0.level; return `${n + 1}. ${c.emoji} **${c.ticker}** ${c.name} — 変動 Lv${lv}(${VOL_LABELS[lv - 1]})`; })].join('\n')) }); }
+  else sections.push(off('📈 株', '株'));
+  if (s.lotteryEnabled) sections.push({ name: '🎟️ 宝くじ `/lottery`', value: cut(['番号を選んで買うと、決まった時刻に、自動で抽選します。', '', ...lotteriesOf(s).map((L, n) => `${n + 1}. ${L.emoji} **${L.name}** — 1枚 ${money(s, L.price)} ・ ${L.digits}桁 ・ ${L.drawHours}時間おき(日本時間 ${L.drawAtHour}時基準)・ 1等 ${money(s, L.jackpotBase)}〜 ・ 2等 ×${L.prize2}${L.digits >= 3 ? ` ・ 3等 ×${L.prize3}` : ''}`)].join('\n')) });
+  else sections.push(off('🎟️ 宝くじ', '宝くじ'));
+  if (s.estateEnabled) { const ec = estateCfg(s); sections.push({ name: '🏢 不動産 `/estate`', value: cut([`物件を買うと、家賃が1時間ごとに溜まり(最大 ${ec.capHours}時間ぶん)、\`/estate collect\` で受け取れます。売るときは、値段の ${Math.round(ec.sellPct * 100)}% です。`, '', ...estateOf(s).map((p, n) => `${n + 1}. ${p.emoji} **${p.name}** ${money(s, p.price)} — 手取り ${money(s, Math.max(0, p.rent - p.upkeep))}/時間(上限 ${p.maxOwn}件)`)].join('\n')) }); }
+  else sections.push(off('🏢 不動産', '不動産'));
+  sections.push({ name: '📋 関連コマンド', value: '`/shop` `/use` — お店\n`/pet` — ペット\n`/stock` — 株\n`/lottery` — 宝くじ\n`/estate` — 不動産\n`/cooldowns` — 待ち時間の一覧' });
   return sections;
 }
