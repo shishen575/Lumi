@@ -1,6 +1,6 @@
 import { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, MessageFlags } from 'discord.js';
 import { getSettings, money } from './settings.js';
-import { getPet, adoptPet, renamePet, releasePet, updatePet, setStatus, activeStatuses, shiftsOf, allShifts, addShift, getHeat, addHeat, clearHeat, topWanted, itemQty, allItems, addItem, useItem, transfer, adjustBalance, clearCooldowns, audit, peek, deposit, withdraw, cooldownLeft, setCooldown, jailLeft, jail, release, richest, getBj, saveBj, deleteBj, allBj, claimBj, getRamen, saveRamen, claimRamen, getHeist, saveHeist, claimHeist, expiredHeists, setHeistDeadline, releaseAll } from './db.js';
+import { holdings, holding, addHolding, takeHolding, getPet, adoptPet, renamePet, releasePet, updatePet, setStatus, activeStatuses, shiftsOf, allShifts, addShift, getHeat, addHeat, clearHeat, topWanted, itemQty, allItems, addItem, useItem, transfer, adjustBalance, clearCooldowns, audit, peek, deposit, withdraw, cooldownLeft, setCooldown, jailLeft, jail, release, richest, getBj, saveBj, deleteBj, allBj, claimBj, getRamen, saveRamen, claimRamen, getHeist, saveHeist, claimHeist, expiredHeists, setHeistDeadline, releaseAll } from './db.js';
 import { ensureAccount, pay, collect, fine, treasury } from './ledger.js';
 import { hasAccessSync, isOperator } from '../../core/access.js';
 import { PermissionFlagsBits } from 'discord.js';
@@ -12,10 +12,12 @@ import { rankFor, scalePay } from './ranks.js';
 import { RAMEN, makeOrder, gradeRamen, GRADES } from './ramen.js';
 import { POLICE_BONUS_CAP } from './wanted.js';
 import { userFx } from './userfx.js';
+import { marketNow, unitPrice } from './stockmarket.js';
+import { COMPANIES, companyOf } from './stocks.js';
 import { SPECIES, levelOf, nextXp, MAX_LEVEL, hungerNow, hungerBar, petFx } from './pets.js';
-import { SHOP, SHOP_MAX_STACK, shopById, itemText } from './shop.js';
+import { SLOTS, MAX_SHOP_ITEMS, SHOP_MAX_STACK, shopItems, shopById, itemText } from './shop.js';
 import { describeFx } from './effects.js';
-import { petCfg, shopItemOf, toolCfg, timeoutCfg, ramenCfg, crimeOf, jobOf, begOf, heistOf, itemOf, marketCfg, wantedCfg, bailPerMin } from './balance.js';
+import { stockCfg, petCfg, toolCfg, timeoutCfg, ramenCfg, crimeOf, jobOf, begOf, heistOf, itemOf, marketCfg, wantedCfg, bailPerMin } from './balance.js';
 import { starsOf, stars as starText, bountyOf, chanceDelta } from './wanted.js';
 import { ITEMS, itemById, toolFor, priceOf, marketRate } from './market.js';
 import { CRIMES, JOBS, resolveCrime, resolveWork, resolveBeg } from './jobs.js';
@@ -693,50 +695,51 @@ export const cooldownsCommand = {
   },
 };
 
-/* ================= お店(タバコ・アルコール) ================= */
+/* ================= お店(タバコ・アルコールなど。品は、サーバーごとに自由に変えられる) ================= */
 const shopOff = (i) => refuse(i, 'このサーバーでは、お店はオフです。管理者が、ダッシュボードの「通貨 → お店・ペット・株など」でオンにできます。');
+const shopNumber = (s, i) => { const items = shopItems(s), n = i.options.getInteger('item', true); return { items, it: items[n - 1] ?? null, n }; };
 export const shopCommand = {
   data: guildOnly(new SlashCommandBuilder().setName('shop').setDescription('お店(タバコ・お酒など。使うと、しばらく効果がつきます)')
     .addSubcommand((c) => c.setName('list').setDescription('品物と、いま効いている効果を見ます'))
     .addSubcommand((c) => c.setName('buy').setDescription('買います')
-      .addStringOption((o) => o.setName('item').setDescription('買う品').setRequired(true).addChoices(...SHOP.map((x) => ({ name: `${x.emoji} ${x.name}`, value: x.id }))))
+      .addIntegerOption((o) => o.setName('item').setDescription('品の番号(/shop list の番号)').setRequired(true).setMinValue(1).setMaxValue(MAX_SHOP_ITEMS))
       .addIntegerOption((o) => o.setName('amount').setDescription('個数(省略すると1)').setMinValue(1).setMaxValue(SHOP_MAX_STACK)))),
   async execute(i) {
     const s = await open(i); if (!s) return;
     if (!s.shopEnabled) return shopOff(i);
     const g = i.guildId, u = i.user.id, now = Date.now(), own = allItems(g, u);
     if (i.options.getSubcommand() === 'list') {
-      const active = activeStatuses(g, u, now);
-      const head = active.length ? active.map((st) => { const it = shopById(st.item); return `${it.emoji} **${it.name}** の効果: あと ${dur(st.until - now)}`; }).join('\n') : 'いま効いている効果は、ありません。';
+      const items = shopItems(s), active = activeStatuses(g, u, now);
+      const head = active.length ? active.map((st) => { const it = shopById(s, st.item); return it ? `${it.emoji} **${it.name}** の効果: あと ${dur(st.until - now)}` : null; }).filter(Boolean).join('\n') || 'いま効いている効果は、ありません。' : 'いま効いている効果は、ありません。';
       const e = new EmbedBuilder().setColor(0xb8860b).setTitle('🏪 お店')
-        .setDescription(`${head}\n\n\`/shop buy\` で買って、\`/use\` で使います。タバコとお酒は、別の枠(同時に効きます)。同じ枠を、もう一度使うと、上書きです。`)
-        .addFields(SHOP.map((x) => { const it = shopItemOf(s, x); return { name: `${it.emoji} ${it.name}`, value: `**${money(s, it.price)}** ・ ${it.minutes}分 ・ 所持 **${own[it.id] ?? 0}**\n${itemText(it)}\n-# ${it.desc}`, inline: false }; }))
+        .setDescription(`${head}\n\n\`/shop buy\` で買って(番号で選びます)、\`/use\` で使います。同じ枠(${Object.values(SLOTS).join('・')})の品は、同時に1つだけ効きます(もう一度使うと、上書き)。`)
+        .addFields(items.map((it, n) => ({ name: `${n + 1}. ${it.emoji} ${it.name}(${SLOTS[it.slot]}枠)`, value: `**${money(s, it.price)}** ・ ${it.minutes}分 ・ 所持 **${own[it.id] ?? 0}**\n${itemText(it)}${it.desc ? `\n-# ${it.desc}` : ''}`, inline: false })))
         .setFooter({ text: `所持金 ${money(s, wallet(i))}` });
       return i.reply({ embeds: [e], ...EPH });
     }
-    const x = shopById(i.options.getString('item', true)), n = i.options.getInteger('amount') ?? 1;
-    if (!x) return refuse(i, 'その品は、売っていません。');
-    const it = shopItemOf(s, x), have = own[it.id] ?? 0;
-    if (have + n > SHOP_MAX_STACK) return refuse(i, `${it.emoji} ${it.name}は、最大${SHOP_MAX_STACK}個までしか持てません。(いま ${have}個)`);
-    const total = it.price * n;
+    const { it, n } = shopNumber(s, i), amount = i.options.getInteger('amount') ?? 1;
+    if (!it) return refuse(i, `${n} 番の品は、ありません。(/shop list の番号を指定してください)`);
+    const have = own[it.id] ?? 0;
+    if (have + amount > SHOP_MAX_STACK) return refuse(i, `${it.emoji} ${it.name}は、最大${SHOP_MAX_STACK}個までしか持てません。(いま ${have}個)`);
+    const total = it.price * amount;
     if (!collect(g, u, total, s)) return refuse(i, `お金が足りません。(必要 ${money(s, total)} / 手持ち ${money(s, Math.max(0, wallet(i)))})`);
-    addItem(g, u, it.id, n);
-    await i.reply({ embeds: [card(i, s, 0xb8860b, '🏪 お店', `${it.emoji} **${it.name}** を **${n}個** 買いました。\n**- ${money(s, total)}**\n所持: **${have + n}個**(\`/use\` で使えます)`)], ...EPH });
+    addItem(g, u, it.id, amount);
+    await i.reply({ embeds: [card(i, s, 0xb8860b, '🏪 お店', `${it.emoji} **${it.name}** を **${amount}個** 買いました。\n**- ${money(s, total)}**\n所持: **${have + amount}個**(\`/use ${n}\` で使えます)`)], ...EPH });
   },
 };
 export const useCommand = {
   data: guildOnly(new SlashCommandBuilder().setName('use').setDescription('お店で買った品を使います(しばらく、効果がつきます)')
-    .addStringOption((o) => o.setName('item').setDescription('使う品').setRequired(true).addChoices(...SHOP.map((x) => ({ name: `${x.emoji} ${x.name}`, value: x.id }))))),
+    .addIntegerOption((o) => o.setName('item').setDescription('品の番号(/shop list の番号)').setRequired(true).setMinValue(1).setMaxValue(MAX_SHOP_ITEMS))),
   async execute(i) {
     const s = await open(i); if (!s) return;
     if (!s.shopEnabled) return shopOff(i);
-    const g = i.guildId, u = i.user.id, x = shopById(i.options.getString('item', true));
-    if (!x) return refuse(i, 'その品は、ありません。');
-    const it = shopItemOf(s, x), now = Date.now();
+    const g = i.guildId, u = i.user.id, { it, n } = shopNumber(s, i), now = Date.now();
+    if (!it) return refuse(i, `${n} 番の品は、ありません。(/shop list の番号を指定してください)`);
     if (!useItem(g, u, it.id)) return refuse(i, `${it.emoji} **${it.name}** を持っていません。\`/shop buy\` で買えます。`);
     const prev = activeStatuses(g, u, now).find((st) => st.slot === it.slot);
     setStatus(g, u, it.slot, it.id, now + it.minutes * 60_000);
-    await i.reply({ embeds: [card(i, s, 0xb8860b, `${it.emoji} ${it.name}を使った`, `効果が **${it.minutes}分** つきます。\n${itemText(it)}${prev ? `\n-# ${shopById(prev.item).name}の効果を、上書きしました` : ''}`)], ...EPH });
+    const prevItem = prev && shopById(s, prev.item);
+    await i.reply({ embeds: [card(i, s, 0xb8860b, `${it.emoji} ${it.name}を使った`, `効果が **${it.minutes}分** つきます。\n${itemText(it)}${prevItem ? `\n-# ${prevItem.name}の効果を、上書きしました` : ''}`)], ...EPH });
   },
 };
 
@@ -802,6 +805,54 @@ export const petCommand = {
   },
 };
 
+/* ================= 株 ================= */
+const stockOff = (i) => refuse(i, 'このサーバーでは、株はオフです。管理者が、ダッシュボードの「通貨 → お店・ペット・株など」でオンにできます。');
+const arrow = (c) => (c > 0.0005 ? '🔺' : c < -0.0005 ? '🔻' : '▫️');
+const pct = (c) => `${c > 0 ? '+' : ''}${(c * 100).toFixed(1)}%`;
+export const stockCommand = {
+  data: guildOnly(new SlashCommandBuilder().setName('stock').setDescription('株(架空の会社)を売り買いします')
+    .addSubcommand((c) => c.setName('list').setDescription('株価と、自分の持ち株を見ます'))
+    .addSubcommand((c) => c.setName('buy').setDescription('株を買います')
+      .addIntegerOption((o) => o.setName('company').setDescription('会社の番号(/stock list の番号)').setRequired(true).setMinValue(1).setMaxValue(5))
+      .addIntegerOption((o) => o.setName('shares').setDescription('株数').setRequired(true).setMinValue(1)))
+    .addSubcommand((c) => c.setName('sell').setDescription('株を売ります')
+      .addIntegerOption((o) => o.setName('company').setDescription('会社の番号(/stock list の番号)').setRequired(true).setMinValue(1).setMaxValue(5))
+      .addIntegerOption((o) => o.setName('shares').setDescription('株数(省略すると、持っている全部)').setMinValue(1)))),
+  async execute(i) {
+    const s = await open(i); if (!s) return;
+    if (!s.stocksEnabled) return stockOff(i);
+    const g = i.guildId, u = i.user.id, cfg = stockCfg(s), market = marketNow(s, g), sub = i.options.getSubcommand();
+    if (sub === 'list') {
+      const mine = Object.fromEntries(holdings(g, u).map((h) => [h.company, h]));
+      let total = 0, cost = 0;
+      const fields = market.map((m, n) => {
+        const c = companyOf(s, m.company), px = unitPrice(m.price), h = mine[c.id], ev = m.news[0];
+        if (h) { total += px * h.shares; cost += h.cost; }
+        return { name: `${n + 1}. ${c.emoji} ${c.ticker}  ${c.name}`, value: `**${money(s, px)}** ${arrow(m.change)} ${pct(m.change)}(24時間)\n${h ? `持ち株 **${h.shares}株**(取得 ${money(s, Math.round(h.cost / h.shares))}/株 ・ 損益 **${money(s, px * h.shares - h.cost)}**)` : '持ち株なし'}${ev ? `\n📰 ${ev.minutesAgo}分前: ${ev.up ? '🔺' : '🔻'} ${ev.text}` : ''}\n-# ${COMPANIES_BLURB[c.id]}`, inline: false };
+      });
+      const e = new EmbedBuilder().setColor(0x2ecc71).setTitle('📈 株式市場').setDescription(`株価は、**${Math.round(cfg.tickMs / 60000)}分ごと**に動きます。売買の手数料は、それぞれ ${(cfg.fee * 100).toFixed(1)}%。\`/stock buy\` \`/stock sell\``).addFields(fields)
+        .setFooter({ text: `持ち株の評価額 ${total.toLocaleString()}(損益 ${(total - cost).toLocaleString()})・ 手持ち ${wallet(i).toLocaleString()}` });
+      return i.reply({ embeds: [e], ...EPH });
+    }
+    const idx = i.options.getInteger('company', true) - 1, m = market[idx]; if (!m) return refuse(i, 'その会社は、ありません。');
+    const c = companyOf(s, m.company), px = unitPrice(m.price), h = holding(g, u, c.id);
+    if (sub === 'buy') {
+      const n = i.options.getInteger('shares', true);
+      if (h.shares + n > cfg.maxShares) return refuse(i, `${c.name}の株は、最大 ${cfg.maxShares.toLocaleString()}株までしか持てません。(いま ${h.shares}株)`);
+      const gross = px * n, fee = Math.ceil(gross * cfg.fee), total = gross + fee;
+      if (!collect(g, u, total, s)) return refuse(i, `お金が足りません。(必要 ${money(s, total)} / 手持ち ${money(s, Math.max(0, wallet(i)))})`);
+      addHolding(g, u, c.id, n, total);
+      return i.reply({ embeds: [card(i, s, 0x2ecc71, `${c.emoji} ${c.name} を買いました`, `**${n}株** × ${money(s, px)}\n**- ${money(s, total)}**(手数料 ${money(s, fee)} 込み)\n持ち株: **${h.shares + n}株**`)] });
+    }
+    const n = i.options.getInteger('shares') ?? h.shares;
+    if (!n || h.shares < n) return refuse(i, `${c.name}の株を、${n || 0}株は持っていません。(いま ${h.shares}株)`);
+    const basis = takeHolding(g, u, c.id, n); if (basis === null) return refuse(i, `${c.name}の株が足りません。`); // 取れたときだけ売る(二重に売れない)
+    const gross = px * n, fee = Math.floor(gross * cfg.fee), net = gross - fee, p = pay(g, u, net, s), profit = net - basis;
+    return i.reply({ embeds: [card(i, s, profit >= 0 ? GREEN : RED, `${c.emoji} ${c.name} を売りました`, `**${n}株** × ${money(s, px)}\n**+ ${money(s, p.paid)}**(手数料 ${money(s, fee)} 引き)${shortNote(s, p)}\n損益: **${profit >= 0 ? '+' : ''}${money(s, profit)}**(取得費 ${money(s, basis)})`)] });
+  },
+};
+const COMPANIES_BLURB = Object.fromEntries(COMPANIES.map((c) => [c.id, c.blurb]));
+
 /* ================= 指名手配 ================= */
 const wantedOff = (i) => refuse(i, 'このサーバーでは、指名手配はオフです。管理者が、ダッシュボードの「通貨 → 指名手配」でオンにできます。');
 export const wantedCommand = {
@@ -851,4 +902,4 @@ export const arrestCommand = {
   },
 };
 
-export const commands = [balanceCommand, depositCommand, withdrawCommand, richestCommand, crimeCommand, workCommand, begCommand, bailCommand, chinchiroCommand, slotCommand, blackjackCommand, blackjackEndCommand, heistCommand, shopCommand, useCommand, petCommand, cooldownsCommand, jobCommand, wantedCommand, arrestCommand, marketCommand, releaseCommand, payCommand, balanceEditCommand, cooldownResetCommand];
+export const commands = [balanceCommand, depositCommand, withdrawCommand, richestCommand, crimeCommand, workCommand, begCommand, bailCommand, chinchiroCommand, slotCommand, blackjackCommand, blackjackEndCommand, heistCommand, shopCommand, useCommand, petCommand, stockCommand, cooldownsCommand, jobCommand, wantedCommand, arrestCommand, marketCommand, releaseCommand, payCommand, balanceEditCommand, cooldownResetCommand];

@@ -53,6 +53,14 @@ CREATE TABLE IF NOT EXISTS eco_pets (              -- ペット(1人1匹)
   xp INTEGER NOT NULL DEFAULT 0, hunger INTEGER NOT NULL DEFAULT 80, fed_at INTEGER NOT NULL, adopted_at INTEGER NOT NULL,
   PRIMARY KEY (guild_id, user_id)
 );
+CREATE TABLE IF NOT EXISTS eco_stock_prices (     -- 株価の履歴(時刻ごと)。最新の行が、いまの株価
+  guild_id TEXT NOT NULL, company TEXT NOT NULL, tick INTEGER NOT NULL, price REAL NOT NULL,
+  PRIMARY KEY (guild_id, company, tick)
+);
+CREATE TABLE IF NOT EXISTS eco_stock_holdings (   -- 持っている株
+  guild_id TEXT NOT NULL, user_id TEXT NOT NULL, company TEXT NOT NULL, shares INTEGER NOT NULL DEFAULT 0, cost INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (guild_id, user_id, company)
+);
 CREATE TABLE IF NOT EXISTS eco_audit (            -- 管理者の操作の記録(だれが・だれに・何を・いくら)
   id INTEGER PRIMARY KEY AUTOINCREMENT, guild_id TEXT NOT NULL, actor_id TEXT NOT NULL, actor_name TEXT NOT NULL,
   target_id TEXT, action TEXT NOT NULL, amount INTEGER, note TEXT, at INTEGER NOT NULL
@@ -211,6 +219,28 @@ export const renamePet = (g, u, name) => db.prepare('UPDATE eco_pets SET name=? 
 export const releasePet = (g, u) => Number(db.prepare('DELETE FROM eco_pets WHERE guild_id=? AND user_id=?').run(g, u).changes) > 0;
 /** 満腹度(いまの値 = hunger)と、なつき度を更新する。fed_at を now にして、そこから減り始める */
 export const updatePet = (g, u, { hunger, xpAdd = 0 }, now = Date.now()) => db.prepare('UPDATE eco_pets SET hunger=?, xp=xp+?, fed_at=? WHERE guild_id=? AND user_id=?').run(hunger, xpAdd, now, g, u);
+/* ---------- 株 ---------- */
+export const lastStockRow = (g, company) => db.prepare('SELECT tick, price FROM eco_stock_prices WHERE guild_id=? AND company=? ORDER BY tick DESC LIMIT 1').get(g, company) ?? null;
+export const stockPriceAt = (g, company, tick) => db.prepare('SELECT price FROM eco_stock_prices WHERE guild_id=? AND company=? AND tick<=? ORDER BY tick DESC LIMIT 1').get(g, company, tick)?.price ?? null;
+export const insertStockPrices = (g, company, rows, keepFromTick) => {
+  db.exec('BEGIN');
+  try {
+    const st = db.prepare('INSERT OR REPLACE INTO eco_stock_prices (guild_id,company,tick,price) VALUES (?,?,?,?)');
+    for (const r of rows) st.run(g, company, r.tick, r.price);
+    db.prepare('DELETE FROM eco_stock_prices WHERE guild_id=? AND company=? AND tick<?').run(g, company, keepFromTick);
+    db.exec('COMMIT');
+  } catch (e) { db.exec('ROLLBACK'); throw e; }
+};
+export const holdings = (g, u) => db.prepare('SELECT company, shares, cost FROM eco_stock_holdings WHERE guild_id=? AND user_id=? AND shares>0').all(g, u);
+export const holding = (g, u, company) => db.prepare('SELECT shares, cost FROM eco_stock_holdings WHERE guild_id=? AND user_id=? AND company=?').get(g, u, company) ?? { shares: 0, cost: 0 };
+export const addHolding = (g, u, company, shares, cost) => db.prepare(`INSERT INTO eco_stock_holdings (guild_id,user_id,company,shares,cost) VALUES (?,?,?,?,?)
+  ON CONFLICT(guild_id,user_id,company) DO UPDATE SET shares=shares+excluded.shares, cost=cost+excluded.cost`).run(g, u, company, shares, cost);
+/** 株を売る(持っている数を超えない)。売れたら、売った分の元の値(取得費)を返す。取れなければ null(同時に2回売っても、二重に売れない) */
+export function takeHolding(g, u, company, shares) {
+  const cur = holding(g, u, company);
+  const r = db.prepare('UPDATE eco_stock_holdings SET shares=shares-?, cost=cost-? WHERE guild_id=? AND user_id=? AND company=? AND shares>=?').run(shares, Math.round(cur.cost * shares / Math.max(1, cur.shares)), g, u, company, shares);
+  return Number(r.changes) > 0 ? Math.round(cur.cost * shares / Math.max(1, cur.shares)) : null;
+}
 export const setHeistDeadline = (g, u, deadline) => db.prepare('UPDATE eco_heist SET deadline=? WHERE guild_id=? AND user_id=?').run(deadline, g, u);
 /** ゲームを終わらせる。取れたら、そのゲームを返す(同時に2か所から終わらせても、片方しか取れない=二重に精算されない) */
 export const claimHeist = (g, u) => heistRow(db.prepare('DELETE FROM eco_heist WHERE guild_id=? AND user_id=? RETURNING *').get(g, u));

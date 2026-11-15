@@ -1,7 +1,6 @@
 import { CRIMES, JOBS, BEG } from './jobs.js';
 import { HEISTS } from './heist.js';
 import { ITEMS } from './market.js';
-import { SHOP } from './shop.js';
 import { HEAT, HEAT_PER_STAR, CHANCE_PENALTY_PER_STAR, ARREST } from './wanted.js';
 
 /**
@@ -80,12 +79,6 @@ function buildSchema() {
   L.push(p('wanted.jailMax', '指名手配', wg, '逮捕された人の留置場(上限)', ARREST.jailMax / MIN, 0, 1440, '分'));
   for (const [k, c] of Object.entries(CRIMES)) L.push(p(`heat.crime.${k}`, '指名手配', '🔥 成功したときに上がる手配度', `${c.emoji} ${c.name}`, HEAT.crime[k] ?? 1, 0, 100, ''));
   for (const T of Object.values(HEISTS)) L.push(p(`heat.heist.${T.id}`, '指名手配', '🔥 成功したときに上がる手配度', `${T.emoji} ${T.name}`, HEAT.heist[T.id] ?? 4, 0, 100, ''));
-  for (const it of SHOP) {
-    const g = `${it.emoji} お店: ${it.name}`;
-    L.push(p(`shop.${it.id}.price`, 'お店', g, '値段', it.price, 1, 1e9, '$'));
-    L.push(p(`shop.${it.id}.minutes`, 'お店', g, '効果が続く時間', it.minutes, 1, 1440, '分'));
-    L.push(p(`shop.${it.id}.power`, 'お店', g, '効果の強さ(良いことも代償も、同じ割合)', it.power, 0, 500, '%'));
-  }
   const pg = '🐾 ペット';
   L.push(p('pet.price', 'ペット', pg, '飼う値段', 1000, 0, 1e9, '$'));
   L.push(p('pet.feedCost', 'ペット', pg, '餌代(1回)', 150, 0, 1e9, '$'));
@@ -97,6 +90,11 @@ function buildSchema() {
   L.push(p('pet.feedXp', 'ペット', pg, '餌1回で増える、なつき度', 10, 0, 1000, ''));
   L.push(p('pet.playXp', 'ペット', pg, '遊び1回で増える、なつき度', 5, 0, 1000, ''));
   L.push(p('pet.power', 'ペット', pg, 'ボーナスの強さ(100% = 初期値)', 100, 0, 500, '%'));
+  const kg = '📈 株';
+  L.push(p('stock.tickMin', '株', kg, '株価が動く間隔', 15, 1, 1440, '分'));
+  L.push(p('stock.volPct', '株', kg, '値動きの大きさ(100% = 初期値)', 100, 0, 500, '%'));
+  L.push(p('stock.feePermille', '株', kg, '売買の手数料(売り・買いそれぞれ)', 10, 0, 100, '‰'));
+  L.push(p('stock.maxShares', '株', kg, '1つの会社で、持てる株の数', 10000, 1, 1e8, '株'));
   L.push(p('bail.perMin', 'その他', '🔓 保釈', '保釈金(留置場の残り1分あたり)', 100, 0, 1e6, '$'));
   return L;
 }
@@ -139,8 +137,8 @@ export const heistOf = (s, id) => {
 };
 export const timeoutCfg = (s) => ({ finePct: val(s, 'heist.timeoutFinePct') / 100, jailPct: val(s, 'heist.timeoutJailPct') / 100 }); // 時間切れの扱い(100% = 失敗と同じ。0% = 罰なしの撤退)
 export const toolCfg = (s) => ({ success: val(s, 'tool.keepOnSuccess') / 100, fail: val(s, 'tool.keepOnFail') / 100, timeout: val(s, 'tool.keepOnTimeout') / 100 }); // 使った道具が、戻ってくる確率
-export const shopItemOf = (s, it) => ({ ...it, price: val(s, `shop.${it.id}.price`), minutes: val(s, `shop.${it.id}.minutes`), power: val(s, `shop.${it.id}.power`) });
 export const petCfg = (s) => ({ price: val(s, 'pet.price'), feedCost: val(s, 'pet.feedCost'), feedCd: val(s, 'pet.feedCd') * MIN, playCd: val(s, 'pet.playCd') * MIN, feedHunger: val(s, 'pet.feedHunger'), hungerDecay: val(s, 'pet.hungerDecay'), minHunger: val(s, 'pet.minHunger'), feedXp: val(s, 'pet.feedXp'), playXp: val(s, 'pet.playXp'), power: val(s, 'pet.power') });
+export const stockCfg = (s) => ({ tickMs: val(s, 'stock.tickMin') * MIN, volScale: val(s, 'stock.volPct') / 100, fee: val(s, 'stock.feePermille') / 1000, maxShares: val(s, 'stock.maxShares') });
 export const itemOf = (s, item) => ({ ...item, price: val(s, `item.${item.id}.price`) });
 export const marketCfg = (s) => ({ range: [val(s, 'market.rateLow') / 100, val(s, 'market.rateHigh') / 100], maxStack: val(s, 'market.maxStack') });
 export const wantedCfg = (s) => {
