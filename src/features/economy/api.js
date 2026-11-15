@@ -130,7 +130,7 @@ export function mountApi(router, client = null) {
     if (!adminOnly(req, res)) return;
     const kind = req.params.kind; if (!PANELS[kind]) return res.status(404).json({ error: 'パネルの種類が不正です' });
     const chId = String(req.body?.channel_id ?? ''); if (!ID.test(chId)) return res.status(400).json({ error: 'チャンネルを選んでください' });
-    try { await installPanel(client, req.guild.id, kind, chId, req.body?.hide !== false); }
+    try { await installPanel(client, req.guild.id, kind, chId, req.body?.hide !== false, req.body?.sticky !== false); }
     catch (e) { return res.status(400).json({ error: e.code === 50013 || e.code === 50001 ? 'そのチャンネルに、メッセージを送る権限がありません' : e.message }); }
     audit(req.guild.id, req.actor, null, `${PANELS[kind].title}を設置`, null, `${req.body?.hide !== false ? 'コマンドを廃止' : 'コマンドは残す'}`);
     res.json(panelView(req.guild.id, kind));

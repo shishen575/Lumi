@@ -364,13 +364,14 @@ Dash.registerTab({
               <p class="hint" style="margin:0 0 10px">${info[r.kind][1]} 廃止できるコマンド: ${r.commands.map((c) => `<code>/${c}</code>`).join(' ')}</p>
               <div class="grid2"><div class="field"><label class="f">パネルを置くチャンネル</label><select class="p-ch"><option value="">選んでください</option>${chans.map((c) => `<option value="${c.id}" ${r.installed?.channel_id === c.id ? 'selected' : ''}>#${esc(c.name)}</option>`).join('')}</select></div></div>
               <label class="sw"><input type="checkbox" class="p-hide" ${!r.installed || r.installed.hide ? 'checked' : ''}><i></i><span><b>元のコマンドを廃止する</b><small>オンにすると、このサーバーでは、${r.commands.map((c) => `<code>/${c}</code>`).join(' ')} が使えなくなります(パネルからだけ、使えます)。オフにすると、コマンドも残ります</small></span></label>
+              <label class="sw"><input type="checkbox" class="p-sticky" ${!r.installed || r.installed.sticky ? 'checked' : ''}><i></i><span><b>いつも一番下に出す</b><small>チャンネルで誰かが話したり、ボタンの結果が出たりしたら、パネルを消して、一番下に出し直します(8秒静かになってから)</small></span></label>
               <div class="acts"><button class="btn p-set" type="button">${r.installed ? '置き直す(更新)' : 'パネルを置く'}</button>${r.installed ? `<a class="btn ghost" href="${esc(r.installed.link)}" target="_blank" rel="noopener">パネルを開く</a><button class="btn danger p-rm" type="button">撤去する</button>` : ''}</div></div>`).join('')}`;
           el.querySelectorAll('[data-k]').forEach((c) => {
             const kind = c.dataset.k, row = rows.find((x) => x.kind === kind);
             c.querySelector('.p-set').onclick = async () => {
-              const ch = c.querySelector('.p-ch').value, hide = c.querySelector('.p-hide').checked; if (!ch) { toast('チャンネルを選んでください', 'err'); return; }
+              const ch = c.querySelector('.p-ch').value, hide = c.querySelector('.p-hide').checked, sticky = c.querySelector('.p-sticky').checked; if (!ch) { toast('チャンネルを選んでください', 'err'); return; }
               if (hide && !await confirm({ title: 'コマンドを廃止', message: `パネルを置くと、このサーバーでは、${row.commands.map((x) => '/' + x).join(' ')} が使えなくなります(パネルからだけ、使えます)。`, ok: '置く' })) return;
-              const r = await api(`/panels/${kind}`, { method: 'POST', body: { channel_id: ch, hide } }); toast('パネルを置きました'); draw(rows.map((x) => (x.kind === kind ? r : x)));
+              const r = await api(`/panels/${kind}`, { method: 'POST', body: { channel_id: ch, hide, sticky } }); toast('パネルを置きました'); draw(rows.map((x) => (x.kind === kind ? r : x)));
             };
             const rm = c.querySelector('.p-rm');
             if (rm) rm.onclick = async () => {

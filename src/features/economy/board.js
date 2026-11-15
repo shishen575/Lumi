@@ -31,17 +31,22 @@ export const boardDue = (g, kind, minutes, now = Date.now()) => { const at = get
  * 話し続けている間は、8秒静かになるまで待つ。ただし、30秒以上たったら、出し直す。出し直す関数は、種類ごとに渡す
  */
 const pending = new Map();
+/**
+ * repost: { 名前: 出し直す関数 } または { 名前: { channel: (g) => ({ ch, msg }) | null, run: (g) => Promise } }。
+ * 関数だけを渡したときは、board:名前 の状態(チャンネルと最後のメッセージ)を見る。channel が null を返す種類は、何もしない
+ */
 export function stickBoards(client, repost) {
-  // repost: { stock: (g) => Promise, price: (g) => Promise } / それぞれ、設定を見て、出し直す(チャンネルが違う・オフなら何もしない)
+  const specs = Object.entries(repost).map(([kind, spec]) => [kind, typeof spec === 'function'
+    ? { channel: (g) => getKV(g, `board:${kind}`, {}), run: spec } : spec]);
   return (msg) => {
     if (!msg.guildId) return;
-    // 自分(Bot)のメッセージは、ボード自身なので無視する。ただし、コマンドの返事(スラッシュコマンドへの返信)は、数える(返事のあとに、ボードが下へ戻る)
+    // 自分(Bot)のメッセージは、ボード自身なので無視する。ただし、コマンドの返事(スラッシュコマンドやボタンへの返信)は、数える(返事のあとに、ボードが下へ戻る)
     if (msg.author?.id === client.user?.id && !msg.interactionMetadata && !msg.interaction) return;
-    for (const [kind, fn] of Object.entries(repost)) {
-      const st = getKV(msg.guildId, `board:${kind}`, {}); if (!st.ch || st.ch !== msg.channelId || st.msg === msg.id) continue; // 「一番下に出す」がオフなら、出し直す側(repost)が、何もしない
+    for (const [kind, { channel, run }] of specs) {
+      const st = channel(msg.guildId); if (!st?.ch || st.ch !== msg.channelId || st.msg === msg.id) continue; // 「一番下に出す」がオフなら、channel が null を返すか、出し直す側が、何もしない
       const key = `${msg.guildId}:${kind}`, now = Date.now(), cur = pending.get(key) ?? { first: now };
       clearTimeout(cur.t);
-      cur.t = setTimeout(() => { pending.delete(key); fn(msg.guildId).catch((e) => console.warn(`[board:${kind}] 出し直せませんでした:`, e.message)); }, Math.min(8000, Math.max(1000, 30000 - (now - cur.first))));
+      cur.t = setTimeout(() => { pending.delete(key); run(msg.guildId).catch((e) => console.warn(`[board:${kind}] 出し直せませんでした:`, e.message)); }, Math.min(8000, Math.max(1000, 30000 - (now - cur.first))));
       cur.t.unref?.(); pending.set(key, cur);
     }
   };

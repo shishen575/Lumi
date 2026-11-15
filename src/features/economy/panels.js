@@ -75,7 +75,7 @@ export function panelMessage(kind, g) {
 }
 
 /** パネルを置く(すでにあれば、置き直す)。hide が true なら、元のコマンドを、このサーバーで廃止する */
-export async function installPanel(client, g, kind, channelId, hide) {
+export async function installPanel(client, g, kind, channelId, hide, sticky = true) {
   if (!PANELS[kind]) throw new Error('パネルの種類が不正です');
   const ch = client.channels.cache.get(channelId); if (!ch?.isTextBased?.() || ch.guildId !== g) throw new Error('チャンネルが不正です');
   const st = panelState(g), old = st[kind], payload = panelMessage(kind, g);
@@ -85,10 +85,24 @@ export async function installPanel(client, g, kind, channelId, hide) {
     if (old?.msg && old.ch !== ch.id) { try { await (await client.channels.cache.get(old.ch)?.messages.fetch(old.msg))?.delete(); } catch { /* もう無い */ } }
     msg = await ch.send({ ...payload, allowedMentions: { parse: [] } });
   }
-  setKV(g, KEY, { ...st, [kind]: { ch: ch.id, msg: msg.id, hide: !!hide, at: Date.now() } });
+  setKV(g, KEY, { ...st, [kind]: { ch: ch.id, msg: msg.id, hide: !!hide, sticky: !!sticky, at: Date.now() } });
   await resyncGuildCommands(g);
   return panelState(g)[kind];
 }
+/** パネルが、チャンネルの一番下になければ、前のものを消して、一番下に出し直す(すでに一番下なら、何もしない) */
+export async function repostPanel(client, g, kind) {
+  const st = panelState(g)[kind]; if (!st || st.sticky === false) return false;
+  const ch = client.channels.cache.get(st.ch); if (!ch?.isTextBased?.() || ch.guildId !== g) return false;
+  if (ch.lastMessageId === st.msg) return false;
+  try { await (await ch.messages.fetch(st.msg))?.delete(); } catch { /* もう無い */ }
+  const msg = await ch.send({ ...panelMessage(kind, g), allowedMentions: { parse: [] } });
+  setKV(g, KEY, { ...panelState(g), [kind]: { ...panelState(g)[kind], msg: msg.id, at: Date.now() } });
+  return true;
+}
+/** 「一番下に出す」の対象(チャンネルで誰かが話したら、出し直す) */
+export const panelStickSpecs = (client) => Object.fromEntries(Object.keys(PANELS).map((kind) => [`panel:${kind}`, {
+  channel: (g) => { const st = panelState(g)[kind]; return st && st.sticky !== false ? { ch: st.ch, msg: st.msg } : null; }, run: (g) => repostPanel(client, g, kind),
+}]));
 /** パネルを外す。メッセージを消して、廃止していたコマンドを、元に戻す */
 export async function removePanel(client, g, kind) {
   const st = panelState(g), old = st[kind]; if (!old) return false;
