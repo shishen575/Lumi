@@ -11,11 +11,10 @@ export async function postBoard(client, g, kind, channelId, payload, { replace =
   const key = `board:${kind}`, st = getKV(g, key, {});
   try {
     if (replace && st.msg && st.ch === ch.id) {
-      let old = null; try { old = await ch.messages.fetch(st.msg); } catch { /* もう無い */ }
-      if (old) {
-        if (ch.lastMessageId === old.id) { await old.edit(payload); setKV(g, key, { ...st, at: now, sticky: replace }); return true; } // まだ一番下: そのまま書き換える
-        await old.delete().catch(() => {}); // 上に流れた: 消して、下に出し直す
+      if (ch.lastMessageId === st.msg) { // まだ一番下: そのまま書き換える(書き換えられなければ、消して、出し直す)
+        try { await ch.messages.edit(st.msg, payload); setKV(g, key, { ...st, at: now, sticky: replace }); return true; } catch { /* もう無い */ }
       }
+      await ch.messages.delete(st.msg).catch(() => {}); // 上に流れた: 消して、下に出し直す(履歴を読む権限が無くても、消せる)
     }
     const m = await ch.send({ ...payload, allowedMentions: { parse: [] } });
     setKV(g, key, { ch: ch.id, msg: m.id, at: now, sticky: !!replace }); return true;
@@ -27,27 +26,35 @@ export const updatedLine = (now = Date.now()) => `🕒 最終更新 <t:${Math.fl
 export const boardDue = (g, kind, minutes, now = Date.now()) => { const at = getKV(g, `board:${kind}`, {}).at; return !at || now - at >= minutes * 60_000 - 5_000; };
 
 /**
- * ボードのチャンネルで、誰かが話したら、少し待ってから、ボードを一番下に出し直す(いつも一番下に見えるように)。
- * 話し続けている間は、8秒静かになるまで待つ。ただし、30秒以上たったら、出し直す。出し直す関数は、種類ごとに渡す
+ * チャンネルの「一番下に出す」ものを、まとめて見張る(値段表・株価グラフ・パネル)。
+ * items: [{ kind, prio, state: (g) => ({ ch, msg }) | null, run: (g) => Promise }]
+ *   prio が大きいものほど、下(一番下に近い方)に出す。state が null を返すもの(一番下に出す、がオフ)は、対象にしない。
+ * チャンネルで、だれかが話したり、コマンド・ボタンの返事が出たり、ほかの機能がメッセージを出したりしたら、静かになってから(8秒。続いていても30秒まで)、
+ *   prio の小さい順に、run を呼ぶ(各 run は、自分が一番下になければ、前のものを消して、出し直す)。最後の prio が大きいものが、一番下に来る。
+ * 出し直している間と、その直後の数秒は、自分たちが出したメッセージに反応しない(ずっと出し直し続けないように)
  */
-const pending = new Map();
-/**
- * repost: { 名前: 出し直す関数 } または { 名前: { channel: (g) => ({ ch, msg }) | null, run: (g) => Promise } }。
- * 関数だけを渡したときは、board:名前 の状態(チャンネルと最後のメッセージ)を見る。channel が null を返す種類は、何もしない
- */
-export function stickBoards(client, repost) {
-  const specs = Object.entries(repost).map(([kind, spec]) => [kind, typeof spec === 'function'
-    ? { channel: (g) => getKV(g, `board:${kind}`, {}), run: spec } : spec]);
+const pending = new Map(), settling = new Map();
+export function stickChannels(client, itemsOrFn) {
+  const itemsFor = typeof itemsOrFn === 'function' ? itemsOrFn : () => itemsOrFn; // サーバーごとに、対象が変わるなら、関数(g) => [...]
   return (msg) => {
     if (!msg.guildId) return;
-    // 自分(Bot)のメッセージは、ボード自身なので無視する。ただし、コマンドの返事(スラッシュコマンドやボタンへの返信)は、数える(返事のあとに、ボードが下へ戻る)
-    if (msg.author?.id === client.user?.id && !msg.interactionMetadata && !msg.interaction) return;
-    for (const [kind, { channel, run }] of specs) {
-      const st = channel(msg.guildId); if (!st?.ch || st.ch !== msg.channelId || st.msg === msg.id) continue; // 「一番下に出す」がオフなら、channel が null を返すか、出し直す側が、何もしない
-      const key = `${msg.guildId}:${kind}`, now = Date.now(), cur = pending.get(key) ?? { first: now };
-      clearTimeout(cur.t);
-      cur.t = setTimeout(() => { pending.delete(key); run(msg.guildId).catch((e) => console.warn(`[board:${kind}] 出し直せませんでした:`, e.message)); }, Math.min(8000, Math.max(1000, 30000 - (now - cur.first))));
-      cur.t.unref?.(); pending.set(key, cur);
-    }
+    const g = msg.guildId, chKey = `${g}:${msg.channelId}`;
+    // Bot自身のメッセージは、ボード・パネル自身(か、ほかの自動の投稿)。出し直している最中と、その直後は、無視する。ただし、コマンド・ボタンへの返事は、いつも数える
+    const own = msg.author?.id === client.user?.id && !msg.interactionMetadata && !msg.interaction;
+    if (own && (settling.get(chKey) ?? 0) > Date.now()) return;
+    const here = itemsFor(g).filter((it) => { const st = it.state(g); return st?.ch === msg.channelId && st.msg !== msg.id; });
+    if (!here.length) return;
+    const now = Date.now(), cur = pending.get(chKey) ?? { first: now };
+    clearTimeout(cur.t);
+    cur.t = setTimeout(async () => {
+      pending.delete(chKey);
+      const list = itemsFor(g).filter((it) => it.state(g)?.ch === msg.channelId).sort((a, b) => a.prio - b.prio);
+      const top = list.at(-1), ch = client.channels.cache.get(msg.channelId);
+      if (!top || !ch || ch.lastMessageId === top.state(g)?.msg) return; // いちばん下に、すでにある
+      settling.set(chKey, Infinity);
+      try { for (const it of list) await it.run(g).catch((e) => console.warn(`[sticky:${it.kind}] 出し直せませんでした:`, e.message)); }
+      finally { settling.set(chKey, Date.now() + 6000); }
+    }, Math.min(8000, Math.max(1000, 30000 - (now - cur.first))));
+    cur.t.unref?.(); pending.set(chKey, cur);
   };
 }

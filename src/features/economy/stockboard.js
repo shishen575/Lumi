@@ -1,4 +1,5 @@
 import { EmbedBuilder } from 'discord.js';
+import { getKV } from '../../core/db.js';
 import { postBoard as post, boardDue, updatedLine } from './board.js';
 import { getSettings } from './settings.js';
 import { marketNow } from './stockmarket.js';
@@ -41,5 +42,7 @@ export async function boardTick(client, now = Date.now()) {
   }
 }
 
+/** 「一番下に出す」の対象(状態: board:stock)。出し直すのは、一番下になければ、消して出し直す */
+export const stockStickItem = (client) => ({ kind: 'stock', prio: 20, state: (g) => (getSettings(g).stockBoardEdit ? getKV(g, 'board:stock', {}) : null), run: (g) => repostStock(client, g) });
 /** チャンネルで誰かが話したあとの、出し直し(「一番下に出す」がオンのときだけ) */
 export async function repostStock(client, g) { const s = getSettings(g); if (!s.stockBoardEdit) return false; return postBoard(client, g); }

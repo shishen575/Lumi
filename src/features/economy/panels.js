@@ -43,7 +43,8 @@ registerHiddenCommands((g) => {
 
 /** コマンドの代わりに、ボタンの操作で、同じ処理を動かすための包み: i.options が、決まった値を返す */
 export const asCommand = (i, values = {}, sub = null) => {
-  const options = { getString: (k) => values[k] ?? null, getInteger: (k) => values[k] ?? null, getBoolean: (k) => values[k] ?? null, getUser: () => null, getSubcommand: () => sub };
+  const get = (k) => values[k] ?? null, none = () => null; // ボタンでは、ユーザー・チャンネル・ロール・ファイルは、指定できない
+  const options = { getString: get, getInteger: get, getNumber: get, getBoolean: get, getUser: none, getMember: none, getChannel: none, getRole: none, getAttachment: none, getMentionable: none, getSubcommand: () => sub, getSubcommandGroup: none };
   return new Proxy(i, { get(t, k) { if (k === 'options') return options; const v = t[k]; return typeof v === 'function' ? v.bind(t) : v; } });
 };
 
@@ -122,9 +123,9 @@ export async function installPanel(client, g, kind, channelId, hide, sticky = tr
   const ch = client.channels.cache.get(channelId); if (!ch?.isTextBased?.() || ch.guildId !== g) throw new Error('チャンネルが不正です');
   const st = panelState(g), old = st[kind], payload = panelMessage(kind, g);
   let msg = null;
-  if (old?.msg && old.ch === ch.id) { try { msg = await (await ch.messages.fetch(old.msg)).edit(payload); } catch { /* 消されていたら、新しく置く */ } }
+  if (old?.msg && old.ch === ch.id) { try { msg = await ch.messages.edit(old.msg, payload); } catch { /* 消されていたら、新しく置く */ } }
   if (!msg) {
-    if (old?.msg && old.ch !== ch.id) { try { await (await client.channels.cache.get(old.ch)?.messages.fetch(old.msg))?.delete(); } catch { /* もう無い */ } }
+    if (old?.msg && old.ch !== ch.id) await client.channels.cache.get(old.ch)?.messages.delete(old.msg).catch(() => {}); // 別のチャンネルにあった前のものは、消す
     msg = await ch.send({ ...payload, allowedMentions: { parse: [] } });
   }
   setKV(g, KEY, { ...st, [kind]: { ch: ch.id, msg: msg.id, hide: !!hide, sticky: !!sticky, v: PANEL_VERSION, at: Date.now() } });
@@ -136,19 +137,18 @@ export async function repostPanel(client, g, kind) {
   const st = panelState(g)[kind]; if (!st || st.sticky === false) return false;
   const ch = client.channels.cache.get(st.ch); if (!ch?.isTextBased?.() || ch.guildId !== g) return false;
   if (ch.lastMessageId === st.msg) return false;
-  try { await (await ch.messages.fetch(st.msg))?.delete(); } catch { /* もう無い */ }
+  await ch.messages.delete(st.msg).catch(() => {}); // 履歴を読む権限が無くても、消せる
   const msg = await ch.send({ ...panelMessage(kind, g), allowedMentions: { parse: [] } });
   setKV(g, KEY, { ...panelState(g), [kind]: { ...panelState(g)[kind], msg: msg.id, at: Date.now() } });
   return true;
 }
-/** 「一番下に出す」の対象(チャンネルで誰かが話したら、出し直す) */
-export const panelStickSpecs = (client) => Object.fromEntries(Object.keys(PANELS).map((kind) => [`panel:${kind}`, {
-  channel: (g) => { const st = panelState(g)[kind]; return st && st.sticky !== false ? { ch: st.ch, msg: st.msg } : null; }, run: (g) => repostPanel(client, g, kind),
-}]));
+/** 「一番下に出す」の対象。パネルは、値段表・株価グラフより下(prio が大きい)に出す */
+export const panelStickItems = (client) => Object.keys(PANELS).map((kind, n) => ({ kind: `panel:${kind}`, prio: 100 + n,
+  state: (g) => { const st = panelState(g)[kind]; return st && st.sticky !== false ? { ch: st.ch, msg: st.msg } : null; }, run: (g) => repostPanel(client, g, kind) }));
 /** パネルを外す。メッセージを消して、廃止していたコマンドを、元に戻す */
 export async function removePanel(client, g, kind) {
   const st = panelState(g), old = st[kind]; if (!old) return false;
-  try { await (await client.channels.cache.get(old.ch)?.messages.fetch(old.msg))?.delete(); } catch { /* もう無い */ }
+  await client.channels.cache.get(old.ch)?.messages.delete(old.msg).catch(() => {});
   const { [kind]: _gone, ...rest } = st; setKV(g, KEY, rest);
   await resyncGuildCommands(g);
   return true;

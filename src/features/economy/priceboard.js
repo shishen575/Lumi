@@ -1,5 +1,6 @@
 import { EmbedBuilder } from 'discord.js';
 import { getSettings, money } from './settings.js';
+import { getKV } from '../../core/db.js';
 import { postBoard as post, boardDue, updatedLine } from './board.js';
 import { petsOpen, bonusLabel } from './pets.js';
 import { estateOf, hourlyNet } from './estate.js';
@@ -46,4 +47,5 @@ export async function priceTick(client, now = Date.now()) {
   }
 }
 
+export const priceStickItem = (client) => ({ kind: 'price', prio: 10, state: (g) => (getSettings(g).priceBoardReplace ? getKV(g, 'board:price', {}) : null), run: (g) => repostPrice(client, g) });
 export async function repostPrice(client, g) { const s = getSettings(g); if (!s.priceBoardReplace) return false; return postPriceBoard(client, g); }

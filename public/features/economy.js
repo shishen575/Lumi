@@ -382,6 +382,66 @@ Dash.registerTab({
         };
         draw(list);
       } },
+    /* ===== カスタムパネル(どんなコマンドでも、ボタンにして置ける) ===== */
+    { id: 'custom', title: 'カスタムパネル', icon: 'list',
+      async render(el, { api, channels: getChannels, esc, toast, confirm, pageHeader }) {
+        const [cat, saved, chans] = await Promise.all([api('/command-catalog'), api('/custom-panels'), getChannels()]);
+        const cmds = cat.commands.filter((c) => !c.unsupported), colors = { secondary: '灰色', primary: '青', success: '緑', danger: '赤' };
+        const blank = () => ({ id: null, title: '新しいパネル', description: '', ch: '', sticky: true, hide: false, buttons: [] });
+        let panels = [...saved.map((p) => JSON.parse(JSON.stringify(p))), blank()];
+        const optsOf = (b) => { const c = cmds.find((x) => x.name === b.command); if (!c) return []; if (c.subs.length) return c.subs.find((x) => x.name === b.sub)?.options ?? []; return c.options; };
+        const modeOf = (b, o) => (b.ask?.includes(o.name) ? 'ask' : (b.values && o.name in b.values) ? 'fixed' : 'skip');
+        const valInput = (o, v) => o.choices?.length ? `<select class="o-val">${o.choices.map((c) => `<option value="${esc(c.value)}" ${String(v) === String(c.value) ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select>`
+          : o.type === 5 ? `<select class="o-val"><option value="true" ${v === true ? 'selected' : ''}>オン(はい)</option><option value="false" ${v === false ? 'selected' : ''}>オフ(いいえ)</option></select>`
+          : `<input class="o-val" type="${o.type === 3 ? 'text' : 'number'}" ${o.type === 10 ? 'step="any"' : ''} value="${v === undefined ? '' : esc(v)}" placeholder="${esc(o.description || o.name)}">`;
+        const btnHtml = (b, bi) => { const c = cmds.find((x) => x.name === b.command), os = optsOf(b);
+          return `<div class="card" data-bi="${bi}" style="background:var(--bg2)"><div class="card-h"><h3 style="margin:0">${esc(b.emoji || '')} ${esc(b.label || '(名前なし)')}</h3><button class="btn danger icon" type="button" data-rmb="${bi}" aria-label="ボタンを消す">✕</button></div>
+            <div class="grid2">
+              <div class="field"><label class="f">ボタンの文字</label><input class="b-label" type="text" maxlength="40" value="${esc(b.label)}"></div>
+              <div class="field"><label class="f">絵文字</label><input class="b-emoji" type="text" maxlength="8" value="${esc(b.emoji || '')}"></div>
+              <div class="field"><label class="f">色</label><select class="b-style">${Object.entries(colors).map(([k, l]) => `<option value="${k}" ${b.style === k ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
+              <div class="field"><label class="f">コマンド</label><select class="b-cmd"><option value="">選んでください</option>${cmds.map((x) => `<option value="${x.name}" ${b.command === x.name ? 'selected' : ''}>/${esc(x.name)} — ${esc(x.description)}</option>`).join('')}</select></div>
+              ${c?.subs.length ? `<div class="field"><label class="f">サブコマンド</label><select class="b-sub"><option value="">選んでください</option>${c.subs.map((x) => `<option value="${x.name}" ${b.sub === x.name ? 'selected' : ''}>${esc(x.name)} — ${esc(x.description)}</option>`).join('')}</select></div>` : ''}</div>
+            ${os.length ? `<p class="hint" style="margin:6px 0">コマンドの項目: 「決めない」は省略、「固定」はいつも同じ値、「押したとき入力」は、押すと入力欄が出ます(5項目まで)。</p>${os.map((o) => { const m = modeOf(b, o); return o.supported
+              ? `<div class="grid2" data-opt="${esc(o.name)}" style="align-items:end"><div class="field" style="margin:0"><label class="f">${esc(o.name)}${o.required ? '(必須)' : ''} <span class="mut small">${esc(o.description || '')}</span></label><select class="o-mode">${[['skip', '決めない(省略)'], ['fixed', '固定の値'], ['ask', '押したとき入力']].filter(([k]) => !(k === 'skip' && o.required)).map(([k, l]) => `<option value="${k}" ${m === k ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
+                <div class="field" style="margin:0;${m === 'fixed' ? '' : 'display:none'}" data-valbox>${valInput(o, b.values?.[o.name])}</div></div>`
+              : `<p class="hint" style="margin:4px 0">${esc(o.name)}: ボタンでは指定できない種類の項目です${o.required ? '(必須なので、このコマンドは使えません)' : '(省略されます)'}</p>`; }).join('')}` : ''}</div>`; };
+        const draw = () => {
+          el.innerHTML = `${pageHeader('カスタムパネル', 'どんなコマンドでも、ボタンにして、チャンネルに置けます。コマンドの項目は、固定の値にしたり、ボタンを押したときに入力欄で聞いたりできます(ユーザー・チャンネル・ロール・ファイルの項目は、ボタンでは指定できません)。「元のコマンドを廃止する」をオンにすると、このサーバーでは、使っているコマンドが、ボタンからだけ使えるようになります(/help は残ります)。')}
+            ${panels.map((p, pi) => `<div class="card" data-pi="${pi}"><div class="card-h"><h2>${p.id ? '🧩' : '➕'} ${esc(p.title)}</h2>${p.id ? '<span class="badge">設置ずみ</span>' : ''}</div>
+              <div class="grid2"><div class="field"><label class="f">パネルの題名</label><input class="p-title" type="text" maxlength="80" value="${esc(p.title)}"></div>
+                <div class="field"><label class="f">置くチャンネル</label><select class="p-ch"><option value="">選んでください</option>${chans.map((c) => `<option value="${c.id}" ${p.ch === c.id ? 'selected' : ''}>#${esc(c.name)}</option>`).join('')}</select></div></div>
+              <div class="field"><label class="f">説明(省略できる)</label><input class="p-desc" type="text" maxlength="1000" value="${esc(p.description)}"></div>
+              <label class="sw"><input type="checkbox" class="p-sticky" ${p.sticky ? 'checked' : ''}><i></i><span><b>いつも一番下に出す</b><small>だれかが話したら、パネルを一番下に出し直します</small></span></label>
+              <label class="sw"><input type="checkbox" class="p-hide" ${p.hide ? 'checked' : ''}><i></i><span><b>元のコマンドを廃止する</b><small>ボタンで使っているコマンドを、このサーバーの一覧から外します</small></span></label>
+              <h3 style="margin:14px 0 8px">ボタン(最大${cat.maxButtons}個)</h3>${p.buttons.map((b, bi) => btnHtml(b, bi)).join('') || '<p class="hint">ボタンが、まだありません。</p>'}
+              <div class="acts"><button class="btn ghost p-addb" type="button" ${p.buttons.length >= cat.maxButtons ? 'disabled' : ''}>ボタンを追加</button><button class="btn p-save" type="button">${p.id ? '更新する' : 'パネルを置く'}</button>${p.id ? `<a class="btn ghost" href="${esc(p.link)}" target="_blank" rel="noopener">パネルを開く</a><button class="btn danger p-del" type="button">撤去する</button>` : ''}</div></div>`).join('')}`;
+          el.querySelectorAll('.card[data-pi]').forEach((card) => {
+            const pi = Number(card.dataset.pi), p = panels[pi];
+            const collect = () => {
+              p.title = card.querySelector('.p-title').value; p.ch = card.querySelector('.p-ch').value; p.description = card.querySelector('.p-desc').value; p.sticky = card.querySelector('.p-sticky').checked; p.hide = card.querySelector('.p-hide').checked;
+              p.buttons = [...card.querySelectorAll('[data-bi]')].map((bc, bi) => { const old = p.buttons[bi], b = { label: bc.querySelector('.b-label').value, emoji: bc.querySelector('.b-emoji').value, style: bc.querySelector('.b-style').value, command: bc.querySelector('.b-cmd').value, sub: bc.querySelector('.b-sub')?.value ?? '', values: {}, ask: [] };
+                if (b.command !== old.command) b.sub = ''; // コマンドを変えたら、項目は、選び直す
+                bc.querySelectorAll('[data-opt]').forEach((r) => { const m = r.querySelector('.o-mode').value, name = r.dataset.opt; if (m === 'ask') b.ask.push(name); else if (m === 'fixed') b.values[name] = r.querySelector('.o-val').value; });
+                if (b.command !== old.command || (b.sub !== old.sub)) { b.values = {}; b.ask = []; }
+                return b; });
+            };
+            card.querySelectorAll('.b-cmd, .b-sub, .o-mode').forEach((x) => (x.onchange = () => { collect(); draw(); }));
+            card.querySelector('.p-addb').onclick = () => { collect(); p.buttons.push({ label: '', emoji: '', style: 'secondary', command: '', sub: '', values: {}, ask: [] }); draw(); };
+            card.querySelectorAll('[data-rmb]').forEach((x) => (x.onclick = () => { collect(); p.buttons.splice(Number(x.dataset.rmb), 1); draw(); }));
+            card.querySelector('.p-save').onclick = async () => {
+              collect(); if (!p.ch) { toast('チャンネルを選んでください', 'err'); return; }
+              if (p.hide && !await confirm({ title: 'コマンドを廃止', message: `ボタンで使っているコマンド(${[...new Set(p.buttons.map((b) => '/' + b.command))].join(' ')})が、このサーバーでは、使えなくなります(ボタンからだけ、使えます)。`, ok: '置く' })) return;
+              const body = { title: p.title, description: p.description, channel_id: p.ch, sticky: p.sticky, hide: p.hide, buttons: p.buttons.map((b) => ({ label: b.label, emoji: b.emoji, style: b.style, command: b.command, sub: b.sub, modes: Object.fromEntries([...Object.keys(b.values).map((k) => [k, 'fixed']), ...b.ask.map((k) => [k, 'ask'])]), values: b.values })) };
+              const r = await api('/custom-panels/' + (p.id ?? 'new'), { method: 'PUT', body }); toast('パネルを置きました');
+              panels[pi] = JSON.parse(JSON.stringify(r)); if (!p.id) panels.push(blank()); draw();
+            };
+            const del = card.querySelector('.p-del');
+            if (del) del.onclick = async () => { if (!await confirm({ title: 'パネルを撤去', message: `「${p.title}」のメッセージを消して、廃止していたコマンドを、元に戻します。`, ok: '撤去する', danger: true })) return; await api('/custom-panels/' + p.id, { method: 'DELETE' }); toast('撤去しました'); panels.splice(pi, 1); draw(); };
+          });
+        };
+        draw();
+      } },
     { id: 'jail', title: '留置場', icon: 'alert',
       async render(el, { api, esc, ic, toast, confirm, pageHeader }) {
         const dur = (ms) => { const t = Math.ceil(ms / 1000), m = Math.floor(t / 60), r = t % 60; return m ? `${m}分${r ? `${r}秒` : ''}` : `${r}秒`; };

@@ -10,6 +10,10 @@ import { hasAccessSync } from './access.js';
 const hiddenProviders = [];
 export const registerHiddenCommands = (fn) => hiddenProviders.push(fn);
 const hiddenFor = (guildId) => Object.assign({}, ...hiddenProviders.map((f) => { try { return f(guildId) ?? {}; } catch { return {}; } }));
+let byNameRef = new Map(), catalogRef = [];
+/** 登録されている全コマンドの、名前・説明・項目(カスタムパネルで、コマンドを選ぶのに使う) */
+export const commandCatalog = () => catalogRef;
+export const findCommand = (name) => byNameRef.get(name);
 let resync = null;
 /** そのサーバーのコマンドの登録を、やり直す(パネルの設置・撤去のあと) */
 export const resyncGuildCommands = async (guildId) => { if (resync) await resync(guildId); };
@@ -27,6 +31,7 @@ export function setupCommands(client, features) {
   if (!cmds.some((c) => c.data.name === 'help')) cmds.push(helpCommand(cmds, features)); // /help は自動生成
   if (!cmds.length) return;
   const byName = new Map(cmds.map((c) => [c.data.name, c]));
+  byNameRef = byName; catalogRef = cmds.map((c) => c.data.toJSON());
   const comps = features.flatMap((f) => f.components ?? []); // [{ id: 'ogiri:answer', execute(i) }]
   const body = cmds.map((c) => c.data.toJSON());
   const register = (guild) =>

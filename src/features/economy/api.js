@@ -10,6 +10,8 @@ import { SCHEMA, jobOf, wantedCfg, marketCfg } from './balance.js';
 import { FX_LABELS, SLOTS, MAX_SHOP_ITEMS, DEFAULT_SHOP, SHOP_MAX_STACK, shopById, shopItems } from './shop.js';
 import { COMPANIES, VOL_LABELS, VOL_LEVELS, DEFAULT_NAMES, DEFAULT_LEVELS, companyOf, DEFAULT_EVENTS, MAX_EVENTS } from './stocks.js';
 import { PANELS, panelState, installPanel, removePanel } from './panels.js';
+import { customPanels, saveCustomPanel, removeCustomPanel, MAX_CUSTOM, MAX_BUTTONS } from './custompanels.js';
+import { commandCatalog } from '../../core/commands.js';
 import { MAX_PETS, DEFAULT_PETS, PET_FX_KEYS, speciesOf } from './pets.js';
 import { itemById as marketItemById, ITEMS as MARKET_ITEMS } from './market.js';
 import { MAX_LOTTERIES, DEFAULT_LOTTERY } from './lottery.js';
@@ -141,6 +143,25 @@ export function mountApi(router, client = null) {
     await removePanel(client, req.guild.id, kind);
     audit(req.guild.id, req.actor, null, `${PANELS[kind].title}を撤去`, null, 'コマンドを元に戻した');
     res.json(panelView(req.guild.id, kind));
+  });
+  // カスタムパネル: どんなコマンドでも、ボタンにして置ける
+  const SUP = new Set([3, 4, 5, 10]);
+  router.get('/command-catalog', (req, res) => res.json({ max: MAX_CUSTOM, maxButtons: MAX_BUTTONS, commands: commandCatalog().filter((c) => c.name !== 'dashboard').map((c) => ({ name: c.name, description: c.description,
+    subs: (c.options ?? []).filter((o) => o.type === 1).map((sc) => ({ name: sc.name, description: sc.description, options: (sc.options ?? []).map(optInfo) })),
+    unsupported: (c.options ?? []).some((o) => o.type === 2), options: (c.options ?? []).filter((o) => o.type !== 1).map(optInfo) })) }));
+  const optInfo = (o) => ({ name: o.name, description: o.description, type: o.type, required: !!o.required, supported: SUP.has(o.type), choices: o.choices ?? null, min: o.min_value ?? null, max: o.max_value ?? null });
+  const customView = (g) => Object.entries(customPanels(g)).map(([id, p]) => ({ id, ...p, link: `https://discord.com/channels/${g}/${p.ch}/${p.msg}` }));
+  router.get('/custom-panels', (req, res) => res.json(customView(req.guild.id)));
+  router.put('/custom-panels/:id', async (req, res) => {
+    if (!adminOnly(req, res)) return;
+    const id = req.params.id === 'new' ? null : req.params.id; if (id && !customPanels(req.guild.id)[id]) return res.status(404).json({ error: 'パネルが、ありません' });
+    try { const p = await saveCustomPanel(client, req.guild.id, id, req.body ?? {}, String(req.body?.channel_id ?? '')); audit(req.guild.id, req.actor, null, `カスタムパネルを${id ? '更新' : '設置'}(${p.title})`, null, `ボタン ${p.buttons.length}個${p.hide ? ' / コマンドを廃止' : ''}`); res.json(customView(req.guild.id).find((x) => x.id === p.id)); }
+    catch (e) { res.status(400).json({ error: e.code === 50013 || e.code === 50001 ? 'そのチャンネルに、メッセージを送る権限がありません' : e.message }); }
+  });
+  router.delete('/custom-panels/:id', async (req, res) => {
+    if (!adminOnly(req, res)) return;
+    const ok = await removeCustomPanel(client, req.guild.id, req.params.id); if (!ok) return res.status(404).json({ error: 'パネルが、ありません' });
+    audit(req.guild.id, req.actor, null, 'カスタムパネルを撤去', null, ''); res.json({ ok: true });
   });
   // 品の付与・回収: 付けられる品の一覧(お店 + 闇市)と、その人がいま持っている個数
   const grantables = (s) => [...shopItems(s).map((x) => ({ id: x.id, name: x.name, emoji: x.emoji, kind: 'shop', max: SHOP_MAX_STACK })), ...MARKET_ITEMS.map((x) => ({ id: x.id, name: x.name, emoji: x.emoji, kind: 'market', max: marketCfg(s).maxStack }))];
