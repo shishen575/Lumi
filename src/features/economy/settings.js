@@ -16,6 +16,7 @@ export const DEFAULTS = {
   policeBonusPerWanted: 5, // 指名手配中の人が1人いるごとに、警察のバイトのボーナス確率が上がる量(%)
   arrestMinShifts: 5,      // /arrest を使うのに必要な、警察のバイトの出勤回数
   balance: {},             // ゲームバランスの上書き({ キー: 数値 })。ダッシュボードの「ゲームバランス」で変える。なければ初期値
+  petsEnabled: false,      // ペット。オンのとき、/pet が使え、育てるとボーナスがつく
   shopEnabled: false,      // お店(タバコ・お酒)。オンのとき、/shop と /use が使える
   allowDebt: true,       // 借金を許可するか。許可すると、罰金などで、所持金が0より下になる(0以下の間は、犯罪ができない)
 };
@@ -38,6 +39,7 @@ export function saveSettings(guildId, s) {
     budgetEnabled: s.budgetEnabled === undefined ? cur.budgetEnabled : !!s.budgetEnabled,
     allowDebt: s.allowDebt === undefined ? cur.allowDebt : !!s.allowDebt,
     shopEnabled: s.shopEnabled === undefined ? cur.shopEnabled : !!s.shopEnabled,
+    petsEnabled: s.petsEnabled === undefined ? cur.petsEnabled : !!s.petsEnabled,
     blackMarket: s.blackMarket === undefined ? cur.blackMarket : !!s.blackMarket,
     balance: s.balance === undefined ? cur.balance : sanitizeBalance(s.balance, cur.balance),
     promotionEnabled: s.promotionEnabled === undefined ? cur.promotionEnabled : !!s.promotionEnabled,

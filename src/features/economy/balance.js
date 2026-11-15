@@ -86,6 +86,17 @@ function buildSchema() {
     L.push(p(`shop.${it.id}.minutes`, 'お店', g, '効果が続く時間', it.minutes, 1, 1440, '分'));
     L.push(p(`shop.${it.id}.power`, 'お店', g, '効果の強さ(良いことも代償も、同じ割合)', it.power, 0, 500, '%'));
   }
+  const pg = '🐾 ペット';
+  L.push(p('pet.price', 'ペット', pg, '飼う値段', 1000, 0, 1e9, '$'));
+  L.push(p('pet.feedCost', 'ペット', pg, '餌代(1回)', 150, 0, 1e9, '$'));
+  L.push(p('pet.feedCd', 'ペット', pg, '餌をあげられる間隔', 60, 0, 1440, '分'));
+  L.push(p('pet.playCd', 'ペット', pg, '遊べる間隔', 30, 0, 1440, '分'));
+  L.push(p('pet.feedHunger', 'ペット', pg, '餌1回で増える満腹度', 40, 1, 100, ''));
+  L.push(p('pet.hungerDecay', 'ペット', pg, '満腹度が、1時間で減る量', 5, 0, 100, ''));
+  L.push(p('pet.minHunger', 'ペット', pg, 'ボーナスが出る、最低の満腹度', 30, 0, 100, ''));
+  L.push(p('pet.feedXp', 'ペット', pg, '餌1回で増える、なつき度', 10, 0, 1000, ''));
+  L.push(p('pet.playXp', 'ペット', pg, '遊び1回で増える、なつき度', 5, 0, 1000, ''));
+  L.push(p('pet.power', 'ペット', pg, 'ボーナスの強さ(100% = 初期値)', 100, 0, 500, '%'));
   L.push(p('bail.perMin', 'その他', '🔓 保釈', '保釈金(留置場の残り1分あたり)', 100, 0, 1e6, '$'));
   return L;
 }
@@ -129,6 +140,7 @@ export const heistOf = (s, id) => {
 export const timeoutCfg = (s) => ({ finePct: val(s, 'heist.timeoutFinePct') / 100, jailPct: val(s, 'heist.timeoutJailPct') / 100 }); // 時間切れの扱い(100% = 失敗と同じ。0% = 罰なしの撤退)
 export const toolCfg = (s) => ({ success: val(s, 'tool.keepOnSuccess') / 100, fail: val(s, 'tool.keepOnFail') / 100, timeout: val(s, 'tool.keepOnTimeout') / 100 }); // 使った道具が、戻ってくる確率
 export const shopItemOf = (s, it) => ({ ...it, price: val(s, `shop.${it.id}.price`), minutes: val(s, `shop.${it.id}.minutes`), power: val(s, `shop.${it.id}.power`) });
+export const petCfg = (s) => ({ price: val(s, 'pet.price'), feedCost: val(s, 'pet.feedCost'), feedCd: val(s, 'pet.feedCd') * MIN, playCd: val(s, 'pet.playCd') * MIN, feedHunger: val(s, 'pet.feedHunger'), hungerDecay: val(s, 'pet.hungerDecay'), minHunger: val(s, 'pet.minHunger'), feedXp: val(s, 'pet.feedXp'), playXp: val(s, 'pet.playXp'), power: val(s, 'pet.power') });
 export const itemOf = (s, item) => ({ ...item, price: val(s, `item.${item.id}.price`) });
 export const marketCfg = (s) => ({ range: [val(s, 'market.rateLow') / 100, val(s, 'market.rateHigh') / 100], maxStack: val(s, 'market.maxStack') });
 export const wantedCfg = (s) => {

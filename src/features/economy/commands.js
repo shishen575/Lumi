@@ -1,6 +1,6 @@
 import { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, MessageFlags } from 'discord.js';
 import { getSettings, money } from './settings.js';
-import { setStatus, activeStatuses, shiftsOf, allShifts, addShift, getHeat, addHeat, clearHeat, topWanted, itemQty, allItems, addItem, useItem, transfer, adjustBalance, clearCooldowns, audit, peek, deposit, withdraw, cooldownLeft, setCooldown, jailLeft, jail, release, richest, getBj, saveBj, deleteBj, allBj, claimBj, getRamen, saveRamen, claimRamen, getHeist, saveHeist, claimHeist, expiredHeists, setHeistDeadline, releaseAll } from './db.js';
+import { getPet, adoptPet, renamePet, releasePet, updatePet, setStatus, activeStatuses, shiftsOf, allShifts, addShift, getHeat, addHeat, clearHeat, topWanted, itemQty, allItems, addItem, useItem, transfer, adjustBalance, clearCooldowns, audit, peek, deposit, withdraw, cooldownLeft, setCooldown, jailLeft, jail, release, richest, getBj, saveBj, deleteBj, allBj, claimBj, getRamen, saveRamen, claimRamen, getHeist, saveHeist, claimHeist, expiredHeists, setHeistDeadline, releaseAll } from './db.js';
 import { ensureAccount, pay, collect, fine, treasury } from './ledger.js';
 import { hasAccessSync, isOperator } from '../../core/access.js';
 import { PermissionFlagsBits } from 'discord.js';
@@ -12,9 +12,10 @@ import { rankFor, scalePay } from './ranks.js';
 import { RAMEN, makeOrder, gradeRamen, GRADES } from './ramen.js';
 import { POLICE_BONUS_CAP } from './wanted.js';
 import { userFx } from './userfx.js';
+import { SPECIES, levelOf, nextXp, MAX_LEVEL, hungerNow, hungerBar, petFx } from './pets.js';
 import { SHOP, SHOP_MAX_STACK, shopById, itemText } from './shop.js';
 import { describeFx } from './effects.js';
-import { shopItemOf, toolCfg, timeoutCfg, ramenCfg, crimeOf, jobOf, begOf, heistOf, itemOf, marketCfg, wantedCfg, bailPerMin } from './balance.js';
+import { petCfg, shopItemOf, toolCfg, timeoutCfg, ramenCfg, crimeOf, jobOf, begOf, heistOf, itemOf, marketCfg, wantedCfg, bailPerMin } from './balance.js';
 import { starsOf, stars as starText, bountyOf, chanceDelta } from './wanted.js';
 import { ITEMS, itemById, toolFor, priceOf, marketRate } from './market.js';
 import { CRIMES, JOBS, resolveCrime, resolveWork, resolveBeg } from './jobs.js';
@@ -679,6 +680,7 @@ export const cooldownsCommand = {
       { name: '🙏 乞食', value: line('乞食', cooldownLeft(g, u, 'beg')) },
       { name: '🏦 大型犯罪', value: Object.values(HEISTS).map((T) => line(`${T.emoji} ${T.short}`, cooldownLeft(g, u, heistKey(T.id)))).join('\n') },
     ];
+    if (s.petsEnabled && getPet(g, u)) fields.push({ name: '🐾 ペット', value: `${line('🍖 餌', cooldownLeft(g, u, 'pet:feed'))}\n${line('🎾 遊び', cooldownLeft(g, u, 'pet:play'))}` });
     if (s.wantedEnabled) {
       const wc = wantedCfg(s), heat = getHeat(g, u, s.wantedDecayMin), n = starsOf(heat, wc.heatPerStar);
       fields.push({ name: '👮 指名手配', value: `${line('逮捕(/arrest)', cooldownLeft(g, u, 'arrest'))}\n${n ? `${starText(n)} あなたは **指名手配 Lv${n}** です(手配度 ${heat})` : `手配されていません(手配度 ${heat})`}` });
@@ -738,6 +740,68 @@ export const useCommand = {
   },
 };
 
+/* ================= ペット ================= */
+const petOff = (i) => refuse(i, 'このサーバーでは、ペットはオフです。管理者が、ダッシュボードの「通貨 → お店・ペット・株など」でオンにできます。');
+const cleanName = (v, fallback) => (String(v ?? '').replace(/[\r\n<>@`*_~|]/g, '').trim().slice(0, 12) || fallback);
+export const petCommand = {
+  data: guildOnly(new SlashCommandBuilder().setName('pet').setDescription('ペットを飼って、育てます(育つと、ボーナスがつきます)')
+    .addSubcommand((c) => c.setName('status').setDescription('ペットの様子を見ます(まだなら、飼える動物の一覧)'))
+    .addSubcommand((c) => c.setName('adopt').setDescription('ペットを飼います(お金がかかります)')
+      .addStringOption((o) => o.setName('species').setDescription('動物').setRequired(true).addChoices(...Object.values(SPECIES).map((x) => ({ name: `${x.emoji} ${x.name}(${x.text}が上がる)`, value: x.id }))))
+      .addStringOption((o) => o.setName('name').setDescription('名前(省略すると、動物の名前)').setMaxLength(12)))
+    .addSubcommand((c) => c.setName('feed').setDescription('餌をあげます(お金がかかります)'))
+    .addSubcommand((c) => c.setName('play').setDescription('遊びます(お金はかかりません)'))
+    .addSubcommand((c) => c.setName('rename').setDescription('名前を変えます').addStringOption((o) => o.setName('name').setDescription('新しい名前').setRequired(true).setMaxLength(12)))
+    .addSubcommand((c) => c.setName('release').setDescription('ペットを手放します(お金は戻りません)').addBooleanOption((o) => o.setName('confirm').setDescription('本当に手放すなら、オン').setRequired(true)))),
+  async execute(i) {
+    const s = await open(i); if (!s) return;
+    if (!s.petsEnabled) return petOff(i);
+    const g = i.guildId, u = i.user.id, cfg = petCfg(s), now = Date.now(), sub = i.options.getSubcommand(), pet = getPet(g, u);
+    const bonusText = (row) => { const sp = SPECIES[row.species], v = petFx(row, cfg, now)[sp.bonus]; return v ? `${sp.text} **${sp.bonus === 'toolKeep' ? '+' : '+'}${Math.round(v * 1000) / 10}%**` : `${sp.text}のボーナスは、おなかがすいていて、出ていません(満腹度 ${cfg.minHunger} 以上で出ます)`; };
+    if (sub === 'status') {
+      if (!pet) {
+        const e = new EmbedBuilder().setColor(0xe67e22).setTitle('🐾 ペット').setDescription(`まだ、ペットがいません。\`/pet adopt\` で飼えます(**${money(s, cfg.price)}**)。育てると、ボーナスがつきます。`)
+          .addFields(Object.values(SPECIES).map((x) => ({ name: `${x.emoji} ${x.name}`, value: `${x.text} +${Math.round(x.per * 1000 * cfg.power / 100) / 10}% / レベル`, inline: true })));
+        return i.reply({ embeds: [e], ...EPH });
+      }
+      const sp = SPECIES[pet.species], h = hungerNow(pet, cfg.hungerDecay, now), lv = levelOf(pet.xp), nx = nextXp(pet.xp);
+      const fcd = cooldownLeft(g, u, 'pet:feed'), pcd = cooldownLeft(g, u, 'pet:play');
+      const e = new EmbedBuilder().setColor(0xe67e22).setTitle(`${sp.emoji} ${pet.name}(${sp.name})`).setAuthor({ name: i.member?.displayName ?? i.user.username, iconURL: i.user.displayAvatarURL?.() })
+        .addFields({ name: 'レベル', value: `**Lv ${lv}**${lv >= MAX_LEVEL ? '(最大)' : ` ・ なつき度 ${pet.xp} / ${nx}`}`, inline: true }, { name: '満腹度', value: hungerBar(h), inline: true },
+          { name: 'ボーナス', value: bonusText({ ...pet, hunger: pet.hunger }) }, { name: '世話', value: `🍖 餌 ${fcd ? `あと ${dur(fcd)}` : `**あげられます**(${money(s, cfg.feedCost)})`} ・ 🎾 遊び ${pcd ? `あと ${dur(pcd)}` : '**できます**'}` });
+      return i.reply({ embeds: [e], ...EPH });
+    }
+    if (sub === 'adopt') {
+      if (pet) return refuse(i, `すでに **${pet.name}** を飼っています。手放すなら \`/pet release\` です。`);
+      const sp = SPECIES[i.options.getString('species', true)]; if (!sp) return refuse(i, 'その動物は、いません。');
+      if (!collect(g, u, cfg.price, s)) return refuse(i, `お金が足りません。(必要 ${money(s, cfg.price)} / 手持ち ${money(s, Math.max(0, wallet(i)))})`);
+      const name = cleanName(i.options.getString('name'), sp.name); adoptPet(g, u, sp.id, name, now);
+      return i.reply({ embeds: [card(i, s, 0xe67e22, `${sp.emoji} ${name} が、仲間になった!`, `${sp.name}を飼いました。\n**- ${money(s, cfg.price)}**\n餌と遊びで、なつき度が上がり、レベルが上がると、**${sp.text}**にボーナスがつきます。\`/pet status\` で様子を見られます。`)] });
+    }
+    if (!pet) return refuse(i, 'ペットがいません。`/pet adopt` で飼えます。');
+    const sp = SPECIES[pet.species], h = hungerNow(pet, cfg.hungerDecay, now), lv0 = levelOf(pet.xp);
+    const lvText = (xpAdd) => { const lv1 = levelOf(pet.xp + xpAdd); return lv1 > lv0 ? `\n🎉 **レベルアップ!** Lv ${lv1}(${sp.text} +${Math.round(sp.per * lv1 * cfg.power * 10) / 10}%)` : ''; };
+    if (sub === 'feed') {
+      const cd = cooldownLeft(g, u, 'pet:feed'); if (cd) return refuse(i, `${pet.name}は、まだおなかがいっぱいです。あと ${dur(cd)}。`);
+      if (h >= 100) return refuse(i, `${pet.name}は、おなかがいっぱいです。`);
+      if (!collect(g, u, cfg.feedCost, s)) return refuse(i, `餌代が足りません。(必要 ${money(s, cfg.feedCost)})`);
+      const hungerAfter = Math.min(100, h + cfg.feedHunger); updatePet(g, u, { hunger: hungerAfter, xpAdd: cfg.feedXp }, now); setCooldown(g, u, 'pet:feed', cfg.feedCd);
+      return i.reply({ embeds: [card(i, s, 0xe67e22, `🍖 ${pet.name}に餌をあげた`, `満腹度 ${h} → **${hungerAfter}**、なつき度 +${cfg.feedXp}\n**- ${money(s, cfg.feedCost)}**${lvText(cfg.feedXp)}`)] });
+    }
+    if (sub === 'play') {
+      const cd = cooldownLeft(g, u, 'pet:play'); if (cd) return refuse(i, `${pet.name}は、少し休んでいます。あと ${dur(cd)}。`);
+      if (h < 10) return refuse(i, `${pet.name}は、おなかがすいて、遊べません。餌をあげましょう。`);
+      const hungerAfter = Math.max(0, h - 5); updatePet(g, u, { hunger: hungerAfter, xpAdd: cfg.playXp }, now); setCooldown(g, u, 'pet:play', cfg.playCd);
+      return i.reply({ embeds: [card(i, s, 0xe67e22, `🎾 ${pet.name}と遊んだ`, `なつき度 +${cfg.playXp}、満腹度 ${h} → ${hungerAfter}${lvText(cfg.playXp)}`)] });
+    }
+    if (sub === 'rename') { const name = cleanName(i.options.getString('name', true), pet.name); renamePet(g, u, name); return i.reply({ content: `${sp.emoji} 名前を **${name}** に変えました。`, ...EPH }); }
+    if (sub === 'release') {
+      if (!i.options.getBoolean('confirm')) return refuse(i, '手放すときは、`confirm` をオンにしてください。(お金は戻りません)');
+      releasePet(g, u); return i.reply({ content: `${sp.emoji} **${pet.name}** を手放しました。`, ...EPH });
+    }
+  },
+};
+
 /* ================= 指名手配 ================= */
 const wantedOff = (i) => refuse(i, 'このサーバーでは、指名手配はオフです。管理者が、ダッシュボードの「通貨 → 指名手配」でオンにできます。');
 export const wantedCommand = {
@@ -787,4 +851,4 @@ export const arrestCommand = {
   },
 };
 
-export const commands = [balanceCommand, depositCommand, withdrawCommand, richestCommand, crimeCommand, workCommand, begCommand, bailCommand, chinchiroCommand, slotCommand, blackjackCommand, blackjackEndCommand, heistCommand, shopCommand, useCommand, cooldownsCommand, jobCommand, wantedCommand, arrestCommand, marketCommand, releaseCommand, payCommand, balanceEditCommand, cooldownResetCommand];
+export const commands = [balanceCommand, depositCommand, withdrawCommand, richestCommand, crimeCommand, workCommand, begCommand, bailCommand, chinchiroCommand, slotCommand, blackjackCommand, blackjackEndCommand, heistCommand, shopCommand, useCommand, petCommand, cooldownsCommand, jobCommand, wantedCommand, arrestCommand, marketCommand, releaseCommand, payCommand, balanceEditCommand, cooldownResetCommand];

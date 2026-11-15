@@ -48,6 +48,11 @@ CREATE TABLE IF NOT EXISTS eco_status (           -- お店の消耗品の効果
   guild_id TEXT NOT NULL, user_id TEXT NOT NULL, slot TEXT NOT NULL, item TEXT NOT NULL, until INTEGER NOT NULL,
   PRIMARY KEY (guild_id, user_id, slot)
 );
+CREATE TABLE IF NOT EXISTS eco_pets (              -- ペット(1人1匹)
+  guild_id TEXT NOT NULL, user_id TEXT NOT NULL, species TEXT NOT NULL, name TEXT NOT NULL,
+  xp INTEGER NOT NULL DEFAULT 0, hunger INTEGER NOT NULL DEFAULT 80, fed_at INTEGER NOT NULL, adopted_at INTEGER NOT NULL,
+  PRIMARY KEY (guild_id, user_id)
+);
 CREATE TABLE IF NOT EXISTS eco_audit (            -- 管理者の操作の記録(だれが・だれに・何を・いくら)
   id INTEGER PRIMARY KEY AUTOINCREMENT, guild_id TEXT NOT NULL, actor_id TEXT NOT NULL, actor_name TEXT NOT NULL,
   target_id TEXT, action TEXT NOT NULL, amount INTEGER, note TEXT, at INTEGER NOT NULL
@@ -199,6 +204,13 @@ export const claimRamen = (g, u) => ramenRow(db.prepare('DELETE FROM eco_ramen W
 export const setStatus = (g, u, slot, item, until) => db.prepare(`INSERT INTO eco_status (guild_id,user_id,slot,item,until) VALUES (?,?,?,?,?)
   ON CONFLICT(guild_id,user_id,slot) DO UPDATE SET item=excluded.item, until=excluded.until`).run(g, u, slot, item, until);
 export const activeStatuses = (g, u, now = Date.now()) => db.prepare('SELECT slot, item, until FROM eco_status WHERE guild_id=? AND user_id=? AND until>?').all(g, u, now);
+/* ---------- ペット ---------- */
+export const getPet = (g, u) => db.prepare('SELECT * FROM eco_pets WHERE guild_id=? AND user_id=?').get(g, u) ?? null;
+export const adoptPet = (g, u, species, name, now = Date.now()) => db.prepare('INSERT INTO eco_pets (guild_id,user_id,species,name,xp,hunger,fed_at,adopted_at) VALUES (?,?,?,?,0,80,?,?)').run(g, u, species, name, now, now);
+export const renamePet = (g, u, name) => db.prepare('UPDATE eco_pets SET name=? WHERE guild_id=? AND user_id=?').run(name, g, u);
+export const releasePet = (g, u) => Number(db.prepare('DELETE FROM eco_pets WHERE guild_id=? AND user_id=?').run(g, u).changes) > 0;
+/** 満腹度(いまの値 = hunger)と、なつき度を更新する。fed_at を now にして、そこから減り始める */
+export const updatePet = (g, u, { hunger, xpAdd = 0 }, now = Date.now()) => db.prepare('UPDATE eco_pets SET hunger=?, xp=xp+?, fed_at=? WHERE guild_id=? AND user_id=?').run(hunger, xpAdd, now, g, u);
 export const setHeistDeadline = (g, u, deadline) => db.prepare('UPDATE eco_heist SET deadline=? WHERE guild_id=? AND user_id=?').run(deadline, g, u);
 /** ゲームを終わらせる。取れたら、そのゲームを返す(同時に2か所から終わらせても、片方しか取れない=二重に精算されない) */
 export const claimHeist = (g, u) => heistRow(db.prepare('DELETE FROM eco_heist WHERE guild_id=? AND user_id=? RETURNING *').get(g, u));
