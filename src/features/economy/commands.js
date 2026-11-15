@@ -1035,13 +1035,14 @@ export const arrestCommand = {
     if (jailLeft(g, target.id)) return refuse(i, `<@${target.id}> は、すでに留置場にいます。`);
     if (wc.bountyFine === 0 && budgetEmpty(s, g)) return refuse(i, BUDGET_EMPTY); // 罰金を取らない設定のときだけ、懸賞金は、予算(または何もないところ)から払われる
     setCooldown(g, me, 'arrest', wc.arrestCd);
-    const chance = Math.min(1, Math.max(0, wc.arrestChance + userFx(s, g, target.id).arrestChance)); // 相手の、お店の品・ペットの効果(捕まりやすい・にくい)
+    const fxMe = userFx(s, g, me), fxTg = userFx(s, g, target.id); // お店の品・ペットの効果(逮捕する側・される側)
+    const chance = Math.min(1, Math.max(0, wc.arrestChance + fxTg.arrestChance + fxMe.arrestSuccess));
     if (rng() >= chance) {
       return i.reply({ embeds: [card(i, s, RED, '👮 逮捕に失敗…', `<@${target.id}> に、まんまと逃げられた!\n-# 次の逮捕まで ${dur(wc.arrestCd)}`)], allowedMentions: NO_MENTIONS });
     }
-    const baseBounty = bountyOf(heat, s.bountyPerStar, wc.heatPerStar), bounty = Math.round(baseBounty * wc.reward), jailMs = Math.min(wc.jailMax, wc.jailPerStar * stars);
+    const baseBounty = bountyOf(heat, s.bountyPerStar, wc.heatPerStar), bounty = Math.round(baseBounty * wc.reward * Math.max(0, 1 + fxMe.arrestReward)), jailMs = Math.min(wc.jailMax, wc.jailPerStar * stars);
     // 懸賞金の出どころ: 逮捕された人の罰金(予算がオンなら、予算に入る)→ そこから、逮捕した人に払う
-    const took = Math.round(baseBounty * wc.bountyFine) > 0 ? fine(g, target.id, Math.round(baseBounty * wc.bountyFine), s, 'arrest') : 0; // 罰金は、懸賞金(基本)に対する割合。報酬の割合とは、別
+    const fineAmt = Math.round(baseBounty * wc.bountyFine * Math.max(0, 1 + fxTg.arrestFine)), took = fineAmt > 0 ? fine(g, target.id, fineAmt, s, 'arrest') : 0; // 罰金は、懸賞金(基本)に対する割合。報酬の割合とは、別
     const p = pay(g, me, bounty, s);
     jail(g, target.id, jailMs); clearHeat(g, target.id);
     await i.reply({ embeds: [card(i, s, GOLD, '👮 逮捕成功!', `${starText(stars)} <@${target.id}> を逮捕しました!\n🚔 留置場に ${dur(jailMs)} 入ります。\n\n懸賞金 **+ ${money(s, p.paid)}**${shortNote(s, p)}${took ? `\n-# <@${target.id}> が、罰金 ${money(s, took)} を支払いました(懸賞金は、ここから払われます)` : ''}`)], allowedMentions: NO_MENTIONS });
