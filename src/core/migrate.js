@@ -3,8 +3,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 import { DATA_DIR } from './db.js';
-import { gracefulExit } from './shutdown.js';
-import { RESTART_CODE } from './webhook.js';
+import { gracefulExit, RESTART_CODE } from './shutdown.js';
 
 /**
  * 別の場所(自宅など)から、データベースを引っ越すための、一度きりの受け口。

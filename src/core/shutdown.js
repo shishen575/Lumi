@@ -1,6 +1,8 @@
 // 止まる(再起動する)ときの共通の手順。お知らせを出して、少し待ってから終了する。
 //   ・停止の合図(パネルの停止・再起動 = SIGINT / SIGTERM)
 //   ・GitHub の更新による再起動(終了コード42)
+/** この終了コードで終わると、起動スクリプト(src/index.js)が、BOT本体を立ち上げ直す(データの引っ越しの入れ替えなどで使う) */
+export const RESTART_CODE = 42;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const wait = () => Math.max(0, Number(process.env.SHUTDOWN_WAIT_SECONDS ?? 5)) * 1000;
 

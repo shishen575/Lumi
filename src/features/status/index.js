@@ -1,4 +1,5 @@
-import { SlashCommandBuilder, EmbedBuilder, MessageFlags } from 'discord.js';
+import { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, MessageFlags } from 'discord.js';
+import { loadNotes } from '../../core/release-notes.js';
 import { version } from '../../core/version.js';
 import { setupRestartNotice, getNotice, setNotice } from './restart-notice.js';
 import { latencySummary } from '../../core/latency.js';
@@ -45,11 +46,54 @@ export const pingCommand = {
   },
 };
 
+/* ================= リリースノート(/releasenotes) ================= */
+const MAX_CHOICES = 25; // Discord の、選択肢の上限
+const notesAtLoad = loadNotes(); // 起動時のリリースノート。コマンドの選択肢(プルダウン)に使う(更新のたびに、BOTが再起動して、選択肢も作り直される)
+const label = (n) => `v${n.n} ${n.date} ${n.title}`.slice(0, 100);
+/** 1つの版を、埋め込みにする。page = 新しい順の位置(0 が最新) */
+export function notesEmbed(notes, page) {
+  const n = notes[page], base = process.env.BASE_URL?.replace(/\/+$/, '');
+  const body = n.items.map((it) => `・**${it.tag ?? '更新'}** ${it.text}`).join('\n');
+  return new EmbedBuilder().setColor(0x6d5dfc).setTitle(`📝 リリースノート v${n.n}`)
+    .setDescription(`**${n.title}**(${n.date})\n\n${body.length > 3800 ? body.slice(0, 3797) + '…' : body}`)
+    .setFooter({ text: `${page + 1} / ${notes.length}(新しい順)${page === 0 ? ' ・ 最新' : ''}${base ? ` ・ 更新履歴: ${base}/changelog.html` : ''}${version ? ` ・ 実行中 ${version}` : ''}` });
+}
+const navRow = (notes, page, uid) => new ActionRowBuilder().addComponents(
+  new ButtonBuilder().setCustomId(`rn:0:${uid}`).setEmoji('⏮').setLabel('最新').setStyle(ButtonStyle.Secondary).setDisabled(page <= 0),
+  new ButtonBuilder().setCustomId(`rn:${page - 1}:${uid}`).setLabel('新しい版').setStyle(ButtonStyle.Primary).setDisabled(page <= 0),
+  new ButtonBuilder().setCustomId(`rn:${page + 1}:${uid}`).setLabel('古い版').setStyle(ButtonStyle.Primary).setDisabled(page >= notes.length - 1),
+);
+export const releaseNotesCommand = {
+  data: (() => {
+    const b = new SlashCommandBuilder().setName('releasenotes').setDescription('リリースノート(更新内容)を見ます').setDMPermission(false);
+    b.addIntegerOption((o) => { o.setName('version').setDescription('見たい版(省略すると、最新)'); if (notesAtLoad.length) o.addChoices(...notesAtLoad.slice(0, MAX_CHOICES).map((n) => ({ name: label(n), value: n.n }))); return o; });
+    b.addBooleanOption((o) => o.setName('public').setDescription('全員に表示する(省略すると自分だけ)'));
+    return b;
+  })(),
+  async execute(i) {
+    const notes = loadNotes(); // 最新の内容を読み直す
+    if (!notes.length) return i.reply({ content: 'リリースノートは、まだありません。', flags: MessageFlags.Ephemeral });
+    const want = i.options.getInteger('version'), page = want === null ? 0 : Math.max(0, notes.findIndex((n) => n.n === want));
+    await i.reply({ embeds: [notesEmbed(notes, page)], components: [navRow(notes, page, i.user.id)], ...(i.options.getBoolean('public') ? {} : { flags: MessageFlags.Ephemeral }) });
+  },
+};
+export const releaseNotesButton = {
+  id: 'rn',
+  async execute(i) {
+    const [, pageS, uid] = i.customId.split(':');
+    if (i.user.id !== uid) return i.reply({ content: 'コマンドを実行した人だけが、操作できます。`/releasenotes` で、自分用に開けます。', flags: MessageFlags.Ephemeral });
+    const notes = loadNotes(); if (!notes.length) return i.update({ content: 'リリースノートは、まだありません。', embeds: [], components: [] });
+    const page = Math.min(notes.length - 1, Math.max(0, Number(pageS) || 0));
+    await i.update({ embeds: [notesEmbed(notes, page)], components: [navRow(notes, page, uid)] });
+  },
+};
+
 export default {
   name: 'status',
   title: 'ステータス',
-  commands: [pingCommand],
-  help: '`/ping` で、BOTの応答速度(Discordとの通信、コマンドが届くまでの遅れ、処理の止まり)を調べられます。',
+  commands: [pingCommand, releaseNotesCommand],
+  components: [releaseNotesButton],
+  help: '`/releasenotes` で、更新内容(リリースノート)を、版を選んで見られます。\n`/ping` で、BOTの応答速度(Discordとの通信、コマンドが届くまでの遅れ、処理の止まり)を調べられます。',
   ui: '/dashboard/features/status.js',
   register({ client, router }) {
     setupRestartNotice(client);

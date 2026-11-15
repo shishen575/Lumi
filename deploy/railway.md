@@ -34,7 +34,7 @@ BOT・ダッシュボード・公式サイトを、ひとまとめにして、Ra
 | `MIGRATION_TOKEN` | 16文字以上のランダムな文字列(**引っ越しの間だけ**) |
 | `RAILWAY_DEPLOYMENT_DRAINING_SECONDS` | `10`(再起動の前の「5秒待つ」が、途中で切られないように) |
 
-この時点では、`DISCORD_TOKEN` は **まだ入れません**。`TUNNEL_TOKEN` と `AUTO_UPDATE` と `GITHUB_WEBHOOK_SECRET` は、使いません(入れない)。
+この時点では、`DISCORD_TOKEN` は **まだ入れません**。`TUNNEL_TOKEN` と `AUTO_UPDATE` は、使いません(入れない)。
 
 ## 4. データを引っ越す
 
@@ -74,7 +74,7 @@ BOT・ダッシュボード・公式サイトを、ひとまとめにして、Ra
 
 - 自宅の Pterodactyl の Lumi は、**止めたまま**にします(起動すると、トークンが二重になります)。テスト用に使うなら、**別の Discord アプリ(別のトークン)と別のデータ**にします。
 - 自宅の Cloudflare Tunnel は、使わなくなります。
-- GitHub の Webhook(自動更新)は、不要になります。Railway が、プッシュを見て、自動で更新します。
+- GitHub の Webhook は、不要になります(このバージョンで、Webhook の機能自体を、削除しました)。Railway が、プッシュを見て、自動で更新します。GitHub の Settings → Webhooks に、古い設定が残っていれば、削除してください。
 
 ## うまくいかないとき
 

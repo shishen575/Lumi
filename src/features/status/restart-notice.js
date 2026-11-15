@@ -23,7 +23,7 @@ const guilds = (client) => [...client.guilds.cache.keys()].filter((g) => getNoti
 export function setupRestartNotice(client) {
   onShutdown(async ({ reason, code, waitMs }) => {
     const update = code === 42;
-    const text = update ? `🔄 更新のため、Lumi を再起動します。まもなく戻ります。` : `🔄 Lumi を停止・再起動します。まもなく戻ります。`;
+    const text = update ? `🔄 Lumi を立ち上げ直します(データの入れ替えのため)。まもなく戻ります。` : `🔄 Lumi を停止・再起動します。まもなく戻ります。`;
     await Promise.allSettled(guilds(client).map(async (g) => {
       if (await post(client, g, text)) setKV(g, STATE, { ...getKV(g, STATE, {}), shutdownAt: Date.now(), update });
     }));

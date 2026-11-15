@@ -120,7 +120,7 @@
     },
     {
       "name": "Auto Update",
-      "description": "起動・再起動時にGitHubの最新へ更新する(1/0)。Webhook自動更新を使うなら1",
+      "description": "起動・再起動のたびに、GitHubの最新へ更新する(1/0)",
       "env_variable": "AUTO_UPDATE",
       "default_value": "1",
       "user_viewable": true,
@@ -134,16 +134,6 @@
       "env_variable": "DISABLED_FEATURES",
       "default_value": "",
       "user_viewable": true,
-      "user_editable": true,
-      "rules": "nullable|string",
-      "field_type": "text"
-    },
-    {
-      "name": "GitHub Webhook Secret",
-      "description": "GitHub Webhook の Secret(設定するとpushで自動更新。空なら無効)",
-      "env_variable": "GITHUB_WEBHOOK_SECRET",
-      "default_value": "",
-      "user_viewable": false,
       "user_editable": true,
       "rules": "nullable|string",
       "field_type": "text"

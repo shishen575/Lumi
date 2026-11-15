@@ -69,17 +69,10 @@ export default {
 - 必要なIntentは `src/core/bot.js` に追加
 - 無効化: 環境変数 `DISABLED_FEATURES=activity-roles,...`
 
-## GitHub 連携の自動更新
-`main` に push すると、サーバー上のLumiが自動で `git pull` → `npm install` → 再起動します。
-1. パネルの変数: `AUTO_UPDATE=1`、`GITHUB_WEBHOOK_SECRET=<ランダムな文字列>`
-2. GitHub リポジトリ → Settings → Webhooks → Add webhook
-   - Payload URL: `https://<BASE_URL>/webhook/github`
-   - Content type: `application/json`
-   - Secret: 上と同じ値 / Events: `Just the push event`
-3. push すると Recent Deliveries に 202 が返れば成功
-
-仕組み: Webhookを署名検証(HMAC-SHA256)して終了コード42で終了 → `src/index.js`(監視役)が検知して、最新へ更新(`git fetch` + `reset --hard`)して再起動します。起動コマンドは `node src/index.js` だけでOKです。
-非公開リポジトリは、clone時にURLへ読み取り専用トークンを含めておくと pull も通ります。
+## 起動時の自動更新(Pterodactyl 向け)
+パネルの変数 `AUTO_UPDATE=1`(と、必要なら `GIT_BRANCH`)を設定すると、**起動・再起動のたびに**、`src/index.js`(監視役)が、GitHub の最新へ更新(`git fetch` + `reset --hard` + `npm install`)してから、BOT を起動します。起動コマンドは `node src/index.js` だけでOKです。
+更新したいときは、パネルから、再起動してください。非公開リポジトリは、clone時にURLへ読み取り専用トークンを含めておくと、更新も通ります。
+(GitHub の Webhook による、push での自動更新は、廃止しました。Railway などでは、プラットフォームが、push を見て、自動で更新します)
 
 ## スラッシュコマンド
 | コマンド | 内容 |

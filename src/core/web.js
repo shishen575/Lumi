@@ -7,7 +7,6 @@ import { SqliteStore } from './session-store.js';
 import { latencyRows, latencySummary } from './latency.js';
 import { guildAccess, mountAccessRoutes, resolveAccess, isOperator } from './access.js';
 import { getKV, setKV, db } from './db.js';
-import { mountGithubWebhook } from './webhook.js';
 import { mountMigration } from './migrate.js';
 
 const API = 'https://discord.com/api/v10';
@@ -17,8 +16,7 @@ export function startWeb(client, features) {
   const app = express();
   const BASE = (process.env.BASE_URL || 'http://localhost:3000').trim().replace(/\/+$/, ''); // 末尾のスラッシュは取り除く(あると、ログイン用のアドレスが // になって、Discordのログインが失敗する)
   app.set('trust proxy', 1); // Cloudflare Tunnel / リバプロ越し
-  app.use(express.json({ verify: (req, res, buf) => { req.rawBody = buf; } })); // Webhook署名検証用に生ボディを保持
-  mountGithubWebhook(app);
+  app.use(express.json());
   mountMigration(app); // MIGRATION_TOKEN があるときだけ(データの引っ越し用)
   app.use(session({
     secret: process.env.SESSION_SECRET, resave: false, saveUninitialized: false, store: new SqliteStore(),

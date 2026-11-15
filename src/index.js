@@ -1,7 +1,7 @@
 // 起動エントリ(監視役)。更新と再起動をここで担うので、パネルの起動コマンドは `node src/index.js` だけでよい。
 //   1. AUTO_UPDATE=1 なら GitHub の最新に強制的に揃える(ローカルの変更があっても止まらない)
 //   2. src/main.js(BOT本体)を子プロセスで起動
-//   3. 終了コード42(Webhookによる更新要求)なら 1. に戻る。それ以外は終了
+//   3. 終了コード42(データの引っ越しの入れ替えなど、BOT本体の立ち上げ直し)なら 1. に戻る。それ以外は終了
 import { spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 
@@ -33,7 +33,7 @@ function run() {
   child = spawn(process.execPath, [entry], { stdio: 'inherit' });
   child.on('exit', (code, signal) => {
     child = null;
-    if (!stopping && code === RESTART_CODE) { console.log('[update] 更新のため再起動します'); return run(); }
+    if (!stopping && code === RESTART_CODE) { console.log('[update] BOT本体を立ち上げ直します'); return run(); }
     process.exit(code ?? (signal ? 1 : 0));
   });
 }
