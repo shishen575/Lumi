@@ -289,7 +289,12 @@ export const releasePet = (id) => Number(db.prepare('DELETE FROM eco_pets WHERE 
 export const updatePet = (id, { hunger, xpAdd = 0 }, now = Date.now()) => db.prepare('UPDATE eco_pets SET hunger=?, xp=xp+?, fed_at=? WHERE id=?').run(hunger, xpAdd, now, id);
 /* ---------- 株 ---------- */
 export const lastStockRow = (g, company) => db.prepare('SELECT tick, price FROM eco_stock_prices WHERE guild_id=? AND company=? ORDER BY tick DESC LIMIT 1').get(g, company) ?? null;
-export const addNews = (g, company, tick, up, text, before, after) => db.prepare('INSERT OR IGNORE INTO eco_news (guild_id,company,tick,up,text,before_px,after_px) VALUES (?,?,?,?,?,?,?)').run(g, company, tick, up ? 1 : 0, text, before, after);
+export const addNews = (g, company, tick, up, text, before, after, posted = 0) => db.prepare('INSERT OR IGNORE INTO eco_news (guild_id,company,tick,up,text,before_px,after_px,posted) VALUES (?,?,?,?,?,?,?,?)').run(g, company, tick, up ? 1 : 0, text, before, after, posted);
+/** 最近のニュース(新しい順)。company を渡すと、その会社だけ。7日より古いものは、消える */
+export function recentNews(g, company = null, limit = 10) {
+  db.prepare('DELETE FROM eco_news WHERE guild_id=? AND tick<?').run(g, Math.floor(Date.now() / 60000) - 7 * 1440);
+  return company ? db.prepare('SELECT * FROM eco_news WHERE guild_id=? AND company=? ORDER BY tick DESC LIMIT ?').all(g, company, limit) : db.prepare('SELECT * FROM eco_news WHERE guild_id=? ORDER BY tick DESC LIMIT ?').all(g, limit);
+}
 /** まだ出していないニュース(古い順)。fromTick より前のものは、出さずに済ませる(止まっていたあとに、どっと出ないように) */
 export function takeNews(g, fromTick, limit = 20) {
   db.prepare('UPDATE eco_news SET posted=1 WHERE guild_id=? AND posted=0 AND tick<?').run(g, fromTick);

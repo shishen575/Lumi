@@ -24,7 +24,7 @@ export function marketNow(s, g, now = Date.now()) {
       if (n > MAX_TICK_STEPS) { m = last.tick + (n - MAX_TICK_STEPS) * step; n = MAX_TICK_STEPS; } // 長く見ていなかったときは、直近の分だけ計算する
       for (let j = 0; j < n; j++) {
         m += step; const before = price; price = nextPrice(g, c, m, price, { level, volScale: cfg.volScale, stepFactor: factor, news: newsCfg }); rows.push({ tick: m, price });
-        const ev = eventAt(g, c.id, m, factor, newsCfg); if (ev && s.newsChannelId) addNews(g, c.id, m, ev.up, ev.text, before, price); // 新聞に出す、ニュースの記録
+        const ev = eventAt(g, c.id, m, factor, newsCfg); if (ev) addNews(g, c.id, m, ev.up, ev.text, before, price, s.newsChannelId ? 0 : 1); // 記録は、いつも残す(/news で見られる)。新聞チャンネルが無ければ、「出した」ことにする // 新聞に出す、ニュースの記録
       }
       insertStockPrices(g, c.id, rows, nowMin - KEEP_MINUTES);
       last = rows.at(-1);

@@ -11,7 +11,7 @@ import { petsOpen, bonusLabel } from './pets.js';
 import { estateOf } from './estate.js';
 import { ITEMS as MARKET_ITEMS } from './market.js';
 import { COMPANIES, companyOf } from './stocks.js';
-import { arrestCommand, wantedCommand, crimeCommand, heistCommand, workCommand, begCommand, shopCommand, useCommand, estateCommand, marketCommand, petCommand, stockCommand } from './commands.js';
+import { arrestCommand, wantedCommand, crimeCommand, heistCommand, workCommand, begCommand, shopCommand, useCommand, estateCommand, marketCommand, petCommand, stockCommand, newsCommand } from './commands.js';
 
 /**
  * パネル: チャンネルに置く、ボタンつきのメッセージ。コマンドを打たなくても、ボタンで、犯罪・バイト・お店が使える。
@@ -23,9 +23,9 @@ export const PANELS = {
   // お店パネルは、お店・不動産・闇市をまとめたもの(v2 から)
   shop: { title: 'お店パネル(お店・不動産・闇市)', commands: ['shop', 'use', 'estate', 'market'], added: { estate: 2, market: 2 } },
   pet: { title: 'ペットパネル', commands: ['pet'] },
-  stock: { title: '株パネル', commands: ['stock'] },
+  stock: { title: '株パネル', commands: ['stock', 'news'], added: { news: 4 } },
 };
-export const PANEL_VERSION = 3;
+export const PANEL_VERSION = 4;
 // そのパネルが置かれた版(v)で、パネルに載っていたコマンドだけ(あとから載せたコマンドは、置き直すまで、廃止の対象にしない)
 const commandsOf = (kind, st) => PANELS[kind].commands.filter((n) => (PANELS[kind].added?.[n] ?? 0) <= (st?.v ?? 1));
 /** そのパネルで、廃止しているコマンド: retire(名前の配列)があれば、それだけ。なければ(古い設定)、hide が true のとき、パネルに載っている全部のコマンド */
@@ -108,9 +108,9 @@ export function panelMessage(kind, g) {
   }
   if (kind === 'stock') {
     return {
-      embeds: [new EmbedBuilder().setColor(0x2ecc71).setTitle('📈 株パネル').setDescription('架空の会社の株を、売り買いできます。株価は、決まった間隔で動きます。')
+      embeds: [new EmbedBuilder().setColor(0x2ecc71).setTitle('📈 株パネル').setDescription('架空の会社の株を、売り買いできます。株価は、決まった間隔で動きます。「📰 ニュース」で、会社ごとの最近のニュースを見られます。')
         .addFields({ name: '会社', value: COMPANIES.map((c0, n) => { const c = companyOf(s, c0); return `${n + 1}. ${c.emoji} **${c.ticker}** ${c.name}`; }).join('\n') })],
-      components: [new ActionRowBuilder().addComponents(btn('panel:stock:list', '株価・持ち株', '📈'), btn('panel:stock:buy', '買う', '🛒', ButtonStyle.Success), btn('panel:stock:sell', '売る', '💰', ButtonStyle.Danger))],
+      components: [new ActionRowBuilder().addComponents(btn('panel:stock:list', '株価・持ち株', '📈'), btn('panel:stock:news', 'ニュース', '📰', ButtonStyle.Primary), btn('panel:stock:buy', '買う', '🛒', ButtonStyle.Success), btn('panel:stock:sell', '売る', '💰', ButtonStyle.Danger))],
     };
   }
   // お店パネル(お店・不動産・闇市)
@@ -236,6 +236,8 @@ export const panelComponent = {
     if (kind === 'stock') {
       const names = COMPANIES.map((c0) => { const c = companyOf(s, c0); return `${c.emoji} ${c.ticker} ${c.name}`; });
       if (action === 'list') return stockCommand.execute(asCommand(i, {}, 'list'));
+      if (action === 'news') return say('どの会社のニュースを、見ますか?', { components: [selectRow('panel:stock:newssel', '会社を選ぶ', [{ label: '全部の会社', value: '0' }, ...names.map((nm, n) => ({ label: nm.slice(0, 100), value: String(n + 1) }))])] });
+      if (action === 'newssel') return newsCommand.execute(asCommand(i, { company: Number(v0) || null }));
       if (action === 'buy' || action === 'sell') return say(action === 'buy' ? 'どの会社の株を、買いますか?' : 'どの会社の株を、売りますか?', { components: [selectRow(`panel:stock:pick:${action}`, '会社を選ぶ', names.map((nm, n) => ({ label: nm.slice(0, 100), value: String(n + 1) })))] });
       if (action === 'pick') return i.showModal(modal(`panel:stock:m:${arg}:${v0}`, arg === 'buy' ? '株を買う' : '株を売る', arg === 'buy' ? '株数' : '株数(空欄で、持っている全部)', '10', arg === 'buy'));
       if (action === 'm') {

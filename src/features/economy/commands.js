@@ -1,6 +1,6 @@
 import { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, MessageFlags } from 'discord.js';
 import { getSettings, money } from './settings.js';
-import { transferItem, estateHoldings, estateCount, addEstate, takeEstate, rentAt, setRentAt, addTicket, userTickets, userTicketCount, roundSales, lotteryJackpot, lastDraw, holdings, holding, addHolding, takeHolding, getPets, adoptPet, renamePet, releasePet, updatePet, setStatus, activeStatuses, shiftsOf, allShifts, addShift, getHeat, addHeat, clearHeat, topWanted, itemQty, allItems, addItem, useItem, transfer, adjustBalance, clearCooldowns, audit, peek, deposit, withdraw, cooldownLeft, setCooldown, jailLeft, jail, release, richestPage, getBj, saveBj, deleteBj, allBj, claimBj, getRamen, saveRamen, claimRamen, getHeist, saveHeist, claimHeist, expiredHeists, setHeistDeadline, releaseAll } from './db.js';
+import { recentNews, transferItem, estateHoldings, estateCount, addEstate, takeEstate, rentAt, setRentAt, addTicket, userTickets, userTicketCount, roundSales, lotteryJackpot, lastDraw, holdings, holding, addHolding, takeHolding, getPets, adoptPet, renamePet, releasePet, updatePet, setStatus, activeStatuses, shiftsOf, allShifts, addShift, getHeat, addHeat, clearHeat, topWanted, itemQty, allItems, addItem, useItem, transfer, adjustBalance, clearCooldowns, audit, peek, deposit, withdraw, cooldownLeft, setCooldown, jailLeft, jail, release, richestPage, getBj, saveBj, deleteBj, allBj, claimBj, getRamen, saveRamen, claimRamen, getHeist, saveHeist, claimHeist, expiredHeists, setHeistDeadline, releaseAll } from './db.js';
 import { ensureAccount, pay, collect, fine, treasury } from './ledger.js';
 import { hasAccessSync, isOperator } from '../../core/access.js';
 import { PermissionFlagsBits } from 'discord.js';
@@ -13,7 +13,7 @@ import { RAMEN, makeOrder, gradeRamen, GRADES } from './ramen.js';
 import { POLICE_BONUS_CAP } from './wanted.js';
 import { userFx } from './userfx.js';
 import { marketNow, unitPrice, sparkline } from './stockmarket.js';
-import { VOL_LABELS, companyOf, trendArrow } from './stocks.js';
+import { VOL_LABELS, COMPANIES, companyOf, trendArrow } from './stocks.js';
 import { MAX_PROPERTIES, estateOf, estateById, hourlyNet, accrued } from './estate.js';
 import { MAX_LOTTERIES, lotteriesOf, estimateRtp, roundOf, drawTimeOf, pad, drawNumber } from './lottery.js';
 import { settleGuild, announce, drawEmbed } from './lotteryengine.js';
@@ -929,6 +929,27 @@ export const stockCommand = {
   },
 };
 
+/* ================= 株のニュース(会社ごとに見る) ================= */
+export const newsCommand = {
+  data: guildOnly(new SlashCommandBuilder().setName('news').setDescription('株のニュース(最近起きた出来事)を、会社ごとに見ます')
+    .addIntegerOption((o) => o.setName('company').setDescription('会社の番号(/stock list の番号。省略すると、全部の会社)').setMinValue(1).setMaxValue(COMPANIES.length))
+    .addBooleanOption((o) => o.setName('public').setDescription('全員に表示する(省略すると自分だけ)'))),
+  async execute(i) {
+    const s = await open(i); if (!s) return;
+    if (!s.stocksEnabled) return stockOff(i);
+    const g = i.guildId, n = i.options.getInteger('company'), c0 = n ? COMPANIES[n - 1] : null;
+    if (n && !c0) return refuse(i, `${n} 番の会社は、ありません。(/stock list の番号を指定してください)`);
+    marketNow(s, g); // 株価を、いままで進める(その間に起きたニュースも、記録される)
+    const rows = recentNews(g, c0?.id ?? null, 10);
+    const co = (id) => { const k = COMPANIES.find((x) => x.id === id); return k ? companyOf(s, k) : { name: id, ticker: '', emoji: '📰' }; };
+    const title = c0 ? `📰 ${companyOf(s, c0).emoji} ${companyOf(s, c0).name} のニュース` : '📰 株のニュース(全部の会社)';
+    const e = new EmbedBuilder().setColor(0x3498db).setTitle(title)
+      .setDescription(rows.length ? rows.map((r) => { const c = co(r.company), pctv = (r.after_px / r.before_px - 1) * 100, px = (v) => Math.max(1, Math.round(v)).toLocaleString(); return `${r.up ? '📈' : '📉'} ${c0 ? '' : `${c.emoji} **${c.ticker}** `}**${r.text}**\n${r.up ? '🔺' : '🔻'} ${pctv > 0 ? '+' : ''}${pctv.toFixed(1)}%(${px(r.before_px)} → ${px(r.after_px)})・ <t:${r.tick * 60}:R>`; }).join('\n\n') : 'まだ、ニュースは、ありません。(ニュースは、起きるたびに、ここに記録されます)')
+      .setFooter({ text: '最近の10件 ・ 7日ぶんまで残ります' });
+    return i.reply({ embeds: [e], ...vis(i) });
+  },
+};
+
 /* ================= 宝くじ(サーバーごとに、自由に、複数のくじを作れる) ================= */
 const lotteryOff = (i) => refuse(i, 'このサーバーでは、宝くじはオフです。管理者が、ダッシュボードの「通貨 → お店・ペット・株など」でオンにできます。');
 export const lotteryCommand = {
@@ -1096,4 +1117,4 @@ export const arrestCommand = {
   },
 };
 
-export const commands = [balanceCommand, depositCommand, withdrawCommand, richestCommand, crimeCommand, workCommand, begCommand, bailCommand, chinchiroCommand, slotCommand, blackjackCommand, blackjackEndCommand, heistCommand, shopCommand, useCommand, giveCommand, petCommand, stockCommand, lotteryCommand, estateCommand, cooldownsCommand, jobCommand, wantedCommand, arrestCommand, marketCommand, releaseCommand, payCommand, balanceEditCommand, cooldownResetCommand];
+export const commands = [balanceCommand, depositCommand, withdrawCommand, richestCommand, crimeCommand, workCommand, begCommand, bailCommand, chinchiroCommand, slotCommand, blackjackCommand, blackjackEndCommand, heistCommand, shopCommand, useCommand, giveCommand, petCommand, stockCommand, newsCommand, lotteryCommand, estateCommand, cooldownsCommand, jobCommand, wantedCommand, arrestCommand, marketCommand, releaseCommand, payCommand, balanceEditCommand, cooldownResetCommand];
