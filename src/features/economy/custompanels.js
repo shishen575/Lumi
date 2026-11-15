@@ -1,4 +1,4 @@
-import { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle, MessageFlags } from 'discord.js';
+import { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle, StringSelectMenuBuilder, MessageFlags } from 'discord.js';
 import { getKV, setKV } from '../../core/db.js';
 import { commandCatalog, findCommand, registerHiddenCommands, resyncGuildCommands } from '../../core/commands.js';
 import { asCommand } from './panels.js';
@@ -50,17 +50,31 @@ export function parseValue(o, raw) {
 function sanitizeButton(raw, catalog) {
   const cmd = catalog.find((c) => c.name === raw?.command); if (!cmd) return { error: `コマンド ${raw?.command ?? ''} が、ありません` };
   const sc = schemaOf(cmd, raw.sub || null); if (sc.error) return { error: sc.error };
-  const values = {}, ask = [];
+  const values = {}, ask = [], pick = {};
   for (const o of sc.options) {
     if (!SUPPORTED.has(o.type)) { if (o.required) return { error: `/${cmd.name} の「${o.name}」は、ボタンでは指定できない種類なので、このコマンドは使えません` }; continue; }
-    const mode = raw.modes?.[o.name] ?? (raw.ask?.includes(o.name) ? 'ask' : raw.values?.[o.name] !== undefined ? 'fixed' : 'skip');
+    const mode = raw.modes?.[o.name] ?? (raw.ask?.includes(o.name) ? 'ask' : raw.pick?.[o.name] ? 'pick' : raw.values?.[o.name] !== undefined ? 'fixed' : 'skip');
     if (mode === 'fixed') { const r = parseValue(o, raw.values?.[o.name]); if (r.error) return { error: `${cmd.name} ${sub0(raw)}${r.error}` }; values[o.name] = r.v; }
+    else if (mode === 'pick') { // 押したとき、プルダウンで選ぶ(選択肢は、決めた一覧か、コマンド自身の選択肢)
+      const list = [];
+      for (const e of Array.isArray(raw.pick?.[o.name]) ? raw.pick[o.name] : []) {
+        const label = clean(typeof e === 'object' ? e?.label : '', 80), val = typeof e === 'object' ? e?.value : e;
+        if (String(val ?? '').trim() === '') continue;
+        const r = parseValue(o, val); if (r.error) return { error: `${cmd.name} ${sub0(raw)}${r.error}` };
+        list.push({ label: label || String(r.v), value: r.v });
+      }
+      const picks = list.length ? list : (o.choices ?? []).map((c) => ({ label: c.name, value: c.value }));
+      if (!picks.length) return { error: `/${cmd.name} ${sub0(raw)}の「${o.name}」の選択肢を、入れてください(例: 1, 5, 10)` };
+      if (picks.length > 25) return { error: '選択肢は、25個までです' };
+      pick[o.name] = picks;
+    }
     else if (mode === 'ask') ask.push(o.name);
     else if (o.required) return { error: `/${cmd.name} ${sub0(raw)}の「${o.name}」(必須)を、決めてください` };
   }
-  if (ask.length > 5) return { error: '「押したときに入力」は、1つのボタンに5項目までです' };
+  if (ask.length > 5) return { error: '「押したとき入力」は、1つのボタンに5項目までです' };
+  if (Object.keys(pick).length > 5) return { error: '「押したとき選ぶ」は、1つのボタンに5項目までです' };
   const label = clean(raw.label, 78) || `/${cmd.name}`;
-  return { button: { label, emoji: [...clean(raw.emoji, 8)].slice(0, 2).join(''), style: STYLES[raw.style] ? raw.style : 'secondary', command: cmd.name, sub: raw.sub || '', values, ask } };
+  return { button: { label, emoji: [...clean(raw.emoji, 8)].slice(0, 2).join(''), style: STYLES[raw.style] ? raw.style : 'secondary', command: cmd.name, sub: raw.sub || '', values, ask, pick } };
 }
 const sub0 = (raw) => (raw.sub ? `${raw.sub} ` : '');
 
@@ -126,26 +140,49 @@ export const customStickItems = (client, g) => Object.entries(customPanels(g)).m
     const m = await ch.send({ ...customMessage(q, id), allowedMentions: { parse: [] } }); all[id] = { ...q, msg: m.id, at: Date.now() }; save(gg, all);
   } }));
 
-/** ボタンと入力欄(モーダル)の処理: cpanel:<パネル>:<番号>[:m] */
+/**
+ * ボタン・プルダウン・入力欄の処理。customId:
+ *   cpanel:<パネル>:<番号>            ボタン
+ *   cpanel:<パネル>:<番号>:s<k>:<選んだ番号>   k 番目の項目を選ぶプルダウン(それまでに選んだ選択肢の番号を、"." でつないで持ち回る)
+ *   cpanel:<パネル>:<番号>:m:<選んだ番号>      入力欄の送信
+ */
 export const customComponent = {
   id: 'cpanel',
   async execute(i) {
-    const [, pid, idxS, isM] = i.customId.split(':'), say = (content) => i.reply({ content, flags: MessageFlags.Ephemeral });
+    const [, pid, idxS, step = '', acc = ''] = i.customId.split(':'), say = (content) => i.reply({ content, flags: MessageFlags.Ephemeral });
     const p = customPanels(i.guildId)[pid], b = p?.buttons?.[Number(idxS)]; if (!b) return say('このボタンは、もう使えません。パネルが古くなっています(管理者が、置き直せます)。');
     const cmd = findCommand(b.command), json = commandCatalog().find((c) => c.name === b.command); if (!cmd || !json) return say(`/${b.command} は、もう使えません。`);
     const sc = schemaOf(json, b.sub || null); if (sc.error) return say(sc.error);
-    if (b.ask.length && !isM) { // 入力欄で、値を聞く
-      return i.showModal(new ModalBuilder().setCustomId(`cpanel:${pid}:${idxS}:m`).setTitle(b.label.slice(0, 45)).addComponents(...b.ask.map((name) => {
-        const o = sc.options.find((x) => x.name === name);
-        return new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId(name).setLabel(`${o.name}${o.required ? '' : '(省略できる)'}`.slice(0, 45)).setStyle(TextInputStyle.Short).setRequired(!!o.required).setPlaceholder((o.choices?.length ? o.choices.map((x) => x.name).join(' / ') : String(o.description ?? '')).slice(0, 100)));
-      })));
+    const picks = Object.keys(b.pick ?? {}), chosen = acc ? acc.split('.').map(Number) : [];
+    const selectMenu = (k) => { // k 番目のプルダウン
+      const name = picks[k], list = b.pick[name], o = sc.options.find((x) => x.name === name);
+      return { content: `${b.label}: ${o?.description || name} を、選んでください。`, flags: MessageFlags.Ephemeral,
+        components: [new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId(`cpanel:${pid}:${idxS}:s${k}:${chosen.join('.')}`).setPlaceholder(String(o?.description || name).slice(0, 100)).addOptions(list.slice(0, 25).map((e, n) => ({ label: String(e.label).slice(0, 100), value: String(n) }))))] };
+    };
+    const askModal = (accNow) => i.showModal(new ModalBuilder().setCustomId(`cpanel:${pid}:${idxS}:m:${accNow}`).setTitle(b.label.slice(0, 45)).addComponents(...b.ask.map((name) => {
+      const o = sc.options.find((x) => x.name === name);
+      return new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId(name).setLabel(`${o.name}${o.required ? '' : '(省略できる)'}`.slice(0, 45)).setStyle(TextInputStyle.Short).setRequired(!!o.required).setPlaceholder((o.choices?.length ? o.choices.map((x) => x.name).join(' / ') : String(o.description ?? '')).slice(0, 100)));
+    })));
+    const run = (picked) => { // 値を集めて、コマンドを実行する
+      const values = { ...b.values };
+      picks.forEach((name, k) => { const e = b.pick[name][picked[k]]; if (e) values[name] = e.value; });
+      for (const name of b.ask) {
+        const o = sc.options.find((x) => x.name === name), raw = i.fields?.getTextInputValue(name);
+        if (!String(raw ?? '').trim() && !o.required) continue;
+        const r = parseValue(o, raw); if (r.error) return say(r.error); values[name] = r.v;
+      }
+      return cmd.execute(asCommand(i, values, b.sub || null));
+    };
+    if (step === 'm') return run(chosen);                                         // 入力欄の送信
+    if (step.startsWith('s')) {                                                    // プルダウンで選んだ
+      const k = Number(step.slice(1)); chosen[k] = Number(i.values?.[0]);
+      if (!b.pick[picks[k]]?.[chosen[k]]) return say('その選択肢は、もう使えません。');
+      if (k + 1 < picks.length) { const next = selectMenu(k + 1); delete next.flags; return i.update(next); } // 次の項目のプルダウンに、差し替える
+      if (b.ask.length) return askModal(chosen.join('.'));
+      return run(chosen);
     }
-    const values = { ...b.values };
-    for (const name of b.ask) {
-      const o = sc.options.find((x) => x.name === name), raw = i.fields.getTextInputValue(name);
-      if (!String(raw ?? '').trim() && !o.required) continue;
-      const r = parseValue(o, raw); if (r.error) return say(r.error); values[name] = r.v;
-    }
-    return cmd.execute(asCommand(i, values, b.sub || null));
+    if (picks.length) return i.reply(selectMenu(0));                               // ボタン: まず、プルダウン
+    if (b.ask.length) return askModal('');
+    return run([]);
   },
 };

@@ -390,7 +390,8 @@ Dash.registerTab({
         const blank = () => ({ id: null, title: '新しいパネル', description: '', ch: '', sticky: true, retire: [], buttons: [] });
         let panels = [...saved.map((p) => JSON.parse(JSON.stringify(p))), blank()];
         const optsOf = (b) => { const c = cmds.find((x) => x.name === b.command); if (!c) return []; if (c.subs.length) return c.subs.find((x) => x.name === b.sub)?.options ?? []; return c.options; };
-        const modeOf = (b, o) => (b.ask?.includes(o.name) ? 'ask' : (b.values && o.name in b.values) ? 'fixed' : 'skip');
+        const modeOf = (b, o) => (b.ask?.includes(o.name) ? 'ask' : (b.pick && o.name in b.pick) ? 'pick' : (b.values && o.name in b.values) ? 'fixed' : 'skip');
+        const pickText = (b, o) => (b.pick?.[o.name] ?? []).map((e) => (String(e.label) === String(e.value) ? String(e.value) : `${e.label}=${e.value}`)).join(', ');
         const valInput = (o, v) => o.choices?.length ? `<select class="o-val">${o.choices.map((c) => `<option value="${esc(c.value)}" ${String(v) === String(c.value) ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select>`
           : o.type === 5 ? `<select class="o-val"><option value="true" ${v === true ? 'selected' : ''}>オン(はい)</option><option value="false" ${v === false ? 'selected' : ''}>オフ(いいえ)</option></select>`
           : `<input class="o-val" type="${o.type === 3 ? 'text' : 'number'}" ${o.type === 10 ? 'step="any"' : ''} value="${v === undefined ? '' : esc(v)}" placeholder="${esc(o.description || o.name)}">`;
@@ -402,9 +403,9 @@ Dash.registerTab({
               <div class="field"><label class="f">色</label><select class="b-style">${Object.entries(colors).map(([k, l]) => `<option value="${k}" ${b.style === k ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
               <div class="field"><label class="f">コマンド</label><select class="b-cmd"><option value="">選んでください</option>${cmds.map((x) => `<option value="${x.name}" ${b.command === x.name ? 'selected' : ''}>/${esc(x.name)} — ${esc(x.description)}</option>`).join('')}</select></div>
               ${c?.subs.length ? `<div class="field"><label class="f">サブコマンド</label><select class="b-sub"><option value="">選んでください</option>${c.subs.map((x) => `<option value="${x.name}" ${b.sub === x.name ? 'selected' : ''}>${esc(x.name)} — ${esc(x.description)}</option>`).join('')}</select></div>` : ''}</div>
-            ${os.length ? `<p class="hint" style="margin:6px 0">コマンドの項目: 「決めない」は省略、「固定」はいつも同じ値、「押したとき入力」は、押すと入力欄が出ます(5項目まで)。</p>${os.map((o) => { const m = modeOf(b, o); return o.supported
-              ? `<div class="grid2" data-opt="${esc(o.name)}" style="align-items:end"><div class="field" style="margin:0"><label class="f">${esc(o.name)}${o.required ? '(必須)' : ''} <span class="mut small">${esc(o.description || '')}</span></label><select class="o-mode">${[['skip', '決めない(省略)'], ['fixed', '固定の値'], ['ask', '押したとき入力']].filter(([k]) => !(k === 'skip' && o.required)).map(([k, l]) => `<option value="${k}" ${m === k ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
-                <div class="field" style="margin:0;${m === 'fixed' ? '' : 'display:none'}" data-valbox>${valInput(o, b.values?.[o.name])}</div></div>`
+            ${os.length ? `<p class="hint" style="margin:6px 0">コマンドの項目: 「決めない」は省略、「固定」はいつも同じ値、「押したとき選ぶ」は、押すとプルダウンが出ます、「押したとき入力」は、押すと入力欄が出ます(それぞれ5項目まで)。</p>${os.map((o) => { const m = modeOf(b, o); return o.supported
+              ? `<div class="grid2" data-opt="${esc(o.name)}" style="align-items:end"><div class="field" style="margin:0"><label class="f">${esc(o.name)}${o.required ? '(必須)' : ''} <span class="mut small">${esc(o.description || '')}</span></label><select class="o-mode">${[['skip', '決めない(省略)'], ['fixed', '固定の値'], ['pick', '押したとき選ぶ(プルダウン)'], ['ask', '押したとき入力']].filter(([k]) => !(k === 'skip' && o.required)).map(([k, l]) => `<option value="${k}" ${m === k ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
+                <div class="field" style="margin:0;${m === 'fixed' ? '' : 'display:none'}" data-valbox>${valInput(o, b.values?.[o.name])}</div>${m === 'pick' ? `<div class="field" style="margin:0;grid-column:1/-1"><label class="f">選択肢${o.choices?.length ? '(空欄なら、コマンドの選択肢をすべて使います)' : '(カンマで区切る。「表示=値」で、表示を変えられます。25個まで)'}</label><input class="o-pick" type="text" value="${esc(pickText(b, o))}" placeholder="${o.choices?.length ? '' : '例: 1, 5, 10 または 少し=1, ふつう=5'}"></div>` : ''}</div>`
               : `<p class="hint" style="margin:4px 0">${esc(o.name)}: ボタンでは指定できない種類の項目です${o.required ? '(必須なので、このコマンドは使えません)' : '(省略されます)'}</p>`; }).join('')}` : ''}</div>`; };
         const draw = () => {
           el.innerHTML = `${pageHeader('カスタムパネル', 'どんなコマンドでも、ボタンにして、チャンネルに置けます。コマンドの項目は、固定の値にしたり、ボタンを押したときに入力欄で聞いたりできます(ユーザー・チャンネル・ロール・ファイルの項目は、ボタンでは指定できません)。「元のコマンドを廃止する」をオンにすると、このサーバーでは、使っているコマンドが、ボタンからだけ使えるようになります(/help は残ります)。')}
@@ -420,19 +421,19 @@ Dash.registerTab({
             const pi = Number(card.dataset.pi), p = panels[pi];
             const collect = () => {
               p.title = card.querySelector('.p-title').value; p.ch = card.querySelector('.p-ch').value; p.description = card.querySelector('.p-desc').value; p.sticky = card.querySelector('.p-sticky').checked; p.retire = [...card.querySelectorAll('.p-ret:checked')].map((x) => x.dataset.c);
-              p.buttons = [...card.querySelectorAll('[data-bi]')].map((bc, bi) => { const old = p.buttons[bi], b = { label: bc.querySelector('.b-label').value, emoji: bc.querySelector('.b-emoji').value, style: bc.querySelector('.b-style').value, command: bc.querySelector('.b-cmd').value, sub: bc.querySelector('.b-sub')?.value ?? '', values: {}, ask: [] };
+              p.buttons = [...card.querySelectorAll('[data-bi]')].map((bc, bi) => { const old = p.buttons[bi], b = { label: bc.querySelector('.b-label').value, emoji: bc.querySelector('.b-emoji').value, style: bc.querySelector('.b-style').value, command: bc.querySelector('.b-cmd').value, sub: bc.querySelector('.b-sub')?.value ?? '', values: {}, ask: [], pick: {} };
                 if (b.command !== old.command) b.sub = ''; // コマンドを変えたら、項目は、選び直す
-                bc.querySelectorAll('[data-opt]').forEach((r) => { const m = r.querySelector('.o-mode').value, name = r.dataset.opt; if (m === 'ask') b.ask.push(name); else if (m === 'fixed') b.values[name] = r.querySelector('.o-val').value; });
-                if (b.command !== old.command || (b.sub !== old.sub)) { b.values = {}; b.ask = []; }
+                bc.querySelectorAll('[data-opt]').forEach((r) => { const m = r.querySelector('.o-mode').value, name = r.dataset.opt; if (m === 'ask') b.ask.push(name); else if (m === 'pick') b.pick[name] = (r.querySelector('.o-pick')?.value ?? '').split(/[,、]/).map((x) => x.trim()).filter(Boolean).map((x) => { const k = x.indexOf('='); return k > 0 ? { label: x.slice(0, k).trim(), value: x.slice(k + 1).trim() } : { label: x, value: x }; }); else if (m === 'fixed') b.values[name] = r.querySelector('.o-val').value; });
+                if (b.command !== old.command || (b.sub !== old.sub)) { b.values = {}; b.ask = []; b.pick = {}; }
                 return b; });
             };
             card.querySelectorAll('.b-cmd, .b-sub, .o-mode').forEach((x) => (x.onchange = () => { collect(); draw(); }));
-            card.querySelector('.p-addb').onclick = () => { collect(); p.buttons.push({ label: '', emoji: '', style: 'secondary', command: '', sub: '', values: {}, ask: [] }); draw(); };
+            card.querySelector('.p-addb').onclick = () => { collect(); p.buttons.push({ label: '', emoji: '', style: 'secondary', command: '', sub: '', values: {}, ask: [], pick: {} }); draw(); };
             card.querySelectorAll('[data-rmb]').forEach((x) => (x.onclick = () => { collect(); p.buttons.splice(Number(x.dataset.rmb), 1); draw(); }));
             card.querySelector('.p-save').onclick = async () => {
               collect(); if (!p.ch) { toast('チャンネルを選んでください', 'err'); return; }
               if (p.retire.length && !await confirm({ title: 'コマンドを廃止', message: `廃止するコマンド(${p.retire.map((x) => '/' + x).join(' ')})が、このサーバーでは、使えなくなります(ボタンからだけ、使えます)。`, ok: '置く' })) return;
-              const body = { title: p.title, description: p.description, channel_id: p.ch, sticky: p.sticky, retire: p.retire, buttons: p.buttons.map((b) => ({ label: b.label, emoji: b.emoji, style: b.style, command: b.command, sub: b.sub, modes: Object.fromEntries([...Object.keys(b.values).map((k) => [k, 'fixed']), ...b.ask.map((k) => [k, 'ask'])]), values: b.values })) };
+              const body = { title: p.title, description: p.description, channel_id: p.ch, sticky: p.sticky, retire: p.retire, buttons: p.buttons.map((b) => ({ label: b.label, emoji: b.emoji, style: b.style, command: b.command, sub: b.sub, modes: Object.fromEntries([...Object.keys(b.values).map((k) => [k, 'fixed']), ...b.ask.map((k) => [k, 'ask']), ...Object.keys(b.pick).map((k) => [k, 'pick'])]), values: b.values, pick: b.pick })) };
               const r = await api('/custom-panels/' + (p.id ?? 'new'), { method: 'PUT', body }); toast('パネルを置きました');
               panels[pi] = JSON.parse(JSON.stringify(r)); if (!p.id) panels.push(blank()); draw();
             };
