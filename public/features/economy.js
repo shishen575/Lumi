@@ -233,25 +233,31 @@ Dash.registerTab({
           <h2 class="sec" style="margin:18px 0 8px">ニュース(出来事)</h2>
           <p class="hint" style="margin:0 0 8px">ときどき、ニュースが起きて、株価が決まった割合で上がったり、下がったりします。起きやすさは、「ゲームバランス」の「ニュースの起きやすさ」で、変えられます。どのニュースが起きるかは、下の「起きやすさ」(1〜10)で決まります。</p>
           <div id="evl"></div>
-          <div class="acts"><button class="btn ghost" id="evadd" type="button">出来事を追加</button><button class="btn ghost" id="evreset" type="button">初期の出来事に戻す</button></div>
+          <div class="acts"><span class="mut small" id="evcount"></span><button class="btn ghost" id="evadd" type="button">出来事を追加</button><button class="btn ghost" id="evmerge" type="button">初期の出来事のうち、足りないものを足す</button><button class="btn ghost" id="evreset" type="button">初期の出来事に戻す</button></div>
           <div id="holders"></div>
           <div class="card"><h2>値動きの目安</h2><p class="hint" style="margin:0">1日の値動きの目安は、レベル1で約1.5%、レベル5で約7%、レベル10で約28%です。ニュースが起きると、書いた割合だけ、動きます(動く強さは、上の「ニュースで動く強さ」で変えられます)。</p></div>
           <div class="acts"><button class="btn ghost" id="reset" type="button">初期値に戻す</button><button class="btn" id="save" type="button">保存</button></div>`;
         let events = JSON.parse(JSON.stringify(st.newsEvents));
-        const evCollect = () => { events = [...el.querySelectorAll('[data-ev]')].map((c, n) => ({ id: events[n]?.id, enabled: c.querySelector('.ev-on').checked, text: c.querySelector('.ev-text').value, pct: c.querySelector('.ev-pct').value, company: c.querySelector('.ev-co').value, weight: c.querySelector('.ev-w').value })); };
+        const evCollect = () => { events = [...el.querySelectorAll('.ev-row[data-ev]')].map((c, n) => ({ id: events[n]?.id, enabled: c.querySelector('.ev-on').checked, text: c.querySelector('.ev-text').value, pct: c.querySelector('.ev-pct').value, company: c.querySelector('.ev-co').value, weight: c.querySelector('.ev-w').value })); };
         const evDraw = () => {
-          el.querySelector('#evl').innerHTML = events.map((e, n) => `<div class="card" data-ev="${n}"><div class="card-h"><h2>${Number(e.pct) > 0 ? '📈' : '📉'} ${esc(e.text)}</h2><button class="btn danger icon" type="button" data-evrm="${n}" aria-label="削除">✕</button></div>
-            <label class="sw"><input type="checkbox" class="ev-on" ${e.enabled ? 'checked' : ''}><i></i><span><b>有効</b></span></label>
-            <div class="grid2">
-              <div class="field"><label class="f">出来事(新聞の見出し)</label><input class="ev-text" type="text" maxlength="30" value="${esc(e.text)}"></div>
-              <div class="field"><label class="f">株価の変わる割合(%。プラスは上がる、マイナスは下がる。「ニュースで動く強さ」が掛かります)</label><input class="ev-pct" type="number" min="-50" max="50" step="1" value="${e.pct}"></div>
-              <div class="field"><label class="f">どの会社に起きる?</label><select class="ev-co"><option value="">全部の会社</option>${meta.companies.map((c) => `<option value="${c.id}" ${e.company === c.id ? 'selected' : ''}>${esc(names[c.id].emoji)} ${esc(names[c.id].name)}</option>`).join('')}</select></div>
-              <div class="field"><label class="f">起きやすさ(1〜10)</label><input class="ev-w" type="number" min="1" max="10" value="${e.weight}"></div></div></div>`).join('') || '<div class="card"><p class="hint" style="margin:0">出来事が、ありません。「出来事を追加」で、作れます。</p></div>';
+          // 出来事は、たくさんあるので、1行ずつ、小さく並べる(有効 | 出来事 | 割合% | 会社 | 起きやすさ | 削除)
+          el.querySelector('#evl').innerHTML = `<div class="card flush" style="padding:6px 0"><div class="ev-row ev-head"><span></span><span>出来事(新聞の見出し)</span><span>割合(%)</span><span>会社</span><span>起きやすさ</span><span></span></div>${events.map((e, n) => `<div class="ev-row" data-ev="${n}">
+            <label class="sw" style="margin:0" title="有効"><input type="checkbox" class="ev-on" ${e.enabled ? 'checked' : ''}><i></i></label>
+            <input class="ev-text" type="text" maxlength="30" value="${esc(e.text)}" aria-label="出来事">
+            <input class="ev-pct" type="number" min="-50" max="50" step="1" value="${e.pct}" aria-label="割合" style="${Number(e.pct) > 0 ? 'color:var(--ok)' : 'color:var(--err)'}">
+            <select class="ev-co" aria-label="会社"><option value="">全部</option>${meta.companies.map((c) => `<option value="${c.id}" ${e.company === c.id ? 'selected' : ''}>${esc(names[c.id].emoji)} ${esc(names[c.id].name)}</option>`).join('')}</select>
+            <input class="ev-w" type="number" min="1" max="10" value="${e.weight}" aria-label="起きやすさ">
+            <button class="btn danger icon" type="button" data-evrm="${n}" aria-label="削除">✕</button></div>`).join('') || '<p class="hint" style="padding:6px 18px;margin:0">出来事が、ありません。「出来事を追加」で、作れます。</p>'}</div>`;
           el.querySelector('#evadd').disabled = events.length >= meta.maxEvents;
+          el.querySelector('#evcount').textContent = `${events.length}件(いい ${events.filter((e) => Number(e.pct) > 0).length} / 悪い ${events.filter((e) => Number(e.pct) < 0).length})`;
           el.querySelectorAll('[data-evrm]').forEach((b) => (b.onclick = () => { evCollect(); events.splice(Number(b.dataset.evrm), 1); evDraw(); }));
         };
         el.querySelector('#evadd').onclick = () => { evCollect(); events.push({ enabled: true, text: '新しい出来事', pct: 5, company: '', weight: 3 }); evDraw(); };
         el.querySelector('#evreset').onclick = () => { events = JSON.parse(JSON.stringify(meta.defaultEvents)); evDraw(); };
+        el.querySelector('#evmerge').onclick = () => { // 初期の出来事のうち、まだ無いものだけを、足す(自分で変えたものは、そのまま)
+          evCollect(); const have = new Set(events.map((e) => e.id)); const add = meta.defaultEvents.filter((e) => !have.has(e.id));
+          events.push(...JSON.parse(JSON.stringify(add.slice(0, meta.maxEvents - events.length)))); evDraw(); toast(add.length ? `${add.length}件を、足しました(保存すると、反映されます)` : '足りないものは、ありません');
+        };
         evDraw();
         api('/stock-holders').then((h) => { // みんなの持ち株(株主と、株の割合)
           const em = esc(h.currencyEmoji), box = el.querySelector('#holders'); if (!box) return;

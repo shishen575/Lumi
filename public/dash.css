@@ -257,3 +257,10 @@ label.f { display: block; font-size: 13px; font-weight: 700; color: var(--mut); 
 .sx-opt[hidden], .sx-group[hidden] { display: none; }
 .sx-group { padding: 8px 10px 4px; font-size: 12px; font-weight: 700; color: var(--mut); }
 .sx-empty { padding: 10px; color: var(--mut); font-size: 14px; }
+
+/* ===== 株の出来事(1行ずつ) ===== */
+.ev-row { display: grid; grid-template-columns: 48px minmax(0, 1fr) 84px 150px 84px 40px; gap: 8px; align-items: center; padding: 6px 14px; border-bottom: 1px solid var(--line); }
+.ev-row:last-child { border-bottom: 0; }
+.ev-row input, .ev-row select { min-height: 36px; padding: 4px 8px; }
+.ev-head { font-size: 12px; font-weight: 700; color: var(--mut); }
+@media (max-width: 720px) { .ev-row { grid-template-columns: 48px minmax(0, 1fr) 70px 40px; } .ev-row .ev-co, .ev-row .ev-w { grid-column: 2 / 4; } .ev-head { display: none; } }
