@@ -9,6 +9,7 @@ import { POLICE_BONUS_CAP } from './wanted.js';
 import { SCHEMA, jobOf, wantedCfg, marketCfg } from './balance.js';
 import { FX_LABELS, SLOTS, MAX_SHOP_ITEMS, DEFAULT_SHOP, SHOP_MAX_STACK, shopById, shopItems } from './shop.js';
 import { COMPANIES, VOL_LABELS, VOL_LEVELS, DEFAULT_NAMES, DEFAULT_LEVELS, companyOf, DEFAULT_EVENTS, MAX_EVENTS } from './stocks.js';
+import { PANELS, panelState, installPanel, removePanel } from './panels.js';
 import { MAX_PETS, DEFAULT_PETS, PET_FX_KEYS, speciesOf } from './pets.js';
 import { itemById as marketItemById, ITEMS as MARKET_ITEMS } from './market.js';
 import { MAX_LOTTERIES, DEFAULT_LOTTERY } from './lottery.js';
@@ -16,7 +17,7 @@ import { MAX_PROPERTIES, DEFAULT_ESTATE, estateById } from './estate.js';
 import { SLOT_SYMBOLS, CHERRY_TWO, CHERRY_ONE, slotRtp, slotScale, chinchiroScale, bjScale, bjStats } from './games.js';
 
 /** router は /api/guilds/:gid/f/economy に載っていて、req.guild / req.access が使える */
-export function mountApi(router) {
+export function mountApi(router, client = null) {
   const view = (req) => ({ ...getSettings(req.guild.id), treasury: treasury(req.guild.id), circulation: circulation(req.guild.id), canEditBudget: canEditAccess(req.access) });
 
   // 職業の昇進・指名手配の設定画面に必要な情報(数字は、このサーバーの設定を反映)
@@ -122,6 +123,25 @@ export function mountApi(router) {
     res.json(found.filter((m) => !m.user.bot).map((m) => ({ id: m.id, name: m.displayName })));
   });
   // 1人の口座と、最近の罰金
+  // パネル(ボタンつきのメッセージ)の設置・撤去。設置したサーバーでは、元のコマンドを廃止できる
+  const panelView = (g, kind) => { const st = panelState(g)[kind]; return { kind, title: PANELS[kind].title, commands: PANELS[kind].commands, installed: st ? { channel_id: st.ch, hide: !!st.hide, link: `https://discord.com/channels/${g}/${st.ch}/${st.msg}` } : null }; };
+  router.get('/panels', (req, res) => res.json(Object.keys(PANELS).map((k) => panelView(req.guild.id, k))));
+  router.post('/panels/:kind', async (req, res) => {
+    if (!adminOnly(req, res)) return;
+    const kind = req.params.kind; if (!PANELS[kind]) return res.status(404).json({ error: 'パネルの種類が不正です' });
+    const chId = String(req.body?.channel_id ?? ''); if (!ID.test(chId)) return res.status(400).json({ error: 'チャンネルを選んでください' });
+    try { await installPanel(client, req.guild.id, kind, chId, req.body?.hide !== false); }
+    catch (e) { return res.status(400).json({ error: e.code === 50013 || e.code === 50001 ? 'そのチャンネルに、メッセージを送る権限がありません' : e.message }); }
+    audit(req.guild.id, req.actor, null, `${PANELS[kind].title}を設置`, null, `${req.body?.hide !== false ? 'コマンドを廃止' : 'コマンドは残す'}`);
+    res.json(panelView(req.guild.id, kind));
+  });
+  router.delete('/panels/:kind', async (req, res) => {
+    if (!adminOnly(req, res)) return;
+    const kind = req.params.kind; if (!PANELS[kind]) return res.status(404).json({ error: 'パネルの種類が不正です' });
+    await removePanel(client, req.guild.id, kind);
+    audit(req.guild.id, req.actor, null, `${PANELS[kind].title}を撤去`, null, 'コマンドを元に戻した');
+    res.json(panelView(req.guild.id, kind));
+  });
   // 品の付与・回収: 付けられる品の一覧(お店 + 闇市)と、その人がいま持っている個数
   const grantables = (s) => [...shopItems(s).map((x) => ({ id: x.id, name: x.name, emoji: x.emoji, kind: 'shop', max: SHOP_MAX_STACK })), ...MARKET_ITEMS.map((x) => ({ id: x.id, name: x.name, emoji: x.emoji, kind: 'market', max: marketCfg(s).maxStack }))];
   const heldItems = (s, g, uid) => { const own = allItems(g, uid); return grantables(s).map((x) => ({ ...x, qty: own[x.id] ?? 0 })); };

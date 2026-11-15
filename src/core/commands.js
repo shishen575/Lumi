@@ -3,6 +3,17 @@ import { isShuttingDown } from './shutdown.js';
 import { noteInteraction } from './health.js';
 import { hasAccessSync } from './access.js';
 
+/**
+ * サーバーごとに、使えなくするコマンド(例: パネルを設置したサーバーでは、元のコマンドを廃止する)。
+ * 機能は provider を登録する: (guildId) => { コマンド名: 案内の文 }。登録・更新のたびに呼ばれ、載っているコマンドは、そのサーバーから外れる
+ */
+const hiddenProviders = [];
+export const registerHiddenCommands = (fn) => hiddenProviders.push(fn);
+const hiddenFor = (guildId) => Object.assign({}, ...hiddenProviders.map((f) => { try { return f(guildId) ?? {}; } catch { return {}; } }));
+let resync = null;
+/** そのサーバーのコマンドの登録を、やり直す(パネルの設置・撤去のあと) */
+export const resyncGuildCommands = async (guildId) => { if (resync) await resync(guildId); };
+
 /** サーバーごとの、登録済みコマンドのID(押せるコマンド表記 </名前:ID> を作るのに使う) */
 const commandIds = new Map();
 export const getCommandId = (guildId, name) => commandIds.get(guildId)?.get(name);
@@ -19,7 +30,7 @@ export function setupCommands(client, features) {
   const comps = features.flatMap((f) => f.components ?? []); // [{ id: 'ogiri:answer', execute(i) }]
   const body = cmds.map((c) => c.data.toJSON());
   const register = (guild) =>
-    guild.commands.set(body)
+    guild.commands.set(body.filter((b) => !(b.name in hiddenFor(guild.id))))
       .then((r) => {
         commandIds.set(guild.id, new Map([...r.values()].map((c) => [c.name, c.id])));
         console.log(`[commands] ${guild.name}: ${r.size} 個を登録しました`);
@@ -27,6 +38,7 @@ export function setupCommands(client, features) {
       .catch((e) => console.error(`[commands] ${guild.name}: 登録失敗 (${e.code ?? ''}) ${e.message}` +
         (e.code === 50001 ? ' → このサーバーに applications.commands 付きで招待し直してください' : '')));
 
+  resync = async (guildId) => { const g = client.guilds.cache.get(guildId); if (g) await register(g); };
   client.once(Events.ClientReady, () => {
     console.log(`[commands] ${client.guilds.cache.size} サーバーに登録します`);
     client.guilds.cache.forEach(register);
@@ -56,8 +68,10 @@ export function setupCommands(client, features) {
     if (i.isChatInputCommand()) {
       const cmd = byName.get(i.commandName);
       if (cmd && isShuttingDown()) return void i.reply({ content: '🔄 Lumi は、再起動の準備中です。数十秒後に、もう一度お試しください。', flags: MessageFlags.Ephemeral }).catch(() => {});
+      const hidden = cmd && hiddenFor(i.guildId)[i.commandName]; // 廃止されたコマンド(古い表示が残っていた場合)
+      if (hidden) return void i.reply({ content: hidden, flags: MessageFlags.Ephemeral }).catch(() => {});
       if (cmd) run(`/${i.commandName}`, i, (x) => cmd.execute(x));
-    } else if (i.isButton()) {
+    } else if (i.isButton() || i.isStringSelectMenu()) {
       const c = comps.find((x) => x.id === i.customId || i.customId.startsWith(`${x.id}:`));
       if (c) run(`button ${i.customId}`, i, (x) => c.execute(x));
     }
@@ -105,7 +119,8 @@ function helpCommand(cmds, features) {
       }
       const embed = new EmbedBuilder().setColor(0x6d5dfc).setTitle('Lumi ヘルプ');
       // コマンドが増えても、Discordの上限(1フィールド1024字)を超えないよう、分けて出す
-      const lines = [...new Map(all.map((d) => [d.name, d])).values()].map((d) => `\`/${d.name}\` — ${d.description}`);
+      const hid = hiddenFor(i.guildId); // 廃止されたコマンドは、載せない
+      const lines = [...new Map(all.map((d) => [d.name, d])).values()].filter((d) => !(d.name in hid)).map((d) => `\`/${d.name}\` — ${d.description}`);
       let chunk = '', first = true;
       const pushChunk = () => { embed.addFields({ name: first ? 'コマンド一覧' : '\u200b', value: chunk }); first = false; chunk = ''; };
       for (const line of lines) { if (chunk && chunk.length + line.length + 1 > 1000) pushChunk(); chunk += (chunk ? '\n' : '') + line; }

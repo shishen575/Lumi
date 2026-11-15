@@ -353,6 +353,34 @@ Dash.registerTab({
         };
         el.querySelector('#hq').oninput = draw; draw();
       } },
+    /* ===== パネル(ボタンつきのメッセージ。置くと、元のコマンドを廃止できる) ===== */
+    { id: 'panels', title: 'パネル', icon: 'list',
+      async render(el, { api, channels: getChannels, esc, toast, confirm, pageHeader }) {
+        const info = { crime: ['🚨', '犯罪・大型犯罪のボタンが並びます。押すと、その犯罪に挑戦します。'], work: ['💼', 'バイトと乞食のボタンが並びます。押すと、バイトをして、給料をもらいます。'], shop: ['🏪', '品物ごとの「買う」ボタンと、「一覧」「使う」ボタンが並びます。'] };
+        const [list, chans] = await Promise.all([api('/panels'), getChannels()]);
+        const draw = (rows) => {
+          el.innerHTML = `${pageHeader('パネル', 'チャンネルに、ボタンつきのメッセージ(パネル)を置くと、コマンドを打たなくても、ボタンで、犯罪・バイト・お店が使えます。パネルを置いたサーバーでは、元のコマンドを廃止できます(そのサーバーのコマンド一覧から、消えます)。品や数字を変えたときは、「置き直す」で、パネルを更新してください。')}
+            ${rows.map((r) => `<div class="card" data-k="${r.kind}"><div class="card-h"><h2>${info[r.kind][0]} ${esc(r.title)}</h2>${r.installed ? '<span class="badge">設置ずみ</span>' : ''}</div>
+              <p class="hint" style="margin:0 0 10px">${info[r.kind][1]} 廃止できるコマンド: ${r.commands.map((c) => `<code>/${c}</code>`).join(' ')}</p>
+              <div class="grid2"><div class="field"><label class="f">パネルを置くチャンネル</label><select class="p-ch"><option value="">選んでください</option>${chans.map((c) => `<option value="${c.id}" ${r.installed?.channel_id === c.id ? 'selected' : ''}>#${esc(c.name)}</option>`).join('')}</select></div></div>
+              <label class="sw"><input type="checkbox" class="p-hide" ${!r.installed || r.installed.hide ? 'checked' : ''}><i></i><span><b>元のコマンドを廃止する</b><small>オンにすると、このサーバーでは、${r.commands.map((c) => `<code>/${c}</code>`).join(' ')} が使えなくなります(パネルからだけ、使えます)。オフにすると、コマンドも残ります</small></span></label>
+              <div class="acts"><button class="btn p-set" type="button">${r.installed ? '置き直す(更新)' : 'パネルを置く'}</button>${r.installed ? `<a class="btn ghost" href="${esc(r.installed.link)}" target="_blank" rel="noopener">パネルを開く</a><button class="btn danger p-rm" type="button">撤去する</button>` : ''}</div></div>`).join('')}`;
+          el.querySelectorAll('[data-k]').forEach((c) => {
+            const kind = c.dataset.k, row = rows.find((x) => x.kind === kind);
+            c.querySelector('.p-set').onclick = async () => {
+              const ch = c.querySelector('.p-ch').value, hide = c.querySelector('.p-hide').checked; if (!ch) { toast('チャンネルを選んでください', 'err'); return; }
+              if (hide && !await confirm({ title: 'コマンドを廃止', message: `パネルを置くと、このサーバーでは、${row.commands.map((x) => '/' + x).join(' ')} が使えなくなります(パネルからだけ、使えます)。`, ok: '置く' })) return;
+              const r = await api(`/panels/${kind}`, { method: 'POST', body: { channel_id: ch, hide } }); toast('パネルを置きました'); draw(rows.map((x) => (x.kind === kind ? r : x)));
+            };
+            const rm = c.querySelector('.p-rm');
+            if (rm) rm.onclick = async () => {
+              if (!await confirm({ title: 'パネルを撤去', message: `パネルのメッセージを消して、${row.commands.map((x) => '/' + x).join(' ')} を、元に戻します。`, ok: '撤去する', danger: true })) return;
+              const r = await api(`/panels/${kind}`, { method: 'DELETE' }); toast('撤去しました'); draw(rows.map((x) => (x.kind === kind ? r : x)));
+            };
+          });
+        };
+        draw(list);
+      } },
     { id: 'jail', title: '留置場', icon: 'alert',
       async render(el, { api, esc, ic, toast, confirm, pageHeader }) {
         const dur = (ms) => { const t = Math.ceil(ms / 1000), m = Math.floor(t / 60), r = t % 60; return m ? `${m}分${r ? `${r}秒` : ''}` : `${r}秒`; };
