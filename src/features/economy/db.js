@@ -48,11 +48,11 @@ CREATE TABLE IF NOT EXISTS eco_status (           -- お店の消耗品の効果
   guild_id TEXT NOT NULL, user_id TEXT NOT NULL, slot TEXT NOT NULL, item TEXT NOT NULL, until INTEGER NOT NULL,
   PRIMARY KEY (guild_id, user_id, slot)
 );
-CREATE TABLE IF NOT EXISTS eco_pets (              -- ペット(1人1匹)
-  guild_id TEXT NOT NULL, user_id TEXT NOT NULL, species TEXT NOT NULL, name TEXT NOT NULL,
-  xp INTEGER NOT NULL DEFAULT 0, hunger INTEGER NOT NULL DEFAULT 80, fed_at INTEGER NOT NULL, adopted_at INTEGER NOT NULL,
-  PRIMARY KEY (guild_id, user_id)
+CREATE TABLE IF NOT EXISTS eco_pets (              -- ペット(1人で、何匹でも。飼える数は、不動産で増える)
+  id INTEGER PRIMARY KEY AUTOINCREMENT, guild_id TEXT NOT NULL, user_id TEXT NOT NULL, species TEXT NOT NULL, name TEXT NOT NULL,
+  xp INTEGER NOT NULL DEFAULT 0, hunger INTEGER NOT NULL DEFAULT 80, fed_at INTEGER NOT NULL, adopted_at INTEGER NOT NULL
 );
+CREATE INDEX IF NOT EXISTS eco_pets_user ON eco_pets (guild_id, user_id);
 CREATE TABLE IF NOT EXISTS eco_stock_prices (     -- 株価の履歴(時刻ごと)。最新の行が、いまの株価
   guild_id TEXT NOT NULL, company TEXT NOT NULL, tick INTEGER NOT NULL, price REAL NOT NULL,
   PRIMARY KEY (guild_id, company, tick)
@@ -232,12 +232,24 @@ export const setStatus = (g, u, slot, item, until) => db.prepare(`INSERT INTO ec
   ON CONFLICT(guild_id,user_id,slot) DO UPDATE SET item=excluded.item, until=excluded.until`).run(g, u, slot, item, until);
 export const activeStatuses = (g, u, now = Date.now()) => db.prepare('SELECT slot, item, until FROM eco_status WHERE guild_id=? AND user_id=? AND until>?').all(g, u, now);
 /* ---------- ペット ---------- */
-export const getPet = (g, u) => db.prepare('SELECT * FROM eco_pets WHERE guild_id=? AND user_id=?').get(g, u) ?? null;
-export const adoptPet = (g, u, species, name, now = Date.now()) => db.prepare('INSERT INTO eco_pets (guild_id,user_id,species,name,xp,hunger,fed_at,adopted_at) VALUES (?,?,?,?,0,80,?,?)').run(g, u, species, name, now, now);
-export const renamePet = (g, u, name) => db.prepare('UPDATE eco_pets SET name=? WHERE guild_id=? AND user_id=?').run(name, g, u);
-export const releasePet = (g, u) => Number(db.prepare('DELETE FROM eco_pets WHERE guild_id=? AND user_id=?').run(g, u).changes) > 0;
+// 昔のデータ(1人1匹・idなし)を、新しい形に移す(1回だけ)
+if (!db.prepare("SELECT 1 FROM pragma_table_info('eco_pets') WHERE name='id'").get()) {
+  db.exec('BEGIN');
+  try {
+    db.exec('ALTER TABLE eco_pets RENAME TO eco_pets_old');
+    db.exec('CREATE TABLE eco_pets (id INTEGER PRIMARY KEY AUTOINCREMENT, guild_id TEXT NOT NULL, user_id TEXT NOT NULL, species TEXT NOT NULL, name TEXT NOT NULL, xp INTEGER NOT NULL DEFAULT 0, hunger INTEGER NOT NULL DEFAULT 80, fed_at INTEGER NOT NULL, adopted_at INTEGER NOT NULL)');
+    db.exec('INSERT INTO eco_pets (guild_id,user_id,species,name,xp,hunger,fed_at,adopted_at) SELECT guild_id,user_id,species,name,xp,hunger,fed_at,adopted_at FROM eco_pets_old');
+    db.exec('DROP TABLE eco_pets_old'); db.exec('CREATE INDEX IF NOT EXISTS eco_pets_user ON eco_pets (guild_id, user_id)');
+    db.exec('COMMIT');
+  } catch (e) { db.exec('ROLLBACK'); throw e; }
+}
+/** そのユーザーのペット(飼った順。番号は、この並びの1から) */
+export const getPets = (g, u) => db.prepare('SELECT * FROM eco_pets WHERE guild_id=? AND user_id=? ORDER BY id').all(g, u);
+export const adoptPet = (g, u, species, name, now = Date.now()) => Number(db.prepare('INSERT INTO eco_pets (guild_id,user_id,species,name,xp,hunger,fed_at,adopted_at) VALUES (?,?,?,?,0,80,?,?)').run(g, u, species, name, now, now).lastInsertRowid);
+export const renamePet = (id, name) => db.prepare('UPDATE eco_pets SET name=? WHERE id=?').run(name, id);
+export const releasePet = (id) => Number(db.prepare('DELETE FROM eco_pets WHERE id=?').run(id).changes) > 0;
 /** 満腹度(いまの値 = hunger)と、なつき度を更新する。fed_at を now にして、そこから減り始める */
-export const updatePet = (g, u, { hunger, xpAdd = 0 }, now = Date.now()) => db.prepare('UPDATE eco_pets SET hunger=?, xp=xp+?, fed_at=? WHERE guild_id=? AND user_id=?').run(hunger, xpAdd, now, g, u);
+export const updatePet = (id, { hunger, xpAdd = 0 }, now = Date.now()) => db.prepare('UPDATE eco_pets SET hunger=?, xp=xp+?, fed_at=? WHERE id=?').run(hunger, xpAdd, now, id);
 /* ---------- 株 ---------- */
 export const lastStockRow = (g, company) => db.prepare('SELECT tick, price FROM eco_stock_prices WHERE guild_id=? AND company=? ORDER BY tick DESC LIMIT 1').get(g, company) ?? null;
 export const stockPriceAt = (g, company, tick) => db.prepare('SELECT price FROM eco_stock_prices WHERE guild_id=? AND company=? AND tick<=? ORDER BY tick DESC LIMIT 1').get(g, company, tick)?.price ?? null;

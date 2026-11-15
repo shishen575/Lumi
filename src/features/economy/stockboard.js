@@ -1,5 +1,5 @@
 import { EmbedBuilder } from 'discord.js';
-import { getKV, setKV } from '../../core/db.js';
+import { postBoard as post, boardDue } from './board.js';
 import { getSettings } from './settings.js';
 import { marketNow } from './stockmarket.js';
 import { companyOf } from './stocks.js';
@@ -24,25 +24,17 @@ export function boardEmbed(s, g, now = Date.now()) {
   return e;
 }
 
-/** ボードを、決めたチャンネルに出す。「1つのメッセージを更新」なら、前のメッセージを書き換える */
+/** ボードを、決めたチャンネルの、一番下に出す。「最新だけ残す」なら、前のメッセージは書き換えるか、消す */
 export async function postBoard(client, g, now = Date.now()) {
   const s = getSettings(g); if (!s.stocksEnabled || !s.stockChannelId) return false;
-  const ch = client.channels.cache.get(s.stockChannelId); if (!ch?.isTextBased?.() || ch.guildId !== g) return false;
-  const st = getKV(g, 'stockboard', {}), embeds = [boardEmbed(s, g, now)];
-  try {
-    if (s.stockBoardEdit && st.msg && st.ch === ch.id) { try { const m = await ch.messages.fetch(st.msg); await m.edit({ embeds }); setKV(g, 'stockboard', { ...st, at: now }); return true; } catch { /* 消されていたら、新しく出す */ } }
-    const m = await ch.send({ embeds, allowedMentions: { parse: [] } });
-    setKV(g, 'stockboard', { ch: ch.id, msg: m.id, at: now }); return true;
-  } catch (e) { console.warn(`[stockboard] 送れませんでした (${g}): ${e.message}`); return false; }
+  return post(client, g, 'stock', s.stockChannelId, { embeds: [boardEmbed(s, g, now)] }, { replace: s.stockBoardEdit, now });
 }
 
 /** 1分ごとに呼ぶ。出す間隔(分)がたったサーバーのボードを出す */
 export async function boardTick(client, now = Date.now()) {
   for (const g of client.guilds.cache.keys()) {
     try {
-      const s = getSettings(g); if (!s.stocksEnabled || !s.stockChannelId) continue;
-      const st = getKV(g, 'stockboard', {});
-      if (st.at && now - st.at < s.stockBoardMin * 60_000 - 5_000) continue;
+      const s = getSettings(g); if (!s.stocksEnabled || !s.stockChannelId || !boardDue(g, 'stock', s.stockBoardMin, now)) continue;
       await postBoard(client, g, now);
     } catch (e) { console.error(`[stockboard] 失敗 (${g}):`, e.message); }
   }

@@ -1,4 +1,4 @@
-import { activeStatuses, getPet } from './db.js';
+import { activeStatuses, getPets } from './db.js';
 import { shopById, itemFx } from './shop.js';
 import { emptyFx, addFx } from './effects.js';
 import { petFx, speciesOf } from './pets.js';
@@ -8,6 +8,6 @@ import { petCfg } from './balance.js';
 export function userFx(s, g, u, now = Date.now()) {
   let fx = emptyFx();
   if (s.shopEnabled) for (const st of activeStatuses(g, u, now)) { const it = shopById(s, st.item); if (it) fx = addFx(fx, itemFx(it)); } // 品が削除されていたら、効かない
-  if (s.petsEnabled) fx = addFx(fx, (() => { const pet = getPet(g, u); return petFx(pet, petCfg(s), pet && speciesOf(s, pet.species), now); })()); // ペットのボーナス(おなかがすいていると、なし)
+  if (s.petsEnabled) for (const pet of getPets(g, u)) fx = addFx(fx, petFx(pet, petCfg(s), speciesOf(s, pet.species), now)); // ペットのボーナス(何匹いても、全部足す。おなかがすいていると、なし)
   return fx;
 }

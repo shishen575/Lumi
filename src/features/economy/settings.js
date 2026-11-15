@@ -28,6 +28,9 @@ export const DEFAULTS = {
   estate: DEFAULT_ESTATE,  // 物件の一覧(名前・値段・家賃・維持費などを、サーバーごとに変えられる)
   lotteryEnabled: false,   // 宝くじ。オンのとき、/lottery が使え、決まった時刻に、自動で抽選する
   lotteries: [DEFAULT_LOTTERY], // くじの一覧(サーバーごとに、自由に、最大6つ。名前・値段・間隔・桁数・賞金などを変えられる)
+  priceChannelId: null,    // 値段表(ペット・不動産・闇市)を出すチャンネル
+  priceBoardMin: 30,       // 値段表を出す間隔(分)
+  priceBoardReplace: true, // true: いつも一番下に最新の1つだけ(前のは書き換え/削除) / false: 毎回、新しく出す
   stockChannelId: null,    // 株価のグラフを出すチャンネル
   stockBoardMin: 5,        // グラフを出す間隔(分)
   stockBoardEdit: true,    // true: 1つのメッセージを更新 / false: 毎回、新しく出す
@@ -43,6 +46,7 @@ const clamp = (v, lo, hi, def) => { const n = Math.floor(Number(v)); return Numb
 
 export const getSettings = (guildId) => {
   const s = { ...DEFAULTS, ...getKV(guildId, 'economy', {}) };
+  if (Array.isArray(s.estate)) s.estate = s.estate.map((p) => ({ petSlots: 1, ...p })); // あとから増えた項目(ペット枠)は、初期値で補う
   s.stockNames = { ...DEFAULT_NAMES, ...s.stockNames };
   s.stockLevels = { ...DEFAULT_LEVELS, ...s.stockLevels };
   s.jobRanks = { ...DEFAULT_RANKS, ...s.jobRanks }; // あとから増えた職業(ラーメン屋など)の階級は、初期値で補う
@@ -71,6 +75,9 @@ export function saveSettings(guildId, s) {
     lotteryChannelId: s.lotteryChannelId === undefined ? cur.lotteryChannelId : (/^\d{15,25}$/.test(String(s.lotteryChannelId ?? '')) ? String(s.lotteryChannelId) : null),
     stocksEnabled: s.stocksEnabled === undefined ? cur.stocksEnabled : !!s.stocksEnabled,
     stockNames: s.stockNames === undefined ? cur.stockNames : sanitizeNames(s.stockNames, cur.stockNames),
+    priceChannelId: s.priceChannelId === undefined ? cur.priceChannelId : (/^\d{15,25}$/.test(String(s.priceChannelId ?? '')) ? String(s.priceChannelId) : null),
+    priceBoardMin: s.priceBoardMin === undefined ? cur.priceBoardMin : clamp(s.priceBoardMin, 5, 1440, DEFAULTS.priceBoardMin),
+    priceBoardReplace: s.priceBoardReplace === undefined ? cur.priceBoardReplace : !!s.priceBoardReplace,
     stockChannelId: s.stockChannelId === undefined ? cur.stockChannelId : (/^\d{15,25}$/.test(String(s.stockChannelId ?? '')) ? String(s.stockChannelId) : null),
     stockBoardMin: s.stockBoardMin === undefined ? cur.stockBoardMin : clamp(s.stockBoardMin, 5, 1440, DEFAULTS.stockBoardMin),
     stockBoardEdit: s.stockBoardEdit === undefined ? cur.stockBoardEdit : !!s.stockBoardEdit,

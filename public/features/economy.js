@@ -142,14 +142,20 @@ Dash.registerTab({
       } },
     /* ===== お店・ペット ===== */
     { id: 'shop', title: 'お店・ペット', icon: 'coin',
-      async render(el, { api, esc, toast, pageHeader }) {
-        const [st, meta] = await Promise.all([api('/settings'), api('/extras-meta')]);
+      async render(el, { api, channels: getChannels, esc, toast, pageHeader }) {
+        const [st, meta, chans] = await Promise.all([api('/settings'), api('/extras-meta'), getChannels()]);
+        let pch = st.priceChannelId || '', pmin = st.priceBoardMin, prep = st.priceBoardReplace !== false;
         let items = JSON.parse(JSON.stringify(st.shopItems)), pets = JSON.parse(JSON.stringify(st.petSpecies)), shopOn = st.shopEnabled, petsOn = st.petsEnabled;
         const kinds = meta.fx, toUi = (k, v) => (kinds[k].kind === 'count' ? v : Math.round(v * 1000) / 10), fromUi = (k, v) => (kinds[k].kind === 'count' ? Math.round(Number(v)) : Number(v) / 100);
         const draw = () => {
           el.innerHTML = `${pageHeader('お店・ペット', 'お店(タバコ・お酒など。使うと、しばらく効果がつく)と、ペット(育てるとボーナスがつく)を、サーバーでオン・オフします。お店の品は、名前・値段・効果を、自由に変えられます。')}
             <div class="card"><label class="sw"><input type="checkbox" id="so" ${shopOn ? 'checked' : ''}><i></i><span><b>お店を使う</b><small><code>/shop</code> と <code>/use</code> が使えます。品は、番号で選びます</small></span></label>
               <label class="sw"><input type="checkbox" id="po" ${petsOn ? 'checked' : ''}><i></i><span><b>ペットを使う</b><small><code>/pet</code> が使えます(種類・値段・餌・ボーナスは、下で変えられます。ボーナスの強さなどは、「ゲームバランス」で)</small></span></label></div>
+            <div class="card"><h2>値段表のチャンネル</h2><p class="hint">ペット・不動産・闇市の、いまの値段を、決めたチャンネルに出します(オンになっているものだけ)。闇市は、今日の相場です。</p>
+              <div class="grid2">
+                <div class="field"><label class="f">値段表を出すチャンネル</label><select id="pch"><option value="">出さない</option>${chans.map((c) => `<option value="${c.id}" ${pch === c.id ? 'selected' : ''}>#${esc(c.name)}</option>`).join('')}</select></div>
+                <div class="field"><label class="f">出す間隔</label><select id="pmin">${[5, 10, 30, 60, 180, 360, 720, 1440].map((m) => `<option value="${m}" ${pmin === m ? 'selected' : ''}>${m >= 60 ? m / 60 + '時間' : m + '分'}ごと</option>`).join('')}</select></div></div>
+              <label class="sw"><input type="checkbox" id="prep" ${prep ? 'checked' : ''}><i></i><span><b>最新の1つだけ、いつも一番下に出す</b><small>前の値段表は、書き換えるか、消します。オフにすると、毎回、新しく出して、前のものを残します</small></span></label></div>
             <h2 class="sec" style="margin:18px 0 8px">お店の品(最大${meta.maxShop}品)</h2>
             ${items.map((it, n) => `<div class="card" data-i="${n}"><div class="card-h"><h2>${n + 1}. ${esc(it.emoji)} ${esc(it.name)}</h2><button class="btn danger icon" type="button" data-rm="${n}" aria-label="削除">✕</button></div>
               <div class="grid2">
@@ -178,7 +184,7 @@ Dash.registerTab({
             <div class="acts"><button class="btn ghost" id="padd" type="button" ${pets.length >= meta.maxPets ? 'disabled' : ''}>ペットを追加</button><button class="btn ghost" id="preset" type="button">初期のペットに戻す</button></div>
             <div class="acts"><button class="btn ghost" id="add" type="button" ${items.length >= meta.maxShop ? 'disabled' : ''}>品を追加</button><button class="btn ghost" id="reset" type="button">初期の品に戻す</button><button class="btn" id="save" type="button">保存</button></div>`;
           const collect = () => {
-            shopOn = el.querySelector('#so').checked; petsOn = el.querySelector('#po').checked;
+            shopOn = el.querySelector('#so').checked; petsOn = el.querySelector('#po').checked; pch = el.querySelector('#pch').value; pmin = Number(el.querySelector('#pmin').value); prep = el.querySelector('#prep').checked;
             pets = [...el.querySelectorAll('[data-p]')].map((c, n) => ({ id: pets[n]?.id, enabled: c.querySelector('.p-on').checked, name: c.querySelector('.p-name').value, emoji: c.querySelector('.p-emoji').value, price: c.querySelector('.p-price').value, foodName: c.querySelector('.p-food').value, foodEmoji: c.querySelector('.p-foode').value, feedCost: c.querySelector('.p-fc').value, feedHunger: c.querySelector('.p-fh').value,
               effects: Object.fromEntries([...c.querySelectorAll('.p-fx')].filter((x) => x.value !== '').map((x) => [x.dataset.k, Number(x.value) / 100])) }));
             items = [...el.querySelectorAll('[data-i]')].map((c, n) => ({ id: items[n]?.id, name: c.querySelector('.f-name').value, emoji: c.querySelector('.f-emoji').value, slot: c.querySelector('.f-slot').value, price: c.querySelector('.f-price').value, minutes: c.querySelector('.f-min').value, desc: c.querySelector('.f-desc').value,
@@ -190,7 +196,7 @@ Dash.registerTab({
           el.querySelector('#add').onclick = () => { collect(); items.push({ name: '新しい品', emoji: '🛍️', slot: 'other', price: 100, minutes: 15, effects: {}, desc: '' }); draw(); };
           el.querySelector('#reset').onclick = () => { collect(); items = JSON.parse(JSON.stringify(meta.defaultShop)); draw(); };
           el.querySelectorAll('[data-rm]').forEach((b) => (b.onclick = () => { collect(); items.splice(Number(b.dataset.rm), 1); draw(); }));
-          el.querySelector('#save').onclick = async () => { collect(); const r = await api('/settings', { method: 'PUT', body: { shopEnabled: shopOn, petsEnabled: petsOn, shopItems: items, petSpecies: pets } }); items = JSON.parse(JSON.stringify(r.shopItems)); pets = JSON.parse(JSON.stringify(r.petSpecies)); toast('保存しました'); draw(); };
+          el.querySelector('#save').onclick = async () => { collect(); const r = await api('/settings', { method: 'PUT', body: { shopEnabled: shopOn, petsEnabled: petsOn, shopItems: items, petSpecies: pets, priceChannelId: pch || null, priceBoardMin: pmin, priceBoardReplace: prep } }); items = JSON.parse(JSON.stringify(r.shopItems)); pets = JSON.parse(JSON.stringify(r.petSpecies)); toast('保存しました'); draw(); };
         };
         draw();
       } },
@@ -206,7 +212,7 @@ Dash.registerTab({
             <div class="grid2">
               <div class="field"><label class="f">グラフを出すチャンネル</label><select id="bch"><option value="">出さない</option>${chans.map((c) => `<option value="${c.id}" ${st.stockChannelId === c.id ? 'selected' : ''}>#${esc(c.name)}</option>`).join('')}</select></div>
               <div class="field"><label class="f">出す間隔</label><select id="bmin">${[5, 10, 30, 60, 180, 360, 720, 1440].map((m) => `<option value="${m}" ${st.stockBoardMin === m ? 'selected' : ''}>${m >= 60 ? m / 60 + '時間' : m + '分'}ごと</option>`).join('')}</select></div></div>
-            <label class="sw"><input type="checkbox" id="bedit" ${st.stockBoardEdit ? 'checked' : ''}><i></i><span><b>1つのメッセージを更新する</b><small>オフにすると、毎回、新しいメッセージを出します(グラフが、残っていきます)</small></span></label></div>
+            <label class="sw"><input type="checkbox" id="bedit" ${st.stockBoardEdit ? 'checked' : ''}><i></i><span><b>最新の1つだけ、いつも一番下に出す</b><small>前のグラフは、書き換えるか、消します(いつも、チャンネルの一番下に、最新が来ます)。オフにすると、毎回、新しく出して、前のグラフを残します</small></span></label></div>
           ${meta.companies.map((c) => `<div class="card" data-c="${c.id}"><div class="card-h"><h2>${esc(names[c.id].emoji)} ${esc(names[c.id].ticker)} <span class="mut small">基準 ${c.base.toLocaleString()} ・ ${esc(c.blurb)}</span></h2></div>
             <div class="grid2">
               <div class="field"><label class="f">会社の名前</label><input class="s-name" type="text" maxlength="16" value="${esc(names[c.id].name)}"></div>
@@ -276,6 +282,7 @@ Dash.registerTab({
                 <div class="field"><label class="f">絵文字</label><input class="e-emoji" type="text" maxlength="8" value="${esc(p.emoji)}"></div>
                 <div class="field"><label class="f">値段</label><input class="e-price" type="number" min="1" value="${p.price}"></div>
                 <div class="field"><label class="f">持てる数の上限(最大20)</label><input class="e-max" type="number" min="1" max="20" value="${p.maxOwn}"></div>
+                <div class="field"><label class="f">1件買うごとに増える、ペットを飼える数(0〜10)</label><input class="e-pet" type="number" min="0" max="10" value="${p.petSlots ?? 0}"></div>
                 <div class="field"><label class="f">家賃(1時間あたり)</label><input class="e-rent" type="number" min="0" value="${p.rent}"></div>
                 <div class="field"><label class="f">維持費(1時間あたり)</label><input class="e-up" type="number" min="0" value="${p.upkeep}"></div>
                 <div class="field" style="grid-column:1/-1"><label class="f">説明</label><input class="e-desc" type="text" maxlength="60" value="${esc(p.desc)}"></div></div>
@@ -283,9 +290,9 @@ Dash.registerTab({
             <div class="acts"><button class="btn ghost" id="add" type="button" ${props.length >= meta.maxProperties ? 'disabled' : ''}>物件を追加</button><button class="btn ghost" id="reset" type="button">初期の物件に戻す</button><button class="btn" id="save" type="button">保存</button></div>`;
           const collect = () => {
             on = el.querySelector('#on').checked;
-            props = [...el.querySelectorAll('[data-i]')].map((c, n) => ({ id: props[n]?.id, name: c.querySelector('.e-name').value, emoji: c.querySelector('.e-emoji').value, price: c.querySelector('.e-price').value, maxOwn: c.querySelector('.e-max').value, rent: c.querySelector('.e-rent').value, upkeep: c.querySelector('.e-up').value, desc: c.querySelector('.e-desc').value }));
+            props = [...el.querySelectorAll('[data-i]')].map((c, n) => ({ id: props[n]?.id, name: c.querySelector('.e-name').value, emoji: c.querySelector('.e-emoji').value, price: c.querySelector('.e-price').value, maxOwn: c.querySelector('.e-max').value, petSlots: c.querySelector('.e-pet').value, rent: c.querySelector('.e-rent').value, upkeep: c.querySelector('.e-up').value, desc: c.querySelector('.e-desc').value }));
           };
-          el.querySelector('#add').onclick = () => { collect(); props.push({ name: '新しい物件', emoji: '🏠', price: 10000, rent: 30, upkeep: 5, maxOwn: 5, desc: '' }); draw(); };
+          el.querySelector('#add').onclick = () => { collect(); props.push({ name: '新しい物件', emoji: '🏠', price: 10000, rent: 30, upkeep: 5, maxOwn: 5, petSlots: 1, desc: '' }); draw(); };
           el.querySelector('#reset').onclick = () => { collect(); props = JSON.parse(JSON.stringify(meta.defaultEstate)); draw(); };
           el.querySelectorAll('[data-rm]').forEach((b) => (b.onclick = () => { collect(); props.splice(Number(b.dataset.rm), 1); draw(); }));
           el.querySelector('#save').onclick = async () => { collect(); const r = await api('/settings', { method: 'PUT', body: { estateEnabled: on, estate: props } }); props = JSON.parse(JSON.stringify(r.estate)); toast('保存しました'); draw(); };
