@@ -10,7 +10,7 @@ import { SCHEMA, jobOf, wantedCfg, marketCfg } from './balance.js';
 import { FX_LABELS, SLOTS, MAX_SHOP_ITEMS, DEFAULT_SHOP, SHOP_MAX_STACK, shopById, shopItems } from './shop.js';
 import { COMPANIES, VOL_LABELS, VOL_LEVELS, DEFAULT_NAMES, DEFAULT_LEVELS, companyOf, DEFAULT_EVENTS, MAX_EVENTS } from './stocks.js';
 import { PANELS, panelState, installPanel, removePanel, retiredOf } from './panels.js';
-import { customPanels, saveCustomPanel, removeCustomPanel, MAX_CUSTOM, MAX_BUTTONS } from './custompanels.js';
+import { customPanels, saveCustomPanel, removeCustomPanel, removeCustomButton, retiredOfCustom, MAX_CUSTOM, MAX_BUTTONS } from './custompanels.js';
 import { commandCatalog } from '../../core/commands.js';
 import { MAX_PETS, DEFAULT_PETS, PET_FX_KEYS, speciesOf } from './pets.js';
 import { itemById as marketItemById, ITEMS as MARKET_ITEMS } from './market.js';
@@ -146,17 +146,29 @@ export function mountApi(router, client = null) {
   });
   // カスタムパネル: どんなコマンドでも、ボタンにして置ける
   const SUP = new Set([3, 4, 5, 10]);
-  router.get('/command-catalog', (req, res) => res.json({ max: MAX_CUSTOM, maxButtons: MAX_BUTTONS, commands: commandCatalog().filter((c) => c.name !== 'dashboard').map((c) => ({ name: c.name, description: c.description,
+  // どのパネルが、どのコマンドを廃止しているか(カスタムパネルで、廃止ずみのコマンドを、選択肢から外すのに使う)
+  const retiredBy = (g) => {
+    const m = {}, add = (n, by) => (m[n] ??= []).push(by);
+    for (const [kind, st] of Object.entries(panelState(g))) if (PANELS[kind]) for (const n of retiredOf(kind, st)) add(n, `panel:${kind}`);
+    for (const [id, p] of Object.entries(customPanels(g))) for (const n of retiredOfCustom(p)) add(n, `custom:${id}`);
+    return m;
+  };
+  router.get('/command-catalog', (req, res) => res.json({ retiredBy: retiredBy(req.guild.id), max: MAX_CUSTOM, maxButtons: MAX_BUTTONS, commands: commandCatalog().filter((c) => c.name !== 'dashboard').map((c) => ({ name: c.name, description: c.description,
     subs: (c.options ?? []).filter((o) => o.type === 1).map((sc) => ({ name: sc.name, description: sc.description, options: (sc.options ?? []).map(optInfo) })),
     unsupported: (c.options ?? []).some((o) => o.type === 2), options: (c.options ?? []).filter((o) => o.type !== 1).map(optInfo) })) }));
   const optInfo = (o) => ({ name: o.name, description: o.description, type: o.type, required: !!o.required, supported: SUP.has(o.type), choices: o.choices ?? null, min: o.min_value ?? null, max: o.max_value ?? null });
-  const customView = (g) => Object.entries(customPanels(g)).map(([id, p]) => ({ id, ...p, retire: Array.isArray(p.retire) ? p.retire : (p.hide ? [...new Set(p.buttons.map((b) => b.command))].filter((n) => n !== 'help') : []), link: `https://discord.com/channels/${g}/${p.ch}/${p.msg}` }));
+  const customView = (g) => Object.entries(customPanels(g)).map(([id, p]) => ({ id, ...p, retire: retiredOfCustom(p), link: `https://discord.com/channels/${g}/${p.ch}/${p.msg}` }));
   router.get('/custom-panels', (req, res) => res.json(customView(req.guild.id)));
   router.put('/custom-panels/:id', async (req, res) => {
     if (!adminOnly(req, res)) return;
     const id = req.params.id === 'new' ? null : req.params.id; if (id && !customPanels(req.guild.id)[id]) return res.status(404).json({ error: 'パネルが、ありません' });
     try { const p = await saveCustomPanel(client, req.guild.id, id, req.body ?? {}, String(req.body?.channel_id ?? '')); audit(req.guild.id, req.actor, null, `カスタムパネルを${id ? '更新' : '設置'}(${p.title})`, null, `ボタン ${p.buttons.length}個${p.retire?.length ? ` / 廃止: ${p.retire.map((n) => '/' + n).join(' ')}` : ''}`); res.json(customView(req.guild.id).find((x) => x.id === p.id)); }
     catch (e) { res.status(400).json({ error: e.code === 50013 || e.code === 50001 ? 'そのチャンネルに、メッセージを送る権限がありません' : e.message }); }
+  });
+  router.delete('/custom-panels/:id/buttons/:idx', async (req, res) => {
+    if (!adminOnly(req, res)) return;
+    try { const p = await removeCustomButton(client, req.guild.id, req.params.id, Number(req.params.idx)); audit(req.guild.id, req.actor, null, `カスタムパネルのボタンを削除(${p.title})`, null, p.retire.length ? `廃止中: ${p.retire.map((n) => '/' + n).join(' ')}` : ''); res.json(customView(req.guild.id).find((x) => x.id === p.id)); }
+    catch (e) { res.status(400).json({ error: e.message }); }
   });
   router.delete('/custom-panels/:id', async (req, res) => {
     if (!adminOnly(req, res)) return;

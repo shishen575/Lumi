@@ -14,6 +14,11 @@ const SUPPORTED = new Set([3, 4, 5, 10]); // 文字・整数・オン/オフ・�
 const STYLES = { primary: ButtonStyle.Primary, secondary: ButtonStyle.Secondary, success: ButtonStyle.Success, danger: ButtonStyle.Danger };
 const clean = (x, n) => String(x ?? '').replace(/[\r\n]+/g, ' ').trim().slice(0, n);
 export const customPanels = (g) => getKV(g, KEY, {});
+/** そのパネルで廃止しているコマンド(ボタンで使っているものだけ。古い形の hide は、全部。/help は、いつも残す) */
+export const retiredOfCustom = (p) => {
+  const used = [...new Set((p.buttons ?? []).map((b) => b.command))].filter((n) => n !== 'help');
+  return Array.isArray(p.retire) ? p.retire.filter((n) => used.includes(n)) : (p.hide ? used : []);
+};
 const save = (g, all) => setKV(g, KEY, all);
 
 /** コマンドの JSON と、サブコマンド名から、項目の一覧を返す。使えないときは、error */
@@ -102,8 +107,7 @@ registerHiddenCommands((g) => {
   const out = {};
   for (const p of Object.values(customPanels(g))) {
     if (!p.msg) continue;
-    const used = [...new Set(p.buttons.map((b) => b.command))].filter((n) => n !== 'help');
-    for (const name of (Array.isArray(p.retire) ? p.retire.filter((n) => used.includes(n)) : (p.hide ? used : []))) out[name] = `このサーバーでは、\`/${name}\` は廃止されました。パネル(https://discord.com/channels/${g}/${p.ch}/${p.msg})から使えます。`;
+    for (const name of retiredOfCustom(p)) out[name] = `このサーバーでは、\`/${name}\` は廃止されました。パネル(https://discord.com/channels/${g}/${p.ch}/${p.msg})から使えます。`;
   }
   return out;
 });
@@ -129,6 +133,18 @@ export async function removeCustomPanel(client, g, id) {
   const all = customPanels(g), p = all[id]; if (!p) return false;
   if (p.msg) await client.channels.cache.get(p.ch)?.messages.delete(p.msg).catch(() => {});
   delete all[id]; save(g, all); await resyncGuildCommands(g); return true;
+}
+/** ボタンを1つ、すぐに消す(メッセージを書き換えて、使っていなくなったコマンドは、すぐに元に戻す)。最後の1つは、消せない */
+export async function removeCustomButton(client, g, id, idx) {
+  const all = customPanels(g), p = all[id]; if (!p) throw new Error('パネルが、ありません');
+  if (!Number.isInteger(idx) || idx < 0 || idx >= p.buttons.length) throw new Error('そのボタンは、ありません');
+  if (p.buttons.length <= 1) throw new Error('最後のボタンは、消せません。パネルごと撤去してください');
+  const buttons = p.buttons.filter((_, n) => n !== idx), used = new Set(buttons.map((b) => b.command)), retire = retiredOfCustom(p).filter((n) => used.has(n)); // もう使っていないコマンドは、廃止の対象から外れる
+  const next = { ...p, buttons, retire, hide: retire.length > 0, at: Date.now() };
+  const ch = client.channels.cache.get(p.ch);
+  if (p.msg && ch) { try { await ch.messages.edit(p.msg, customMessage(next, id)); } catch { /* 消されていたら、そのまま */ } }
+  all[id] = next; save(g, all); await resyncGuildCommands(g);
+  return { id, ...next };
 }
 /** 「一番下に出す」の対象(サーバーごと) */
 export const customStickItems = (client, g) => Object.entries(customPanels(g)).map(([id, p]) => ({ kind: `custom:${id}`, prio: 200,
