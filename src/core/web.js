@@ -15,7 +15,7 @@ const PERM_ADMIN = 0x8n; // 管理者(BOTを招待できるかの判定に使う
 
 export function startWeb(client, features) {
   const app = express();
-  const BASE = process.env.BASE_URL || 'http://localhost:3000';
+  const BASE = (process.env.BASE_URL || 'http://localhost:3000').trim().replace(/\/+$/, ''); // 末尾のスラッシュは取り除く(あると、ログイン用のアドレスが // になって、Discordのログインが失敗する)
   app.set('trust proxy', 1); // Cloudflare Tunnel / リバプロ越し
   app.use(express.json({ verify: (req, res, buf) => { req.rawBody = buf; } })); // Webhook署名検証用に生ボディを保持
   mountGithubWebhook(app);
