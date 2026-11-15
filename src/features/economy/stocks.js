@@ -69,24 +69,41 @@ export function sanitizeEvents(input, current = DEFAULT_EVENTS) {
   }
   return out.length ? out : current;
 }
-/** その時刻(tick)の、ニュース(なければ null): 確率 約1.5%(15分あたり)で、出来事が1つ起きる。どれが起きるかは、起きやすさ(weight)で決まる */
-export function eventAt(guild, companyId, tick, stepFactor = 1, newsRate = 1, events = DEFAULT_EVENTS) {
-  const r = mulberry(hash(`ev:${guild}:${companyId}:${tick}`));
-  if (r() >= 0.015 * stepFactor * newsRate) return null; // 15分あたり 1.5%(1日に1〜2回ほど)。間隔が短ければ、1回あたりは、その割合で小さく
-  const list = events.filter((e) => e.enabled && (!e.company || e.company === companyId)); if (!list.length) return null;
-  let x = r() * list.reduce((a, e) => a + e.weight, 0), e = list.at(-1);
-  for (const c of list) { x -= c.weight; if (x < 0) { e = c; break; } }
-  return { id: e.id, up: e.pct > 0, pct: e.pct, size: Math.abs(e.pct) / 100, text: e.text };
+export const DEFAULT_NEWS = { rate: 1, events: DEFAULT_EVENTS, every: 0, step: 5, power: 1 };
+const pickEvent = (r, list) => { let x = r() * list.reduce((a, e) => a + e.weight, 0), e = list.at(-1); for (const c of list) { x -= c.weight; if (x < 0) { e = c; break; } } return e; };
+const applicable = (events, companyId) => events.filter((e) => e.enabled && (!e.company || e.company === companyId));
+/**
+ * その時刻(tick。分)の、ニュース(なければ null)。news = { rate, events, every, step, power }
+ *   every = 0: ランダム。確率 約1.5%(15分あたり)で、出来事が1つ起きる(rate で、起きやすさを変える)
+ *   every = N: N分ごとに、ちょうど1つ、出来事が起きる(どの会社に起きるかは、毎回、決まった乱数で選ぶ)
+ * どの出来事が起きるかは、起きやすさ(weight)で決まる。power は、株価の変わる割合に掛ける倍率(1 = 書いてある通り)
+ */
+export function eventAt(guild, companyId, tick, stepFactor = 1, news = DEFAULT_NEWS) {
+  const events = news.events ?? DEFAULT_EVENTS; let e;
+  if (news.every > 0) {
+    const N = news.every, k = Math.floor(tick / N);
+    if (k === Math.floor((tick - news.step) / N)) return null; // その区間の、最初の更新のときだけ
+    const r = mulberry(hash(`nws:${guild}:${k}`)), ids = COMPANIES.map((c) => c.id).filter((id) => applicable(events, id).length);
+    if (!ids.length || ids[Math.floor(r() * ids.length)] !== companyId) return null;
+    e = pickEvent(r, applicable(events, companyId));
+  } else {
+    const r = mulberry(hash(`ev:${guild}:${companyId}:${tick}`));
+    if (r() >= 0.015 * stepFactor * (news.rate ?? 1)) return null; // 15分あたり 1.5%(1日に1〜2回ほど)。間隔が短ければ、1回あたりは、その割合で小さく
+    const list = applicable(events, companyId); if (!list.length) return null;
+    e = pickEvent(r, list);
+  }
+  const pct = e.pct * (news.power ?? 1);
+  return { id: e.id, up: e.pct > 0, pct, size: Math.abs(pct) / 100, text: e.text };
 }
 /**
  * 1つ前の価格から、次の時刻の価格を決める。
  *   level: 変動の10段階(1〜10)/ volScale: サーバー全体の倍率 / stepFactor: 更新間隔 ÷ 15分(間隔が短いほど、1回の動きは小さい)
  */
-export function nextPrice(guild, c, tick, prev, { level = c.level, volScale = 1, stepFactor = 1, newsRate = 1, events = DEFAULT_EVENTS } = {}) {
+export function nextPrice(guild, c, tick, prev, { level = c.level, volScale = 1, stepFactor = 1, news = DEFAULT_NEWS } = {}) {
   const vol = VOL_LEVELS[Math.min(10, Math.max(1, level)) - 1] * volScale;
   const r = mulberry(hash(`px:${guild}:${c.id}:${tick}`));
   let ret = (c.drift - REVERT * Math.log(prev / c.base)) * stepFactor + vol * Math.sqrt(stepFactor) * gauss(r);
-  const ev = eventAt(guild, c.id, tick, stepFactor, newsRate, events);
+  const ev = eventAt(guild, c.id, tick, stepFactor, news);
   if (ev) ret += Math.log(1 + ev.pct / 100); // 出来事で、決まった割合だけ動く
   return Math.min(c.base * 6, Math.max(c.base * 0.15, prev * Math.exp(ret)));
 }
@@ -94,11 +111,11 @@ export function nextPrice(guild, c, tick, prev, { level = c.level, volScale = 1,
  * 1つ後の価格から、1つ前の時刻の価格を、さかのぼって決める(履歴が24時間に足りないときに、過去のぶんを作る)。
  * 同じ乱数(その時刻の動き)を使い、逆向きに戻すので、いまの価格とつながる。ほぼ正確(平均への戻りの小さな項は、無視する)
  */
-export function prevPrice(guild, c, tick, price, { level = c.level, volScale = 1, stepFactor = 1, newsRate = 1, events = DEFAULT_EVENTS } = {}) {
+export function prevPrice(guild, c, tick, price, { level = c.level, volScale = 1, stepFactor = 1, news = DEFAULT_NEWS } = {}) {
   const vol = VOL_LEVELS[Math.min(10, Math.max(1, level)) - 1] * volScale;
   const r = mulberry(hash(`px:${guild}:${c.id}:${tick}`));
   let ret = vol * Math.sqrt(stepFactor) * gauss(r);
-  const ev = eventAt(guild, c.id, tick, stepFactor, newsRate, events);
+  const ev = eventAt(guild, c.id, tick, stepFactor, news);
   if (ev) ret += Math.log(1 + ev.pct / 100); // 出来事で、決まった割合だけ動く
   return Math.min(c.base * 6, Math.max(c.base * 0.15, price / Math.exp(ret)));
 }

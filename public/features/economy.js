@@ -209,7 +209,10 @@ Dash.registerTab({
         el.innerHTML = `${pageHeader('株', '架空の会社の株を、売り買いできます。株価は、5分ごとに動きます(間隔は「ゲームバランス」で変えられます)。会社の名前・ティッカー・絵文字と、値動きの大きさ(10段階)を、サーバーで決められます。')}
           <div class="card"><label class="sw"><input type="checkbox" id="on" ${st.stocksEnabled ? 'checked' : ''}><i></i><span><b>株を使う</b><small><code>/stock</code> が使えます。売買の手数料などは、「ゲームバランス」で変えられます</small></span></label></div>
           <div class="card"><h2>新聞チャンネル</h2><p class="hint">株のニュース(新商品がヒット・不祥事など。株価が大きく上がったり、下がったりします)を、起きるたびに、決めたチャンネルに出します。起きやすさは、「ゲームバランス」の株で変えられます。</p>
-            <div class="field"><label class="f">新聞を出すチャンネル</label><select id="nch"><option value="">出さない</option>${chans.map((c) => `<option value="${c.id}" ${st.newsChannelId === c.id ? 'selected' : ''}>#${esc(c.name)}</option>`).join('')}</select></div></div>
+            <div class="field"><label class="f">新聞を出すチャンネル</label><select id="nch"><option value="">出さない</option>${chans.map((c) => `<option value="${c.id}" ${st.newsChannelId === c.id ? 'selected' : ''}>#${esc(c.name)}</option>`).join('')}</select></div>
+            <div class="grid2" style="margin-top:12px">
+              <div class="field"><label class="f">新しいニュースが起きる間隔</label><select id="nevery">${[[0, 'ランダム(1日に1〜2回ほど)'], [5, '5分ごと'], [10, '10分ごと'], [15, '15分ごと'], [30, '30分ごと'], [60, '1時間ごと'], [180, '3時間ごと'], [360, '6時間ごと']].map(([m, l]) => `<option value="${m}" ${st.newsEvery === m ? 'selected' : ''}>${l}</option>`).join('')}</select><p class="hint">決めた間隔ごとに、ちょうど1つ、どれかの会社に、ニュースが起きます(株価が動く間隔より短くはできません)。</p></div>
+              <div class="field"><label class="f">ニュースで動く強さ(%)</label><input id="npow" type="number" min="0" max="500" value="${st.newsPower}"><p class="hint">100% で、下の出来事に書いた割合のまま動きます。間隔を短くするときは、小さくすると、株価が荒れすぎません(初期値 25%)。</p></div></div></div>
           <div class="card"><h2>株価のグラフ</h2><p class="hint">決めたチャンネルに、24時間の株価のグラフ(折れ線)と、いまの値段を出します。</p>
             <div class="grid2">
               <div class="field"><label class="f">グラフを出すチャンネル</label><select id="bch"><option value="">出さない</option>${chans.map((c) => `<option value="${c.id}" ${st.stockChannelId === c.id ? 'selected' : ''}>#${esc(c.name)}</option>`).join('')}</select></div>
@@ -225,7 +228,7 @@ Dash.registerTab({
           <p class="hint" style="margin:0 0 8px">ときどき、ニュースが起きて、株価が決まった割合で上がったり、下がったりします。起きやすさは、「ゲームバランス」の「ニュースの起きやすさ」で、変えられます。どのニュースが起きるかは、下の「起きやすさ」(1〜10)で決まります。</p>
           <div id="evl"></div>
           <div class="acts"><button class="btn ghost" id="evadd" type="button">出来事を追加</button><button class="btn ghost" id="evreset" type="button">初期の出来事に戻す</button></div>
-          <div class="card"><h2>値動きの目安</h2><p class="hint" style="margin:0">1日の値動きの目安は、レベル1で約1.5%、レベル5で約7%、レベル10で約28%です。ときどき、ニュースで大きく動きます(荒い株ほど、大きく)。</p></div>
+          <div class="card"><h2>値動きの目安</h2><p class="hint" style="margin:0">1日の値動きの目安は、レベル1で約1.5%、レベル5で約7%、レベル10で約28%です。ニュースが起きると、書いた割合だけ、動きます(動く強さは、上の「ニュースで動く強さ」で変えられます)。</p></div>
           <div class="acts"><button class="btn ghost" id="reset" type="button">初期値に戻す</button><button class="btn" id="save" type="button">保存</button></div>`;
         let events = JSON.parse(JSON.stringify(st.newsEvents));
         const evCollect = () => { events = [...el.querySelectorAll('[data-ev]')].map((c, n) => ({ id: events[n]?.id, enabled: c.querySelector('.ev-on').checked, text: c.querySelector('.ev-text').value, pct: c.querySelector('.ev-pct').value, company: c.querySelector('.ev-co').value, weight: c.querySelector('.ev-w').value })); };
@@ -234,7 +237,7 @@ Dash.registerTab({
             <label class="sw"><input type="checkbox" class="ev-on" ${e.enabled ? 'checked' : ''}><i></i><span><b>有効</b></span></label>
             <div class="grid2">
               <div class="field"><label class="f">出来事(新聞の見出し)</label><input class="ev-text" type="text" maxlength="30" value="${esc(e.text)}"></div>
-              <div class="field"><label class="f">株価の変わる割合(%。プラスは上がる、マイナスは下がる)</label><input class="ev-pct" type="number" min="-50" max="50" step="1" value="${e.pct}"></div>
+              <div class="field"><label class="f">株価の変わる割合(%。プラスは上がる、マイナスは下がる。「ニュースで動く強さ」が掛かります)</label><input class="ev-pct" type="number" min="-50" max="50" step="1" value="${e.pct}"></div>
               <div class="field"><label class="f">どの会社に起きる?</label><select class="ev-co"><option value="">全部の会社</option>${meta.companies.map((c) => `<option value="${c.id}" ${e.company === c.id ? 'selected' : ''}>${esc(names[c.id].emoji)} ${esc(names[c.id].name)}</option>`).join('')}</select></div>
               <div class="field"><label class="f">起きやすさ(1〜10)</label><input class="ev-w" type="number" min="1" max="10" value="${e.weight}"></div></div></div>`).join('') || '<div class="card"><p class="hint" style="margin:0">出来事が、ありません。「出来事を追加」で、作れます。</p></div>';
           el.querySelector('#evadd').disabled = events.length >= meta.maxEvents;
@@ -248,7 +251,7 @@ Dash.registerTab({
           evCollect();
           const stockNames = {}, stockLevels = {};
           el.querySelectorAll('[data-c]').forEach((c) => { const id = c.dataset.c; stockNames[id] = { name: c.querySelector('.s-name').value, ticker: c.querySelector('.s-tick').value, emoji: c.querySelector('.s-emoji').value }; stockLevels[id] = Number(c.querySelector('.s-lv').value); });
-          await api('/settings', { method: 'PUT', body: { stocksEnabled: el.querySelector('#on').checked, stockNames, stockLevels, newsEvents: events, stockChannelId: el.querySelector('#bch').value || null, newsChannelId: el.querySelector('#nch').value || null, stockBoardMin: Number(el.querySelector('#bmin').value), stockBoardEdit: el.querySelector('#bedit').checked } }); toast('保存しました');
+          await api('/settings', { method: 'PUT', body: { stocksEnabled: el.querySelector('#on').checked, stockNames, stockLevels, newsEvents: events, newsEvery: Number(el.querySelector('#nevery').value), newsPower: Number(el.querySelector('#npow').value), stockChannelId: el.querySelector('#bch').value || null, newsChannelId: el.querySelector('#nch').value || null, stockBoardMin: Number(el.querySelector('#bmin').value), stockBoardEdit: el.querySelector('#bedit').checked } }); toast('保存しました');
         };
       } },
     /* ===== 宝くじ ===== */

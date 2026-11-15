@@ -91,7 +91,7 @@ function buildSchema() {
   const kg = '📈 株';
   L.push(p('stock.tickMin', '株', kg, '株価が動く間隔', 5, 1, 1440, '分'));
   L.push(p('stock.volPct', '株', kg, '値動きの大きさ(100% = 初期値)', 100, 0, 500, '%'));
-  L.push(p('stock.newsRate', '株', kg, 'ニュース(株価が大きく上がる・下がる)の起きやすさ(100% = 初期値。1日に1〜2回ほど)', 100, 0, 1000, '%'));
+  L.push(p('stock.newsRate', '株', kg, 'ニュースの起きやすさ(100% = 1日に1〜2回ほど。ニュースの間隔が「ランダム」のときだけ使われます)', 100, 0, 1000, '%'));
   L.push(p('stock.feePermille', '株', kg, '売買の手数料(売り・買いそれぞれ)', 10, 0, 100, '‰'));
   L.push(p('stock.maxShares', '株', kg, '1つの会社で、持てる株の数', 10000, 1, 1e8, '株'));
   const eg = '🏢 不動産';
