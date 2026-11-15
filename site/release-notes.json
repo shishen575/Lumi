@@ -1,5 +1,16 @@
 [
   {
+    "n": 28,
+    "date": "2026-11-15",
+    "title": "一覧を絞り込める",
+    "items": [
+      {
+        "tag": "追加",
+        "text": "一覧のコマンドに `search` オプションを追加しました。名前などの一部を入れると、合うものだけが出ます(例: `/shop list search:ビール`、`/shop list search:犯罪の成功率` で、その効果がある品だけ)。対象: `/shop list` `/market list` `/estate list` `/stock list` `/pet status`(まだ飼っていないとき)`/lottery info`。番号は、絞り込んでも、変わりません(`/shop buy` などで、そのまま使えます)"
+      }
+    ]
+  },
+  {
     "n": 27,
     "date": "2026-11-15",
     "title": "お店・ペットに、逮捕の効果を追加",
