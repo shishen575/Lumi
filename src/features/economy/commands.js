@@ -82,7 +82,8 @@ const shortNote = (s, r) => (r.short > 0 ? `\n-# 予算が足りなかったた�
 async function takeBet(i, s) {
   const bet = i.options.getInteger('bet', true);
   if (bet < 10) { await refuse(i, '賭けられるのは、10以上です。'); return null; }
-  if (bet > s.maxBet) { await refuse(i, `賭けられるのは、最大 ${money(s, s.maxBet)} までです。`); return null; }
+  const limit = Math.round(s.maxBet * Math.max(0, 1 + userFx(s, i.guildId, i.user.id).betLimit)); // お店の品・ペットの効果で、上限が増減する
+  if (bet > limit) { await refuse(i, `賭けられるのは、最大 ${money(s, limit)} までです。${limit > s.maxBet ? '(お店の品・ペットの効果で、増えています)' : ''}`); return null; }
   if (wallet(i) < bet) { await refuse(i, `手持ちが足りません。(所持金 ${money(s, wallet(i))})`); return null; }
   return bet;
 }
