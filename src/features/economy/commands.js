@@ -1,6 +1,6 @@
 import { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, MessageFlags } from 'discord.js';
 import { getSettings, money } from './settings.js';
-import { estateHoldings, estateCount, addEstate, takeEstate, rentAt, setRentAt, addTicket, userTickets, userTicketCount, roundSales, lotteryJackpot, lastDraw, holdings, holding, addHolding, takeHolding, getPets, adoptPet, renamePet, releasePet, updatePet, setStatus, activeStatuses, shiftsOf, allShifts, addShift, getHeat, addHeat, clearHeat, topWanted, itemQty, allItems, addItem, useItem, transfer, adjustBalance, clearCooldowns, audit, peek, deposit, withdraw, cooldownLeft, setCooldown, jailLeft, jail, release, richest, getBj, saveBj, deleteBj, allBj, claimBj, getRamen, saveRamen, claimRamen, getHeist, saveHeist, claimHeist, expiredHeists, setHeistDeadline, releaseAll } from './db.js';
+import { estateHoldings, estateCount, addEstate, takeEstate, rentAt, setRentAt, addTicket, userTickets, userTicketCount, roundSales, lotteryJackpot, lastDraw, holdings, holding, addHolding, takeHolding, getPets, adoptPet, renamePet, releasePet, updatePet, setStatus, activeStatuses, shiftsOf, allShifts, addShift, getHeat, addHeat, clearHeat, topWanted, itemQty, allItems, addItem, useItem, transfer, adjustBalance, clearCooldowns, audit, peek, deposit, withdraw, cooldownLeft, setCooldown, jailLeft, jail, release, richestPage, getBj, saveBj, deleteBj, allBj, claimBj, getRamen, saveRamen, claimRamen, getHeist, saveHeist, claimHeist, expiredHeists, setHeistDeadline, releaseAll } from './db.js';
 import { ensureAccount, pay, collect, fine, treasury } from './ledger.js';
 import { hasAccessSync, isOperator } from '../../core/access.js';
 import { PermissionFlagsBits } from 'discord.js';
@@ -110,14 +110,34 @@ const moveCommand = (name, desc, fn, verb) => ({
 export const depositCommand = moveCommand('deposit', '手持ちを、銀行に預けます(罰金の対象から外れます)', deposit, '預け');
 export const withdrawCommand = moveCommand('withdraw', '銀行から、手持ちに引き出します', withdraw, '引き出し');
 
+const RICH_PER = 10;
+const richPage = (s, g, page) => {
+  const { rows, count } = richestPage(g, page * RICH_PER, RICH_PER), pages = Math.max(1, Math.ceil(count / RICH_PER)), M = ['🥇', '🥈', '🥉'];
+  const body = rows.length ? rows.map((r, n) => { const rank = page * RICH_PER + n; return `${M[rank] ?? `${rank + 1}.`} <@${r.user_id}>  ${money(s, r.total)}`; }).join('\n') : 'まだ、お金を持っている人がいません。';
+  // ボタンの識別番号(custom_id)は、1つのメッセージの中で、重複できない。動作の名前を、末尾に付けて、必ず別にする
+  const row = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId('rich:0:first').setEmoji('⏮').setLabel('1位').setStyle(ButtonStyle.Secondary).setDisabled(page <= 0),
+    new ButtonBuilder().setCustomId(`rich:${Math.max(0, page - 1)}:prev`).setLabel('前').setStyle(ButtonStyle.Primary).setDisabled(page <= 0),
+    new ButtonBuilder().setCustomId(`rich:${Math.min(pages - 1, page + 1)}:next`).setLabel('次').setStyle(ButtonStyle.Primary).setDisabled(page >= pages - 1),
+  );
+  return { content: `${s.currencyEmoji} **みんなのお金(お金持ちランキング)**\n-# 手持ち + 銀行 ・ ${count}人 ・ ${page + 1} / ${pages} ページ\n\n${body}`, components: pages > 1 ? [row] : [], allowedMentions: NO_MENTIONS };
+};
 export const richestCommand = {
-  data: guildOnly(new SlashCommandBuilder().setName('richest').setDescription('お金持ちランキング(手持ち + 銀行)')),
+  data: guildOnly(new SlashCommandBuilder().setName('richest').setDescription('みんなのお金のランキング(手持ち + 銀行。全員に見えます)')
+    .addIntegerOption((o) => o.setName('page').setDescription('ページ(省略すると1ページ目)').setMinValue(1))),
   async execute(i) {
     const s = await open(i); if (!s) return;
-    const rows = richest(i.guildId, 10);
-    if (!rows.length) return refuse(i, 'まだ、お金を持っている人がいません。');
-    const M = ['🥇', '🥈', '🥉'];
-    await i.reply({ content: `${s.currencyEmoji} **お金持ちランキング**\n\n${rows.map((r, n) => `${M[n] ?? `${n + 1}.`} <@${r.user_id}>  ${money(s, r.total)}`).join('\n')}`, allowedMentions: NO_MENTIONS });
+    const { count } = richestPage(i.guildId, 0, 1); if (!count) return refuse(i, 'まだ、お金を持っている人がいません。');
+    const pages = Math.max(1, Math.ceil(count / RICH_PER));
+    await i.reply(richPage(s, i.guildId, Math.min(pages - 1, (i.options.getInteger('page') ?? 1) - 1)));
+  },
+};
+export const richestButton = {
+  id: 'rich',
+  async execute(i) {
+    const s = getSettings(i.guildId); if (!s.enabled) return i.update({ content: 'このサーバーでは、通貨はオフです。', embeds: [], components: [] });
+    const { count } = richestPage(i.guildId, 0, 1), pages = Math.max(1, Math.ceil(count / RICH_PER));
+    await i.update(richPage(s, i.guildId, Math.min(pages - 1, Math.max(0, Number(i.customId.split(':')[1]) || 0)))); // だれが押しても、全員に見える(みんなで見るランキング)
   },
 };
 

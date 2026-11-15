@@ -169,6 +169,24 @@ export const releaseAll = (g, now = Date.now()) => Number(db.prepare('UPDATE eco
 export const richest = (guildId, limit = 10) =>
   db.prepare('SELECT user_id, wallet, bank, wallet + bank AS total FROM eco_accounts WHERE guild_id=? AND wallet + bank > 0 ORDER BY total DESC, created_at ASC LIMIT ?').all(guildId, limit);
 
+/** サーバー全員の持ち物(ダッシュボードの一覧用)。お金(手持ち+銀行)も、いっしょに */
+export function allHoldings(g, now = Date.now()) {
+  const by = (sql, ...a) => db.prepare(sql).all(g, ...a);
+  return {
+    accounts: by('SELECT user_id, wallet, bank FROM eco_accounts WHERE guild_id=?'),
+    items: by('SELECT user_id, item, qty FROM eco_items WHERE guild_id=? AND qty>0'),
+    status: by('SELECT user_id, slot, item, until FROM eco_status WHERE guild_id=? AND until>?', now),
+    pets: by('SELECT user_id, species, name, xp FROM eco_pets WHERE guild_id=? ORDER BY id'),
+    estate: by('SELECT user_id, property, count FROM eco_estate WHERE guild_id=? AND count>0'),
+    stocks: by('SELECT user_id, company, shares FROM eco_stock_holdings WHERE guild_id=? AND shares>0'),
+  };
+}
+/** お金持ちランキング(ページごと)。全体の人数も返す */
+export const richestPage = (guildId, offset = 0, limit = 10) => ({
+  rows: db.prepare('SELECT user_id, wallet, bank, wallet + bank AS total FROM eco_accounts WHERE guild_id=? AND wallet + bank > 0 ORDER BY total DESC, created_at ASC LIMIT ? OFFSET ?').all(guildId, limit, offset),
+  count: db.prepare('SELECT COUNT(*) c FROM eco_accounts WHERE guild_id=? AND wallet + bank > 0').get(guildId).c,
+});
+
 /* ---------- ブラックジャックの進行状況 ---------- */
 export const getBj = (g, u) => { const r = db.prepare('SELECT * FROM eco_bj WHERE guild_id=? AND user_id=?').get(g, u); return r && { ...r, state: JSON.parse(r.state) }; };
 export const saveBj = (g, u, msgId, state) => db.prepare(`INSERT INTO eco_bj (guild_id,user_id,msg_id,state,started_at) VALUES (?,?,?,?,?)

@@ -1,17 +1,18 @@
 import { canEditAccess } from '../../core/access.js';
 import { getSettings, saveSettings } from './settings.js';
-import { richest, jailed, release, jailLeft, releaseAll, peek, recentFines, claimFineRefund, audit, recentAudit, adjustBalance, clearCooldowns } from './db.js';
+import { richest, allHoldings, jailed, release, jailLeft, releaseAll, peek, recentFines, claimFineRefund, audit, recentAudit, adjustBalance, clearCooldowns } from './db.js';
 import { treasury, setTreasury, addTreasury, circulation, pay } from './ledger.js';
 import { JOBS, CRIMES } from './jobs.js';
 import { HEISTS } from './heist.js';
 import { DEFAULT_RANKS, MAX_RANKS } from './ranks.js';
 import { POLICE_BONUS_CAP } from './wanted.js';
 import { SCHEMA, jobOf, wantedCfg } from './balance.js';
-import { FX_LABELS, SLOTS, MAX_SHOP_ITEMS, DEFAULT_SHOP } from './shop.js';
-import { COMPANIES, VOL_LABELS, VOL_LEVELS, DEFAULT_NAMES, DEFAULT_LEVELS } from './stocks.js';
-import { MAX_PETS, DEFAULT_PETS, PET_FX_KEYS } from './pets.js';
+import { FX_LABELS, SLOTS, MAX_SHOP_ITEMS, DEFAULT_SHOP, shopById } from './shop.js';
+import { COMPANIES, VOL_LABELS, VOL_LEVELS, DEFAULT_NAMES, DEFAULT_LEVELS, companyOf } from './stocks.js';
+import { MAX_PETS, DEFAULT_PETS, PET_FX_KEYS, speciesOf } from './pets.js';
+import { itemById as marketItemById } from './market.js';
 import { MAX_LOTTERIES, DEFAULT_LOTTERY } from './lottery.js';
-import { MAX_PROPERTIES, DEFAULT_ESTATE } from './estate.js';
+import { MAX_PROPERTIES, DEFAULT_ESTATE, estateById } from './estate.js';
 import { SLOT_SYMBOLS, CHERRY_TWO, CHERRY_ONE, slotRtp, slotScale, chinchiroScale, bjScale, bjStats } from './games.js';
 
 /** router は /api/guilds/:gid/f/economy に載っていて、req.guild / req.access が使える */
@@ -65,6 +66,22 @@ export function mountApi(router) {
     else if (mode === 'subtract') addTreasury(req.guild.id, -amount);
     else return res.status(400).json({ error: '操作が不正です' });
     res.json(view(req));
+  });
+
+  // みんなの持ち物: だれが、どの品(お店・闇市)・ペット・物件・株を持っているか
+  router.get('/holdings', async (req, res) => {
+    const s = getSettings(req.guild.id), h = allHoldings(req.guild.id), users = new Map();
+    const row = (id) => { if (!users.has(id)) users.set(id, { user_id: id, money: 0, items: [], effects: [], pets: [], estate: [], stocks: [] }); return users.get(id); };
+    const itemName = (id) => { const sh = shopById(s, id); if (sh) return { name: sh.name, emoji: sh.emoji, kind: 'shop' }; const m = marketItemById(id); return m ? { name: m.name, emoji: m.emoji, kind: 'market' } : { name: '(削除された品)', emoji: '❔', kind: 'gone' }; };
+    for (const a of h.accounts) row(a.user_id).money = a.wallet + a.bank;
+    for (const x of h.items) row(x.user_id).items.push({ ...itemName(x.item), qty: x.qty });
+    for (const x of h.status) { const sh = shopById(s, x.item); row(x.user_id).effects.push({ name: sh?.name ?? '(削除された品)', emoji: sh?.emoji ?? '❔', left: x.until - Date.now() }); }
+    for (const x of h.pets) { const sp = speciesOf(s, x.species); row(x.user_id).pets.push({ name: x.name, species: sp.name, emoji: sp.emoji, xp: x.xp }); }
+    for (const x of h.estate) { const p = estateById(s, x.property); row(x.user_id).estate.push({ name: p?.name ?? '(削除された物件)', emoji: p?.emoji ?? '🏠', count: x.count }); }
+    for (const x of h.stocks) { const c = COMPANIES.find((k) => k.id === x.company); if (c) { const n = companyOf(s, c); row(x.user_id).stocks.push({ name: n.ticker, emoji: n.emoji, shares: x.shares }); } }
+    const list = [...users.values()].filter((u) => u.items.length || u.effects.length || u.pets.length || u.estate.length || u.stocks.length).sort((a, b) => b.money - a.money).slice(0, 300);
+    const out = await Promise.all(list.map(async (u) => { const m = req.guild.members.cache.get(u.user_id) ?? (await req.guild.members.fetch(u.user_id).catch(() => null)); return { ...u, name: m?.displayName ?? u.user_id }; }));
+    res.json({ currencyEmoji: s.currencyEmoji, users: out });
   });
 
   router.get('/richest', async (req, res) => {

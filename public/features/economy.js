@@ -300,6 +300,28 @@ Dash.registerTab({
         draw();
       } },
     /* ===== 留置場 ===== */
+    /* ===== 持ち物一覧(だれが、何を持っているか) ===== */
+    { id: 'holdings', title: '持ち物一覧', icon: 'list',
+      async render(el, { api, esc, ic, pageHeader }) {
+        const d = await api('/holdings'), em = esc(d.currencyEmoji);
+        const dur = (ms) => { const m = Math.ceil(ms / 60000); return m >= 60 ? `${Math.floor(m / 60)}時間${m % 60 ? `${m % 60}分` : ''}` : `${m}分`; };
+        const chips = (arr, f) => arr.length ? arr.map((x) => `<span class="badge" style="margin:2px 4px 2px 0">${f(x)}</span>`).join('') : '<span class="mut">なし</span>';
+        el.innerHTML = `${pageHeader('持ち物一覧', 'だれが、どの品(お店・闇市)・ペット・物件・株を持っているかの一覧です。「効果中」は、使ってから、まだ効果が続いている品です。')}
+          <div class="card"><div class="field" style="margin:0"><label class="f" for="hq">名前や品で、絞り込む</label><input id="hq" type="search" style="width:100%" placeholder="例: ビール / ポチ / ワンルーム" autocomplete="off"></div></div>
+          <div id="hl"></div>`;
+        const draw = () => {
+          const q = el.querySelector('#hq').value.trim().toLowerCase();
+          const rows = d.users.filter((u) => !q || `${u.name} ${u.items.map((x) => x.name).join(' ')} ${u.effects.map((x) => x.name).join(' ')} ${u.pets.map((x) => `${x.name} ${x.species}`).join(' ')} ${u.estate.map((x) => x.name).join(' ')} ${u.stocks.map((x) => x.name).join(' ')}`.toLowerCase().includes(q));
+          el.querySelector('#hl').innerHTML = rows.length ? rows.map((u) => `<div class="card"><div class="card-h"><h2>${esc(u.name)}</h2><span class="badge">${em} ${u.money.toLocaleString()}</span></div>
+            <div class="field" style="margin:0 0 8px"><label class="f">品</label>${chips(u.items, (x) => `${esc(x.emoji)} ${esc(x.name)} ×${x.qty}${x.kind === 'market' ? ' <span class="mut">(闇市)</span>' : ''}`)}</div>
+            <div class="field" style="margin:0 0 8px"><label class="f">効果中</label>${chips(u.effects, (x) => `${esc(x.emoji)} ${esc(x.name)} <span class="mut">あと${dur(x.left)}</span>`)}</div>
+            <div class="field" style="margin:0 0 8px"><label class="f">ペット</label>${chips(u.pets, (x) => `${esc(x.emoji)} ${esc(x.name)} <span class="mut">(${esc(x.species)})</span>`)}</div>
+            <div class="field" style="margin:0 0 8px"><label class="f">物件</label>${chips(u.estate, (x) => `${esc(x.emoji)} ${esc(x.name)} ×${x.count}`)}</div>
+            <div class="field" style="margin:0"><label class="f">株</label>${chips(u.stocks, (x) => `${esc(x.emoji)} ${esc(x.name)} ${x.shares}株`)}</div></div>`).join('')
+            : `<div class="card empty">${ic('check')}<h2>${d.users.length ? '見つかりません' : 'まだ、何かを持っている人はいません'}</h2></div>`;
+        };
+        el.querySelector('#hq').oninput = draw; draw();
+      } },
     { id: 'jail', title: '留置場', icon: 'alert',
       async render(el, { api, esc, ic, toast, confirm, pageHeader }) {
         const dur = (ms) => { const t = Math.ceil(ms / 1000), m = Math.floor(t / 60), r = t % 60; return m ? `${m}分${r ? `${r}秒` : ''}` : `${r}秒`; };
