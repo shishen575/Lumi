@@ -727,7 +727,7 @@ export const shopCommand = {
     const total = it.price * amount;
     if (!collect(g, u, total, s)) return refuse(i, `お金が足りません。(必要 ${money(s, total)} / 手持ち ${money(s, Math.max(0, wallet(i)))})`);
     addItem(g, u, it.id, amount);
-    await i.reply({ embeds: [card(i, s, 0xb8860b, '🏪 お店', `${it.emoji} **${it.name}** を **${amount}個** 買いました。\n**- ${money(s, total)}**\n所持: **${have + amount}個**(\`/use ${n}\` で使えます)`)], ...EPH });
+    await i.reply({ embeds: [card(i, s, 0xb8860b, '🏪 お店', `${it.emoji} **${it.name}** を **${amount}個** 買いました。\n**- ${money(s, total)}**\n所持: **${have + amount}個**(\`/use ${n}\` で使えます)`)] });
   },
 };
 export const useCommand = {
