@@ -121,8 +121,9 @@ export const topCommand = {
     let page = i.options.getInteger('page') ?? 1;
     const view = await renderTop(i, metric, page);
     page = view.page;
-    const msg = await i.reply({ embeds: view.embeds, components: view.components,
-      ...eph(i.options.getBoolean('private') ?? false), fetchReply: true });
+    const res = await i.reply({ embeds: view.embeds, components: view.components,
+      ...eph(i.options.getBoolean('private') ?? false), withResponse: true }); // fetchReply は、古い書き方(警告が出る)
+    const msg = res.resource?.message ?? await i.fetchReply();
     if (!view.components.length) return;
 
     // ボタンは実行した本人だけが操作できる(2分操作がなければ無効化)
