@@ -150,7 +150,7 @@ export function mountApi(router, client = null) {
     subs: (c.options ?? []).filter((o) => o.type === 1).map((sc) => ({ name: sc.name, description: sc.description, options: (sc.options ?? []).map(optInfo) })),
     unsupported: (c.options ?? []).some((o) => o.type === 2), options: (c.options ?? []).filter((o) => o.type !== 1).map(optInfo) })) }));
   const optInfo = (o) => ({ name: o.name, description: o.description, type: o.type, required: !!o.required, supported: SUP.has(o.type), choices: o.choices ?? null, min: o.min_value ?? null, max: o.max_value ?? null });
-  const customView = (g) => Object.entries(customPanels(g)).map(([id, p]) => ({ id, ...p, link: `https://discord.com/channels/${g}/${p.ch}/${p.msg}` }));
+  const customView = (g) => Object.entries(customPanels(g)).map(([id, p]) => ({ id, ...p, retire: Array.isArray(p.retire) ? p.retire : (p.hide ? [...new Set(p.buttons.map((b) => b.command))].filter((n) => n !== 'help') : []), link: `https://discord.com/channels/${g}/${p.ch}/${p.msg}` }));
   router.get('/custom-panels', (req, res) => res.json(customView(req.guild.id)));
   router.put('/custom-panels/:id', async (req, res) => {
     if (!adminOnly(req, res)) return;
