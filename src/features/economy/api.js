@@ -126,7 +126,7 @@ export function mountApi(router, client = null) {
   });
   // 1人の口座と、最近の罰金
   // パネル(ボタンつきのメッセージ)の設置・撤去。設置したサーバーでは、元のコマンドを廃止できる
-  const panelView = (g, kind) => { const st = panelState(g)[kind]; return { kind, title: PANELS[kind].title, commands: PANELS[kind].commands, installed: st ? { channel_id: st.ch, hide: !!st.hide, link: `https://discord.com/channels/${g}/${st.ch}/${st.msg}` } : null }; };
+  const panelView = (g, kind) => { const st = panelState(g)[kind]; return { kind, title: PANELS[kind].title, commands: PANELS[kind].commands, installed: st ? { channel_id: st.ch, retire: retiredOf(kind, st), hide: retiredOf(kind, st).length > 0, sticky: st.sticky !== false, link: `https://discord.com/channels/${g}/${st.ch}/${st.msg}` } : null }; };
   router.get('/panels', (req, res) => res.json(Object.keys(PANELS).map((k) => panelView(req.guild.id, k))));
   router.post('/panels/:kind', async (req, res) => {
     if (!adminOnly(req, res)) return;
