@@ -1,6 +1,6 @@
 import { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, MessageFlags } from 'discord.js';
 import { getSettings, money } from './settings.js';
-import { recentNews, transferItem, estateHoldings, estateCount, addEstate, takeEstate, rentAt, setRentAt, addTicket, userTickets, userTicketCount, roundSales, lotteryJackpot, lastDraw, holdings, holding, addHolding, takeHolding, getPets, adoptPet, renamePet, releasePet, updatePet, setStatus, activeStatuses, shiftsOf, allShifts, addShift, getHeat, addHeat, clearHeat, topWanted, itemQty, allItems, addItem, useItem, transfer, adjustBalance, clearCooldowns, audit, peek, deposit, withdraw, cooldownLeft, setCooldown, jailLeft, jail, release, richestPage, getBj, saveBj, deleteBj, allBj, claimBj, getRamen, saveRamen, claimRamen, getHeist, saveHeist, claimHeist, expiredHeists, setHeistDeadline, releaseAll } from './db.js';
+import { stockHoldersAll, shockStock, lastStockRow, addNews, recentNews, transferItem, estateHoldings, estateCount, addEstate, takeEstate, rentAt, setRentAt, addTicket, userTickets, userTicketCount, roundSales, lotteryJackpot, lastDraw, holdings, holding, addHolding, takeHolding, getPets, adoptPet, renamePet, releasePet, updatePet, setStatus, activeStatuses, shiftsOf, allShifts, addShift, getHeat, addHeat, clearHeat, topWanted, itemQty, allItems, addItem, useItem, transfer, adjustBalance, clearCooldowns, audit, peek, deposit, withdraw, cooldownLeft, setCooldown, jailLeft, jail, release, richestPage, getBj, saveBj, deleteBj, allBj, claimBj, getRamen, saveRamen, claimRamen, getHeist, saveHeist, claimHeist, expiredHeists, setHeistDeadline, releaseAll } from './db.js';
 import { ensureAccount, pay, collect, fine, treasury } from './ledger.js';
 import { hasAccessSync, isOperator } from '../../core/access.js';
 import { PermissionFlagsBits } from 'discord.js';
@@ -888,6 +888,9 @@ const pct = (c) => `${c > 0 ? '+' : ''}${(c * 100).toFixed(1)}%`;
 export const stockCommand = {
   data: guildOnly(new SlashCommandBuilder().setName('stock').setDescription('株(架空の会社)を売り買いします')
     .addSubcommand((c) => c.setName('list').setDescription('株価と、自分の持ち株を見ます').addStringOption(searchOpt).addBooleanOption((o) => o.setName('public').setDescription('全員に表示する(省略すると自分だけ)')))
+    .addSubcommand((c) => c.setName('holders').setDescription('みんなの持ち株と、株の割合(持ち株が、全員の合計の何%か)を見ます')
+      .addIntegerOption((o) => o.setName('company').setDescription('会社の番号(省略すると、全部の会社のまとめ)').setMinValue(1).setMaxValue(5))
+      .addBooleanOption((o) => o.setName('public').setDescription('全員に表示する(省略すると自分だけ)')))
     .addSubcommand((c) => c.setName('buy').setDescription('株を買います')
       .addIntegerOption((o) => o.setName('company').setDescription('会社の番号(/stock list の番号)').setRequired(true).setMinValue(1).setMaxValue(5))
       .addIntegerOption((o) => o.setName('shares').setDescription('株数').setRequired(true).setMinValue(1)))
@@ -910,6 +913,22 @@ export const stockCommand = {
       const e = new EmbedBuilder().setColor(0x2ecc71).setTitle('📈 株式市場').setDescription(`株価は、**${Math.round(cfg.tickMs / 60000)}分ごと**に動きます。売買の手数料は、それぞれ ${(cfg.fee * 100).toFixed(1)}%。\`/stock buy\` \`/stock sell\``).addFields(fields)
         .setFooter({ text: `持ち株の評価額 ${total.toLocaleString()}(損益 ${(total - cost).toLocaleString()})・ 手持ち ${wallet(i).toLocaleString()}` });
       return i.reply({ embeds: [e], ...vis(i) });
+    }
+    if (sub === 'holders') { // みんなの持ち株と、株の割合(全員の持ち株の合計に対する、その人の持ち株の割合)
+      const all = stockHoldersAll(g), pick = i.options.getInteger('company'), pc = (x, t) => (t ? `${((x / t) * 100).toFixed(1)}%` : '-');
+      const by = (id) => all.filter((r) => r.company === id), px = (m) => unitPrice(m.price);
+      if (pick) {
+        const m = market[pick - 1]; if (!m) return refuse(i, `${pick} 番の会社は、ありません。`);
+        const c = companyOf(s, m.company), rows = by(c.id).sort((a, b) => b.shares - a.shares), total = rows.reduce((a, r) => a + r.shares, 0);
+        const e = new EmbedBuilder().setColor(0x2ecc71).setTitle(`👥 ${c.emoji} ${c.name}(${c.ticker})の株主`)
+          .setDescription(rows.length ? `株主 **${rows.length}人** ・ みんなの持ち株の合計 **${total.toLocaleString()}株**(時価 ${money(s, total * px(m))})\n株価 ${money(s, px(m))}\n\n${rows.slice(0, 15).map((r, n) => `${n + 1}. <@${r.user_id}> — **${r.shares.toLocaleString()}株** ・ 割合 **${pc(r.shares, total)}** ・ 評価額 ${money(s, r.shares * px(m))}`).join('\n')}${rows.length > 15 ? `\n…ほか ${rows.length - 15}人` : ''}` : 'まだ、この会社の株を持っている人は、いません。')
+          .setFooter({ text: '割合 = その人の持ち株 ÷ みんなの持ち株の合計' });
+        return i.reply({ embeds: [e], allowedMentions: NO_MENTIONS, ...vis(i) });
+      }
+      const fields = market.map((m, n) => { const c = companyOf(s, m.company), rows = by(c.id).sort((a, b) => b.shares - a.shares), total = rows.reduce((a, r) => a + r.shares, 0), top = rows[0];
+        return { name: `${n + 1}. ${c.emoji} ${c.ticker} ${c.name}`, value: rows.length ? `株主 ${rows.length}人 ・ 合計 **${total.toLocaleString()}株**(${money(s, total * px(m))})\n筆頭株主 <@${top.user_id}> ${top.shares.toLocaleString()}株(${pc(top.shares, total)})` : 'まだ、持っている人は、いません', inline: false }; });
+      const e = new EmbedBuilder().setColor(0x2ecc71).setTitle('👥 みんなの持ち株').addFields(fields).setFooter({ text: '`/stock holders company:番号` で、その会社の株主の一覧(割合つき)' });
+      return i.reply({ embeds: [e], allowedMentions: NO_MENTIONS, ...vis(i) });
     }
     const idx = i.options.getInteger('company', true) - 1, m = market[idx]; if (!m) return refuse(i, 'その会社は、ありません。');
     const c = companyOf(s, m.company), px = unitPrice(m.price), h = holding(g, u, c.id);
@@ -947,6 +966,34 @@ export const newsCommand = {
       .setDescription(rows.length ? rows.map((r) => { const c = co(r.company), pctv = (r.after_px / r.before_px - 1) * 100, px = (v) => Math.max(1, Math.round(v)).toLocaleString(); return `${r.up ? '📈' : '📉'} ${c0 ? '' : `${c.emoji} **${c.ticker}** `}**${r.text}**\n${r.up ? '🔺' : '🔻'} ${pctv > 0 ? '+' : ''}${pctv.toFixed(1)}%(${px(r.before_px)} → ${px(r.after_px)})・ <t:${r.tick * 60}:R>`; }).join('\n\n') : 'まだ、ニュースは、ありません。(ニュースは、起きるたびに、ここに記録されます)')
       .setFooter({ text: '最近の10件 ・ 7日ぶんまで残ります' });
     return i.reply({ embeds: [e], ...vis(i) });
+  },
+};
+
+/* ================= 不祥事(お金を払って、会社の株価を下げる) ================= */
+export const scandalCommand = {
+  data: guildOnly(new SlashCommandBuilder().setName('scandal').setDescription('お金を払って、会社の不祥事を、こっそり起こします(その会社の株価が下がります)')
+    .addIntegerOption((o) => o.setName('company').setDescription('会社の番号(/stock list の番号)').setRequired(true).setMinValue(1).setMaxValue(5))),
+  async execute(i, rng = rnd) {
+    const s = await open(i); if (!s) return;
+    if (!s.stocksEnabled) return stockOff(i);
+    if (!s.scandalEnabled) return refuse(i, 'このサーバーでは、不祥事は、オフです。管理者が、ダッシュボードの「株」でオンにできます。');
+    const g = i.guildId, u = i.user.id, cfg = stockCfg(s), n = i.options.getInteger('company', true), c0 = COMPANIES[n - 1], now = Date.now();
+    if (!c0) return refuse(i, `${n} 番の会社は、ありません。(/stock list の番号を指定してください)`);
+    const c = companyOf(s, c0), coKey = `co:${c0.id}`;
+    const mine = cooldownLeft(g, u, 'scandal'); if (mine) return refuse(i, `🤫 次の不祥事まで、あと ${dur(mine)}。(足がつかないように、しばらく、おとなしく)`);
+    const theirs = cooldownLeft(g, coKey, 'scandal'); if (theirs) return refuse(i, `${c.emoji} ${c.name}は、いま、騒ぎの最中です。あと ${dur(theirs)} は、もう1つは起こせません。`);
+    marketNow(s, g, now); // 株価を、いままで進める
+    if (!collect(g, u, cfg.scandalCost, s)) return refuse(i, `お金が足りません。(費用 ${money(s, cfg.scandalCost)} / 手持ち ${money(s, Math.max(0, wallet(i)))})`);
+    const bad = (s.newsEvents ?? []).filter((e) => e.enabled && e.pct < 0 && (!e.company || e.company === c0.id)), text = bad.length ? bad[Math.floor(rng() * bad.length)].text : '不祥事が、発覚';
+    const last = lastStockRow(g, c0.id), before = last.price, after = Math.max(c0.base * 0.15, before * (1 - cfg.scandalDrop));
+    shockStock(g, c0.id, after); // 最新の株価を、書き換える(このあとの値動きは、この値段から続く)
+    const caught = rng() < cfg.scandalCatch, who = i.member?.displayName ?? i.user.username;
+    let tick = Math.floor(now / 60000); while (Number(addNews(g, c0.id, tick, false, caught ? `${text}(${who}の仕業と判明)` : `${text}(何者かが、仕掛けた?)`, before, after, s.newsChannelId ? 0 : 1).changes) === 0) tick++; // 新聞に、載る(同じ分に、ほかのニュースがあれば、1分ずらす)
+    setCooldown(g, u, 'scandal', cfg.scandalCd); setCooldown(g, coKey, 'scandal', cfg.scandalCd);
+    const pctv = (after / before - 1) * 100, px = (v) => Math.max(1, Math.round(v)).toLocaleString();
+    if (!caught) return i.reply({ embeds: [card(i, s, 0x2c3e50, '🤫 不祥事を、仕掛けた', `${c.emoji} **${c.name}** に、「${text}」が起きました。\n株価 ${px(before)} → **${px(after)}**(${pctv.toFixed(1)}%)\n**- ${money(s, cfg.scandalCost)}**\n-# だれにも、ばれていません。新聞に載りますが、仕業は、あなたしか知りません`)], ...EPH });
+    const extra = fine(g, u, cfg.scandalCost, s, 'scandal'); // ばれた: 罰金(費用と同じ額)
+    return i.reply({ embeds: [card(i, s, RED, '🚨 不祥事の仕業が、ばれた!', `${c.emoji} **${c.name}** の「${text}」は、**${who}** の仕業と判明しました!\n株価 ${px(before)} → **${px(after)}**(${pctv.toFixed(1)}%)\n**- ${money(s, cfg.scandalCost)}**(費用)・ 罰金 **- ${money(s, extra)}**${debtNote(i, s)}`)] });
   },
 };
 
@@ -1117,4 +1164,4 @@ export const arrestCommand = {
   },
 };
 
-export const commands = [balanceCommand, depositCommand, withdrawCommand, richestCommand, crimeCommand, workCommand, begCommand, bailCommand, chinchiroCommand, slotCommand, blackjackCommand, blackjackEndCommand, heistCommand, shopCommand, useCommand, giveCommand, petCommand, stockCommand, newsCommand, lotteryCommand, estateCommand, cooldownsCommand, jobCommand, wantedCommand, arrestCommand, marketCommand, releaseCommand, payCommand, balanceEditCommand, cooldownResetCommand];
+export const commands = [balanceCommand, depositCommand, withdrawCommand, richestCommand, crimeCommand, workCommand, begCommand, bailCommand, chinchiroCommand, slotCommand, blackjackCommand, blackjackEndCommand, heistCommand, shopCommand, useCommand, giveCommand, petCommand, stockCommand, newsCommand, scandalCommand, lotteryCommand, estateCommand, cooldownsCommand, jobCommand, wantedCommand, arrestCommand, marketCommand, releaseCommand, payCommand, balanceEditCommand, cooldownResetCommand];

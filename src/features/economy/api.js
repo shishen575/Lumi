@@ -1,6 +1,6 @@
 import { canEditAccess } from '../../core/access.js';
 import { getSettings, saveSettings } from './settings.js';
-import { adjustItem, allItems, richest, allHoldings, jailed, release, jailLeft, releaseAll, peek, recentFines, claimFineRefund, audit, recentAudit, adjustBalance, clearCooldowns } from './db.js';
+import { stockHoldersAll, adjustItem, allItems, richest, allHoldings, jailed, release, jailLeft, releaseAll, peek, recentFines, claimFineRefund, audit, recentAudit, adjustBalance, clearCooldowns } from './db.js';
 import { treasury, setTreasury, addTreasury, circulation, pay } from './ledger.js';
 import { JOBS, CRIMES } from './jobs.js';
 import { HEISTS } from './heist.js';
@@ -12,6 +12,7 @@ import { COMPANIES, VOL_LABELS, VOL_LEVELS, DEFAULT_NAMES, DEFAULT_LEVELS, compa
 import { PANELS, panelState, installPanel, removePanel, retiredOf } from './panels.js';
 import { customPanels, saveCustomPanel, removeCustomPanel, removeCustomButton, retiredOfCustom, MAX_CUSTOM, MAX_BUTTONS } from './custompanels.js';
 import { commandCatalog } from '../../core/commands.js';
+import { marketNow, unitPrice } from './stockmarket.js';
 import { MAX_PETS, DEFAULT_PETS, PET_FX_KEYS, speciesOf } from './pets.js';
 import { itemById as marketItemById, ITEMS as MARKET_ITEMS } from './market.js';
 import { MAX_LOTTERIES, DEFAULT_LOTTERY } from './lottery.js';
@@ -174,6 +175,16 @@ export function mountApi(router, client = null) {
     if (!adminOnly(req, res)) return;
     const ok = await removeCustomPanel(client, req.guild.id, req.params.id); if (!ok) return res.status(404).json({ error: 'パネルが、ありません' });
     audit(req.guild.id, req.actor, null, 'カスタムパネルを撤去', null, ''); res.json({ ok: true });
+  });
+  // みんなの持ち株: 会社ごとの株主と、株の割合(その人の持ち株 ÷ みんなの持ち株の合計)
+  router.get('/stock-holders', async (req, res) => {
+    const g = req.guild.id, s = getSettings(g), market = marketNow(s, g), all = stockHoldersAll(g);
+    const out = await Promise.all(market.map(async (m) => {
+      const c = companyOf(s, m.company), px = unitPrice(m.price), rows = all.filter((r) => r.company === c.id).sort((a, b) => b.shares - a.shares), total = rows.reduce((a, r) => a + r.shares, 0);
+      const holders = await Promise.all(rows.slice(0, 20).map(async (r) => ({ user_id: r.user_id, name: await nameOf(req.guild, r.user_id), shares: r.shares, pct: total ? Math.round((r.shares / total) * 1000) / 10 : 0, value: r.shares * px })));
+      return { id: c.id, emoji: c.emoji, ticker: c.ticker, name: c.name, price: px, total, count: rows.length, value: total * px, holders };
+    }));
+    res.json({ currencyEmoji: s.currencyEmoji, companies: out });
   });
   // 品の付与・回収: 付けられる品の一覧(お店 + 闇市)と、その人がいま持っている個数
   const grantables = (s) => [...shopItems(s).map((x) => ({ id: x.id, name: x.name, emoji: x.emoji, kind: 'shop', max: SHOP_MAX_STACK })), ...MARKET_ITEMS.map((x) => ({ id: x.id, name: x.name, emoji: x.emoji, kind: 'market', max: marketCfg(s).maxStack }))];

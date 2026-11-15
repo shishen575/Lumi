@@ -29,6 +29,7 @@ export const DEFAULTS = {
   lotteryEnabled: false,   // 宝くじ。オンのとき、/lottery が使え、決まった時刻に、自動で抽選する
   lotteries: [DEFAULT_LOTTERY], // くじの一覧(サーバーごとに、自由に、最大6つ。名前・値段・間隔・桁数・賞金などを変えられる)
   newsEvents: DEFAULT_EVENTS, // 株のニュース(出来事): 文・上がる/下がる割合・会社・起きやすさ
+  scandalEnabled: false,   // お金を払って、会社の不祥事を起こせる(/scandal)
   newsEvery: 10,           // 新しいニュースが起きる間隔(分)。0 = ランダム(1日に1〜2回ほど)
   newsPower: 25,           // ニュースで動く強さ(%。100 = 出来事に書いた割合のまま)
   newsChannelId: null,     // 新聞チャンネル(株のニュースを出す)
@@ -80,6 +81,7 @@ export function saveSettings(guildId, s) {
     stocksEnabled: s.stocksEnabled === undefined ? cur.stocksEnabled : !!s.stocksEnabled,
     stockNames: s.stockNames === undefined ? cur.stockNames : sanitizeNames(s.stockNames, cur.stockNames),
     newsEvents: s.newsEvents === undefined ? cur.newsEvents : sanitizeEvents(s.newsEvents, cur.newsEvents),
+    scandalEnabled: s.scandalEnabled === undefined ? cur.scandalEnabled : !!s.scandalEnabled,
     newsEvery: s.newsEvery === undefined ? cur.newsEvery : clamp(s.newsEvery, 0, 1440, DEFAULTS.newsEvery),
     newsPower: s.newsPower === undefined ? cur.newsPower : clamp(s.newsPower, 0, 500, DEFAULTS.newsPower),
     newsChannelId: s.newsChannelId === undefined ? cur.newsChannelId : (/^\d{15,25}$/.test(String(s.newsChannelId ?? '')) ? String(s.newsChannelId) : null),

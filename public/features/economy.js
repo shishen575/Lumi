@@ -212,7 +212,8 @@ Dash.registerTab({
         const names = JSON.parse(JSON.stringify(st.stockNames)), levels = { ...st.stockLevels };
         const daily = (L) => (L >= 1 ? ['1.5', '2.5', '3.5', '5', '7', '9', '12', '16', '21', '28'][L - 1] : '');
         el.innerHTML = `${pageHeader('株', '架空の会社の株を、売り買いできます。株価は、5分ごとに動きます(間隔は「ゲームバランス」で変えられます)。会社の名前・ティッカー・絵文字と、値動きの大きさ(10段階)を、サーバーで決められます。')}
-          <div class="card"><label class="sw"><input type="checkbox" id="on" ${st.stocksEnabled ? 'checked' : ''}><i></i><span><b>株を使う</b><small><code>/stock</code> が使えます。売買の手数料などは、「ゲームバランス」で変えられます</small></span></label></div>
+          <div class="card"><label class="sw"><input type="checkbox" id="on" ${st.stocksEnabled ? 'checked' : ''}><i></i><span><b>株を使う</b><small><code>/stock</code> が使えます。売買の手数料などは、「ゲームバランス」で変えられます</small></span></label>
+            <label class="sw"><input type="checkbox" id="scan" ${st.scandalEnabled ? 'checked' : ''}><i></i><span><b>不祥事を起こせるようにする</b><small><code>/scandal</code>: お金を払うと、会社の不祥事を、こっそり起こして、株価を下げられます(ばれることもあります)。費用・下がる割合・間隔・ばれる確率は、「ゲームバランス」の株で変えられます</small></span></label></div>
           <div class="card"><h2>新聞チャンネル</h2><p class="hint">株のニュース(新商品がヒット・不祥事など。株価が大きく上がったり、下がったりします)を、起きるたびに、決めたチャンネルに出します。起きやすさは、「ゲームバランス」の株で変えられます。</p>
             <div class="field"><label class="f">新聞を出すチャンネル</label><select id="nch"><option value="">出さない</option>${chans.map((c) => `<option value="${c.id}" ${st.newsChannelId === c.id ? 'selected' : ''}>#${esc(c.name)}</option>`).join('')}</select></div>
             <div class="grid2" style="margin-top:12px">
@@ -233,6 +234,7 @@ Dash.registerTab({
           <p class="hint" style="margin:0 0 8px">ときどき、ニュースが起きて、株価が決まった割合で上がったり、下がったりします。起きやすさは、「ゲームバランス」の「ニュースの起きやすさ」で、変えられます。どのニュースが起きるかは、下の「起きやすさ」(1〜10)で決まります。</p>
           <div id="evl"></div>
           <div class="acts"><button class="btn ghost" id="evadd" type="button">出来事を追加</button><button class="btn ghost" id="evreset" type="button">初期の出来事に戻す</button></div>
+          <div id="holders"></div>
           <div class="card"><h2>値動きの目安</h2><p class="hint" style="margin:0">1日の値動きの目安は、レベル1で約1.5%、レベル5で約7%、レベル10で約28%です。ニュースが起きると、書いた割合だけ、動きます(動く強さは、上の「ニュースで動く強さ」で変えられます)。</p></div>
           <div class="acts"><button class="btn ghost" id="reset" type="button">初期値に戻す</button><button class="btn" id="save" type="button">保存</button></div>`;
         let events = JSON.parse(JSON.stringify(st.newsEvents));
@@ -251,12 +253,16 @@ Dash.registerTab({
         el.querySelector('#evadd').onclick = () => { evCollect(); events.push({ enabled: true, text: '新しい出来事', pct: 5, company: '', weight: 3 }); evDraw(); };
         el.querySelector('#evreset').onclick = () => { events = JSON.parse(JSON.stringify(meta.defaultEvents)); evDraw(); };
         evDraw();
+        api('/stock-holders').then((h) => { // みんなの持ち株(株主と、株の割合)
+          const em = esc(h.currencyEmoji), box = el.querySelector('#holders'); if (!box) return;
+          box.innerHTML = `<h2 class="sec" style="margin:18px 0 8px">みんなの持ち株(株の割合)</h2><p class="hint" style="margin:0 0 8px">割合 = その人の持ち株 ÷ みんなの持ち株の合計。Discordでは <code>/stock holders</code> で見られます。</p>` + h.companies.map((c) => `<div class="card flush"><div class="card-h"><h2>${esc(c.emoji)} ${esc(c.ticker)} ${esc(c.name)}</h2><span class="badge">株主 ${c.count}人 ・ ${c.total.toLocaleString()}株 ・ ${em} ${c.value.toLocaleString()}</span></div>${c.holders.length ? `<ol class="lb">${c.holders.map((x, n) => `<li style="grid-template-columns:auto minmax(0,1fr) auto auto"><span class="rk ${n < 3 ? 'top' : ''}">${n + 1}</span><span class="nm">${esc(x.name)}</span><span class="val">${x.shares.toLocaleString()}株</span><span class="mut small">${x.pct}%</span></li>`).join('')}</ol>` : '<p class="hint" style="padding:6px 18px 12px;margin:0">まだ、持っている人は、いません。</p>'}</div>`).join('');
+        }).catch(() => {});
         el.querySelector('#reset').onclick = () => { el.querySelectorAll('[data-c]').forEach((c) => { const id = c.dataset.c; c.querySelector('.s-name').value = meta.defaultNames[id].name; c.querySelector('.s-tick').value = meta.defaultNames[id].ticker; c.querySelector('.s-emoji').value = meta.defaultNames[id].emoji; c.querySelector('.s-lv').value = meta.defaultLevels[id]; }); };
         el.querySelector('#save').onclick = async () => {
           evCollect();
           const stockNames = {}, stockLevels = {};
           el.querySelectorAll('[data-c]').forEach((c) => { const id = c.dataset.c; stockNames[id] = { name: c.querySelector('.s-name').value, ticker: c.querySelector('.s-tick').value, emoji: c.querySelector('.s-emoji').value }; stockLevels[id] = Number(c.querySelector('.s-lv').value); });
-          await api('/settings', { method: 'PUT', body: { stocksEnabled: el.querySelector('#on').checked, stockNames, stockLevels, newsEvents: events, newsEvery: Number(el.querySelector('#nevery').value), newsPower: Number(el.querySelector('#npow').value), stockChannelId: el.querySelector('#bch').value || null, newsChannelId: el.querySelector('#nch').value || null, stockBoardMin: Number(el.querySelector('#bmin').value), stockBoardEdit: el.querySelector('#bedit').checked } }); toast('保存しました');
+          await api('/settings', { method: 'PUT', body: { stocksEnabled: el.querySelector('#on').checked, scandalEnabled: el.querySelector('#scan').checked, stockNames, stockLevels, newsEvents: events, newsEvery: Number(el.querySelector('#nevery').value), newsPower: Number(el.querySelector('#npow').value), stockChannelId: el.querySelector('#bch').value || null, newsChannelId: el.querySelector('#nch').value || null, stockBoardMin: Number(el.querySelector('#bmin').value), stockBoardEdit: el.querySelector('#bedit').checked } }); toast('保存しました');
         };
       } },
     /* ===== 宝くじ ===== */

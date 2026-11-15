@@ -315,6 +315,14 @@ export const insertStockPrices = (g, company, rows, keepFromTick) => {
     db.exec('COMMIT');
   } catch (e) { db.exec('ROLLBACK'); throw e; }
 };
+/** サーバー全員の持ち株(株主の一覧・株の割合に使う) */
+export const stockHoldersAll = (g) => db.prepare('SELECT user_id, company, shares, cost FROM eco_stock_holdings WHERE guild_id=? AND shares>0').all(g);
+/** 株価を、いまの値段から、急に変える(不祥事など)。最新の株価の行を、書き換える。前の値段を返す */
+export function shockStock(g, company, newPrice) {
+  const last = lastStockRow(g, company); if (!last) return null;
+  db.prepare('UPDATE eco_stock_prices SET price=? WHERE guild_id=? AND company=? AND tick=?').run(newPrice, g, company, last.tick);
+  return { tick: last.tick, before: last.price };
+}
 export const holdings = (g, u) => db.prepare('SELECT company, shares, cost FROM eco_stock_holdings WHERE guild_id=? AND user_id=? AND shares>0').all(g, u);
 export const holding = (g, u, company) => db.prepare('SELECT shares, cost FROM eco_stock_holdings WHERE guild_id=? AND user_id=? AND company=?').get(g, u, company) ?? { shares: 0, cost: 0 };
 export const addHolding = (g, u, company, shares, cost) => db.prepare(`INSERT INTO eco_stock_holdings (guild_id,user_id,company,shares,cost) VALUES (?,?,?,?,?)
