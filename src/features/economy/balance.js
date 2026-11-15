@@ -98,6 +98,7 @@ function buildSchema() {
   L.push(p('stock.scandalDrop', '株', kg, '不祥事で、株価が下がる割合', 10, 1, 50, '%'));
   L.push(p('stock.scandalCd', '株', kg, '不祥事を起こせる間隔(その人も、その会社も)', 60, 0, 10080, '分'));
   L.push(p('stock.scandalCatch', '株', kg, '不祥事の仕業が、ばれる確率(ばれると、費用と同じ額の罰金。名前も出る)', 15, 0, 100, '%'));
+  L.push(p('stock.sellLockPct', '株', kg, '1つの会社の株を、みんなの持ち株の何%を超えて持っていると、売れなくなるか(過半数 = 50。100で、この制限なし。株主が1人だけのときは、売れる)', 50, 1, 100, '%'));
   L.push(p('stock.maxShares', '株', kg, '1つの会社で、持てる株の数', 10000, 1, 1e8, '株'));
   const eg = '🏢 不動産';
   L.push(p('estate.capHours', '不動産', eg, '家賃が溜まる上限の時間(受け取らないと、ここで止まる)', 24, 1, 720, '時間'));
@@ -146,7 +147,7 @@ export const heistOf = (s, id) => {
 export const timeoutCfg = (s) => ({ finePct: val(s, 'heist.timeoutFinePct') / 100, jailPct: val(s, 'heist.timeoutJailPct') / 100 }); // 時間切れの扱い(100% = 失敗と同じ。0% = 罰なしの撤退)
 export const toolCfg = (s) => ({ success: val(s, 'tool.keepOnSuccess') / 100, fail: val(s, 'tool.keepOnFail') / 100, timeout: val(s, 'tool.keepOnTimeout') / 100 }); // 使った道具が、戻ってくる確率
 export const petCfg = (s) => ({ baseSlots: val(s, 'pet.baseSlots'), feedCd: val(s, 'pet.feedCd') * MIN, playCd: val(s, 'pet.playCd') * MIN, hungerDecay: val(s, 'pet.hungerDecay'), minHunger: val(s, 'pet.minHunger'), feedXp: val(s, 'pet.feedXp'), playXp: val(s, 'pet.playXp'), power: val(s, 'pet.power') });
-export const stockCfg = (s) => ({ tickMs: val(s, 'stock.tickMin') * MIN, volScale: val(s, 'stock.volPct') / 100, newsRate: val(s, 'stock.newsRate') / 100, fee: val(s, 'stock.feePermille') / 1000, maxShares: val(s, 'stock.maxShares'), scandalCost: val(s, 'stock.scandalCost'), scandalDrop: val(s, 'stock.scandalDrop') / 100, scandalCd: val(s, 'stock.scandalCd') * MIN, scandalCatch: val(s, 'stock.scandalCatch') / 100 });
+export const stockCfg = (s) => ({ tickMs: val(s, 'stock.tickMin') * MIN, volScale: val(s, 'stock.volPct') / 100, newsRate: val(s, 'stock.newsRate') / 100, fee: val(s, 'stock.feePermille') / 1000, maxShares: val(s, 'stock.maxShares'), sellLockPct: val(s, 'stock.sellLockPct'), scandalCost: val(s, 'stock.scandalCost'), scandalDrop: val(s, 'stock.scandalDrop') / 100, scandalCd: val(s, 'stock.scandalCd') * MIN, scandalCatch: val(s, 'stock.scandalCatch') / 100 });
 export const estateCfg = (s) => ({ capHours: val(s, 'estate.capHours'), sellPct: val(s, 'estate.sellPct') / 100, feePct: val(s, 'estate.tradeFeePct') / 100 });
 export const itemOf = (s, item) => ({ ...item, price: val(s, `item.${item.id}.price`) });
 export const marketCfg = (s) => ({ range: [val(s, 'market.rateLow') / 100, val(s, 'market.rateHigh') / 100], maxStack: val(s, 'market.maxStack') });

@@ -921,7 +921,7 @@ export const stockCommand = {
         const m = market[pick - 1]; if (!m) return refuse(i, `${pick} 番の会社は、ありません。`);
         const c = companyOf(s, m.company), rows = by(c.id).sort((a, b) => b.shares - a.shares), total = rows.reduce((a, r) => a + r.shares, 0);
         const e = new EmbedBuilder().setColor(0x2ecc71).setTitle(`👥 ${c.emoji} ${c.name}(${c.ticker})の株主`)
-          .setDescription(rows.length ? `株主 **${rows.length}人** ・ みんなの持ち株の合計 **${total.toLocaleString()}株**(時価 ${money(s, total * px(m))})\n株価 ${money(s, px(m))}\n\n${rows.slice(0, 15).map((r, n) => `${n + 1}. <@${r.user_id}> — **${r.shares.toLocaleString()}株** ・ 割合 **${pc(r.shares, total)}** ・ 評価額 ${money(s, r.shares * px(m))}`).join('\n')}${rows.length > 15 ? `\n…ほか ${rows.length - 15}人` : ''}` : 'まだ、この会社の株を持っている人は、いません。')
+          .setDescription(rows.length ? `株主 **${rows.length}人** ・ みんなの持ち株の合計 **${total.toLocaleString()}株**(時価 ${money(s, total * px(m))})\n株価 ${money(s, px(m))}\n\n${rows.slice(0, 15).map((r, n) => `${n + 1}. <@${r.user_id}> — **${r.shares.toLocaleString()}株** ・ 割合 **${pc(r.shares, total)}**${rows.length >= 2 && cfg.sellLockPct < 100 && (r.shares / total) * 100 > cfg.sellLockPct ? ' 👑 過半数(売れません)' : ''} ・ 評価額 ${money(s, r.shares * px(m))}`).join('\n')}${rows.length > 15 ? `\n…ほか ${rows.length - 15}人` : ''}` : 'まだ、この会社の株を持っている人は、いません。')
           .setFooter({ text: '割合 = その人の持ち株 ÷ みんなの持ち株の合計' });
         return i.reply({ embeds: [e], allowedMentions: NO_MENTIONS, ...vis(i) });
       }
@@ -942,6 +942,10 @@ export const stockCommand = {
     }
     const n = i.options.getInteger('shares') ?? h.shares;
     if (!n || h.shares < n) return refuse(i, `${c.name}の株を、${n || 0}株は持っていません。(いま ${h.shares}株)`);
+    { // 過半数を持っている人は、売れない(株主が2人以上のとき。持ち株の合計に対する割合が、決めた割合を超えているとき)
+      const rows = stockHoldersAll(g).filter((r) => r.company === c.id), total = rows.reduce((a, r) => a + r.shares, 0), pctNow = total ? (h.shares / total) * 100 : 0;
+      if (cfg.sellLockPct < 100 && rows.length >= 2 && pctNow > cfg.sellLockPct) return refuse(i, `🔒 あなたは、${c.emoji} ${c.name}の株を、みんなの持ち株の **${pctNow.toFixed(1)}%** 持っています(${cfg.sellLockPct}% を超えると、売れません)。\n過半数を持っている間は、売れません。他の人が、もっと持つようになると、売れるようになります。`);
+    }
     const basis = takeHolding(g, u, c.id, n); if (basis === null) return refuse(i, `${c.name}の株が足りません。`); // 取れたときだけ売る(二重に売れない)
     const gross = px * n, fee = Math.floor(gross * cfg.fee), net = gross - fee, p = pay(g, u, net, s), profit = net - basis;
     return i.reply({ embeds: [card(i, s, profit >= 0 ? GREEN : RED, `${c.emoji} ${c.name} を売りました`, `**${n}株** × ${money(s, px)}\n**+ ${money(s, p.paid)}**(手数料 ${money(s, fee)} 引き)${shortNote(s, p)}\n損益: **${profit >= 0 ? '+' : ''}${money(s, profit)}**(取得費 ${money(s, basis)})`)] });
