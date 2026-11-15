@@ -1039,9 +1039,9 @@ export const arrestCommand = {
     if (rng() >= chance) {
       return i.reply({ embeds: [card(i, s, RED, '👮 逮捕に失敗…', `<@${target.id}> に、まんまと逃げられた!\n-# 次の逮捕まで ${dur(wc.arrestCd)}`)], allowedMentions: NO_MENTIONS });
     }
-    const bounty = bountyOf(heat, s.bountyPerStar, wc.heatPerStar), jailMs = Math.min(wc.jailMax, wc.jailPerStar * stars);
+    const baseBounty = bountyOf(heat, s.bountyPerStar, wc.heatPerStar), bounty = Math.round(baseBounty * wc.reward), jailMs = Math.min(wc.jailMax, wc.jailPerStar * stars);
     // 懸賞金の出どころ: 逮捕された人の罰金(予算がオンなら、予算に入る)→ そこから、逮捕した人に払う
-    const took = Math.round(bounty * wc.bountyFine) > 0 ? fine(g, target.id, Math.round(bounty * wc.bountyFine), s, 'arrest') : 0;
+    const took = Math.round(baseBounty * wc.bountyFine) > 0 ? fine(g, target.id, Math.round(baseBounty * wc.bountyFine), s, 'arrest') : 0; // 罰金は、懸賞金(基本)に対する割合。報酬の割合とは、別
     const p = pay(g, me, bounty, s);
     jail(g, target.id, jailMs); clearHeat(g, target.id);
     await i.reply({ embeds: [card(i, s, GOLD, '👮 逮捕成功!', `${starText(stars)} <@${target.id}> を逮捕しました!\n🚔 留置場に ${dur(jailMs)} 入ります。\n\n懸賞金 **+ ${money(s, p.paid)}**${shortNote(s, p)}${took ? `\n-# <@${target.id}> が、罰金 ${money(s, took)} を支払いました(懸賞金は、ここから払われます)` : ''}`)], allowedMentions: NO_MENTIONS });

@@ -73,6 +73,7 @@ function buildSchema() {
   L.push(p('wanted.heatPerStar', '指名手配', wg, '星1つに必要な手配度', HEAT_PER_STAR, 1, 100, ''));
   L.push(p('wanted.penaltyPerStar', '指名手配', wg, '星1つあたり、犯罪の成功率が下がる量', Math.round(CHANCE_PENALTY_PER_STAR * 100), 0, 30, '%'));
   L.push(p('wanted.bountyFinePct', '指名手配', wg, '懸賞金のうち、逮捕された人の罰金として取る割合', 100, 0, 100, '%'));
+  L.push(p('wanted.rewardPct', '指名手配', wg, '逮捕した人がもらう報酬(懸賞金に対する割合)', 100, 0, 500, '%'));
   L.push(p('wanted.arrestChance', '指名手配', wg, '逮捕の成功率', Math.round(ARREST.chance * 100), 1, 100, '%'));
   L.push(p('wanted.arrestCd', '指名手配', wg, '逮捕の待ち時間', ARREST.cd / MIN, 0, 1440, '分'));
   L.push(p('wanted.jailPerStar', '指名手配', wg, '逮捕された人の留置場(星1つあたり)', ARREST.jailPerStar / MIN, 0, 1440, '分'));
@@ -147,7 +148,7 @@ export const itemOf = (s, item) => ({ ...item, price: val(s, `item.${item.id}.pr
 export const marketCfg = (s) => ({ range: [val(s, 'market.rateLow') / 100, val(s, 'market.rateHigh') / 100], maxStack: val(s, 'market.maxStack') });
 export const wantedCfg = (s) => {
   const heatPerStar = val(s, 'wanted.heatPerStar');
-  return { heatPerStar, maxHeat: heatPerStar * 6, penalty: val(s, 'wanted.penaltyPerStar') / 100, arrestChance: val(s, 'wanted.arrestChance') / 100, bountyFine: val(s, 'wanted.bountyFinePct') / 100, arrestCd: val(s, 'wanted.arrestCd') * MIN,
+  return { heatPerStar, maxHeat: heatPerStar * 6, penalty: val(s, 'wanted.penaltyPerStar') / 100, arrestChance: val(s, 'wanted.arrestChance') / 100, bountyFine: val(s, 'wanted.bountyFinePct') / 100, reward: val(s, 'wanted.rewardPct') / 100, arrestCd: val(s, 'wanted.arrestCd') * MIN,
     jailPerStar: val(s, 'wanted.jailPerStar') * MIN, jailMax: val(s, 'wanted.jailMax') * MIN,
     heatCrime: (k) => val(s, `heat.crime.${k}`), heatHeist: (id) => val(s, `heat.heist.${id}`) };
 };

@@ -81,7 +81,8 @@ Dash.registerTab({
     /* ===== 指名手配 ===== */
     { id: 'wanted', title: '指名手配', icon: 'alert',
       async render(el, { api, esc, toast, pageHeader }) {
-        const [st, meta] = await Promise.all([api('/settings'), api('/jobs-meta')]);
+        const [st, meta, bal] = await Promise.all([api('/settings'), api('/jobs-meta'), api('/balance')]);
+        const bp = (k) => bal.params.find((x) => x.key === k), bv = (k) => bp(k).value ?? bp(k).def;
         el.innerHTML = `${pageHeader('指名手配', '犯罪に成功すると「手配度」が溜まり、星(⭐)が付きます。星が多いほど、犯罪は失敗しやすくなります。警察のバイトを重ねた人は、手配された人を逮捕して、懸賞金をもらえます。')}
           <div class="card"><label class="sw"><input type="checkbox" id="we" ${st.wantedEnabled ? 'checked' : ''}><i></i><span><b>指名手配を使う</b><small>オンのとき: <code>/wanted</code>(手配書)と <code>/arrest</code>(逮捕)が使えます。手配中の人が多いほど、警察のバイトのボーナスが出やすくなります</small></span></label></div>
           <div class="card"><h2>設定</h2><div class="grid2">
@@ -89,6 +90,10 @@ Dash.registerTab({
             <div class="field"><label class="f" for="wb">星1つぶんの懸賞金</label><input id="wb" type="number" min="0" value="${st.bountyPerStar}"><p class="hint">懸賞金は、手配度に比例します(星2つで、この金額の2倍)。逮捕された人の罰金から、逮捕した人に支払われます(予算がオンなら、罰金は予算に入り、そこから払われます。罰金の割合は、ゲームバランスで変えられます)</p></div>
             <div class="field"><label class="f" for="wa">逮捕に必要な、警察の出勤回数</label><input id="wa" type="number" min="0" value="${st.arrestMinShifts}"><p class="hint">警察のバイト(/work)を、この回数以上している人だけが、逮捕できます</p></div>
             <div class="field"><label class="f" for="wp">手配中が1人増えるごとの、警察ボーナス(%)</label><input id="wp" type="number" min="0" max="50" value="${st.policeBonusPerWanted}"><p class="hint">警察のバイトのボーナス(犯人逮捕の特別手当)の確率は、${meta.bonusBase}% + 手配中の人数 × この値(上限 ${meta.bonusCap}%)です</p></div></div></div>
+          <div class="card"><h2>逮捕の成功率と報酬</h2><p class="hint">警察のバイトの人が、手配された人を <code>/arrest</code> で逮捕するときの、確率とお金です。</p><div class="grid2">
+            <div class="field"><label class="f" for="ac">逮捕の成功率(%)</label><input id="ac" type="number" min="${bp('wanted.arrestChance').min}" max="${bp('wanted.arrestChance').max}" value="${bv('wanted.arrestChance')}"><p class="hint">お店の品・ペットの「逮捕される確率」の効果は、この確率に足し引きされます。</p></div>
+            <div class="field"><label class="f" for="ar">逮捕した人がもらう報酬(懸賞金の何%)</label><input id="ar" type="number" min="0" max="${bp('wanted.rewardPct').max}" value="${bv('wanted.rewardPct')}"><p class="hint">100% で、懸賞金のまま。50% なら半分、200% なら2倍です。</p></div>
+            <div class="field"><label class="f" for="af">逮捕された人から取る罰金(懸賞金の何%)</label><input id="af" type="number" min="0" max="100" value="${bv('wanted.bountyFinePct')}"><p class="hint">取った罰金は、予算がオンなら予算に入ります。報酬の割合とは別に決められます。</p></div></div></div>
           <div class="card"><h2>仕組み</h2><ul style="margin:0;padding-left:1.2em">
             <li>手配度が <b>${meta.heatPerStar}</b> 増えるごとに、星が1つ(最大5つ)。星1つにつき、犯罪の成功率が <b>${meta.penaltyPerStar}%</b> 下がります</li>
             <li>犯罪・大型犯罪に失敗して<b>捕まる</b>と、手配は解除されます</li>
@@ -96,7 +101,7 @@ Dash.registerTab({
           <div class="card flush"><div class="card-h"><h2>成功したときに、上がる手配度</h2></div><div style="padding:6px 18px 12px"><table><tr><th>犯罪</th><th>手配度</th></tr>${meta.heat.map((h) => `<tr><td>${esc(h.name)}</td><td><b>+${h.heat}</b></td></tr>`).join('')}</table></div></div>
           <div class="acts"><button class="btn" id="save" type="button">設定を保存</button></div>`;
         const q = (x) => el.querySelector(x);
-        q('#save').onclick = async () => { await api('/settings', { method: 'PUT', body: { wantedEnabled: q('#we').checked, wantedDecayMin: q('#wd').value, bountyPerStar: q('#wb').value, arrestMinShifts: q('#wa').value, policeBonusPerWanted: q('#wp').value } }); toast('保存しました'); };
+        q('#save').onclick = async () => { await api('/settings', { method: 'PUT', body: { wantedEnabled: q('#we').checked, wantedDecayMin: q('#wd').value, bountyPerStar: q('#wb').value, arrestMinShifts: q('#wa').value, policeBonusPerWanted: q('#wp').value } }); await api('/balance', { method: 'PUT', body: { values: { 'wanted.arrestChance': q('#ac').value, 'wanted.rewardPct': q('#ar').value, 'wanted.bountyFinePct': q('#af').value } } }); toast('保存しました'); };
       } },
     /* ===== ゲームバランス(ゲームの数字を、すべて変えられる) ===== */
     { id: 'balance', title: 'ゲームバランス', icon: 'shield',
