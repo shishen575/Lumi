@@ -13,7 +13,7 @@ import { RAMEN, makeOrder, gradeRamen, GRADES } from './ramen.js';
 import { POLICE_BONUS_CAP } from './wanted.js';
 import { userFx } from './userfx.js';
 import { marketNow, unitPrice, sparkline } from './stockmarket.js';
-import { VOL_LABELS, companyOf } from './stocks.js';
+import { VOL_LABELS, companyOf, trendArrow } from './stocks.js';
 import { MAX_PROPERTIES, estateOf, estateById, hourlyNet, accrued } from './estate.js';
 import { MAX_LOTTERIES, lotteriesOf, estimateRtp, roundOf, drawTimeOf, pad, drawNumber } from './lottery.js';
 import { settleGuild, announce, drawEmbed } from './lotteryengine.js';
@@ -817,7 +817,7 @@ export const petCommand = {
 
 /* ================= 株 ================= */
 const stockOff = (i) => refuse(i, 'このサーバーでは、株はオフです。管理者が、ダッシュボードの「通貨 → お店・ペット・株など」でオンにできます。');
-const arrow = (c) => (c > 0.0005 ? '🔺' : c < -0.0005 ? '🔻' : '▫️');
+const arrow = trendArrow;
 const pct = (c) => `${c > 0 ? '+' : ''}${(c * 100).toFixed(1)}%`;
 export const stockCommand = {
   data: guildOnly(new SlashCommandBuilder().setName('stock').setDescription('株(架空の会社)を売り買いします')

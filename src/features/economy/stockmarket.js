@@ -1,5 +1,5 @@
-import { COMPANIES, MAX_TICK_STEPS, KEEP_MINUTES, BASE_STEP, nextPrice, eventAt, DEFAULT_LEVELS } from './stocks.js';
-import { lastStockRow, stockPriceAt, stockRange, insertStockPrices } from './db.js';
+import { COMPANIES, MAX_TICK_STEPS, KEEP_MINUTES, BASE_STEP, nextPrice, prevPrice, eventAt, DEFAULT_LEVELS } from './stocks.js';
+import { lastStockRow, firstStockRow, stockPriceAt, stockRange, insertStockPrices } from './db.js';
 import { stockCfg } from './balance.js';
 
 const MIN = 60_000, BARS = '▁▂▃▄▅▆▇█';
@@ -24,6 +24,13 @@ export function marketNow(s, g, now = Date.now()) {
       for (let j = 0; j < n; j++) { m += step; price = nextPrice(g, c, m, price, { level, volScale: cfg.volScale, stepFactor: factor }); rows.push({ tick: m, price }); }
       insertStockPrices(g, c.id, rows, nowMin - KEEP_MINUTES);
       last = rows.at(-1);
+    }
+    // 履歴が24時間に足りないとき(はじめて見たときなど)は、過去のぶんを、さかのぼって作る(グラフが、平らにならないように)
+    const first = firstStockRow(g, c.id), target = nowMin - 1440;
+    if (first && first.tick > target + step) {
+      const rows = []; let price = first.price, m = first.tick;
+      while (m - step >= target) { price = prevPrice(g, c, m, price, { level, volScale: cfg.volScale, stepFactor: factor }); m -= step; rows.push({ tick: m, price }); }
+      insertStockPrices(g, c.id, rows, nowMin - KEEP_MINUTES);
     }
     const day = stockPriceAt(g, c.id, nowMin - 1440) ?? last.price; // 24時間前の株価(なければ、いまの値)
     const range = stockRange(g, c.id, nowMin - 1440);

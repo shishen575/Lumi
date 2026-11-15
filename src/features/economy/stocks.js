@@ -65,4 +65,18 @@ export function nextPrice(guild, c, tick, prev, { level = c.level, volScale = 1,
   if (ev) ret += (ev.up ? 1 : -1) * ev.size * Math.min(2.5, Math.max(0.4, Math.sqrt(vol / VOL_LEVELS[4]))); // 荒い株ほど、ニュースで大きく動く
   return Math.min(c.base * 6, Math.max(c.base * 0.15, prev * Math.exp(ret)));
 }
+/**
+ * 1つ後の価格から、1つ前の時刻の価格を、さかのぼって決める(履歴が24時間に足りないときに、過去のぶんを作る)。
+ * 同じ乱数(その時刻の動き)を使い、逆向きに戻すので、いまの価格とつながる。ほぼ正確(平均への戻りの小さな項は、無視する)
+ */
+export function prevPrice(guild, c, tick, price, { level = c.level, volScale = 1, stepFactor = 1 } = {}) {
+  const vol = VOL_LEVELS[Math.min(10, Math.max(1, level)) - 1] * volScale;
+  const r = mulberry(hash(`px:${guild}:${c.id}:${tick}`));
+  let ret = vol * Math.sqrt(stepFactor) * gauss(r);
+  const ev = eventAt(guild, c.id, tick, stepFactor);
+  if (ev) ret += (ev.up ? 1 : -1) * ev.size * Math.min(2.5, Math.max(0.4, Math.sqrt(vol / VOL_LEVELS[4])));
+  return Math.min(c.base * 6, Math.max(c.base * 0.15, price / Math.exp(ret)));
+}
+/** 上がった・下がった・変わらない、の矢印(上がったら 🔺、下がったら 🔻) */
+export const trendArrow = (change) => (change > 0.0005 ? '🔺' : change < -0.0005 ? '🔻' : '➖');
 export const tickOf = (now, tickMs) => Math.floor(now / tickMs);
