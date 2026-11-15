@@ -20,14 +20,22 @@ export function rewriteHidden(hid, payload) {
   const alt = names.map(escRe).join('|'), re = new RegExp('`/(' + alt + ')(?: [^`]*)?`|(?<![\\w:./-])/(' + alt + ')(?![\\w-])', 'g');
   const link = (n) => String(hid[n]).match(/\((https:\/\/discord\.com\/channels\/[^)]+)\)/)?.[1];
   const sub = (str, rich) => (typeof str === 'string' ? str.replace(re, (m, a, b) => { const l = rich && link(a ?? b); return l ? `[パネル](${l})` : 'パネル'; }) : str);
-  if (typeof payload === 'string') return sub(payload, true);
+  // リンクは長いので、置き換えたあとが、Discordの上限(本文2000・説明4096・欄の値1024・題名256・フッター2048・埋め込み全体6000)を超えるときは、リンクなしの「パネル」にする
+  const fit = (str, rich, max) => { const r = sub(str, rich); return typeof r === 'string' && r.length > max ? sub(str, false) : r; };
+  if (typeof payload === 'string') return fit(payload, true, 2000);
   if (typeof payload !== 'object') return payload;
-  if (typeof payload.content === 'string') payload.content = sub(payload.content, true);
+  if (typeof payload.content === 'string') payload.content = fit(payload.content, true, 2000);
   for (const e of payload.embeds ?? []) {
     const d = e?.data ?? e; if (!d) continue;
-    d.title = sub(d.title, false); d.description = sub(d.description, true);
-    if (d.footer?.text) d.footer.text = sub(d.footer.text, false);
-    for (const f of d.fields ?? []) { f.name = sub(f.name, false); f.value = sub(f.value, true); }
+    const orig = { title: d.title, description: d.description, footer: d.footer?.text, fields: (d.fields ?? []).map((f) => ({ name: f.name, value: f.value })) };
+    const apply = (rich) => {
+      d.title = fit(orig.title, false, 256); d.description = fit(orig.description, rich, 4096);
+      if (d.footer?.text !== undefined) d.footer.text = fit(orig.footer, false, 2048);
+      (d.fields ?? []).forEach((f, n) => { f.name = fit(orig.fields[n].name, false, 256); f.value = fit(orig.fields[n].value, rich, 1024); });
+    };
+    apply(true);
+    const total = () => (d.title?.length ?? 0) + (d.description?.length ?? 0) + (d.footer?.text?.length ?? 0) + (d.fields ?? []).reduce((x, f) => x + f.name.length + f.value.length, 0);
+    if (total() > 5900) apply(false); // 埋め込み全体が、6000字に近いときは、リンクを全部やめる
   }
   return payload;
 }
