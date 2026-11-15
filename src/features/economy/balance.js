@@ -95,6 +95,10 @@ function buildSchema() {
   L.push(p('stock.volPct', '株', kg, '値動きの大きさ(100% = 初期値)', 100, 0, 500, '%'));
   L.push(p('stock.feePermille', '株', kg, '売買の手数料(売り・買いそれぞれ)', 10, 0, 100, '‰'));
   L.push(p('stock.maxShares', '株', kg, '1つの会社で、持てる株の数', 10000, 1, 1e8, '株'));
+  const eg = '🏢 不動産';
+  L.push(p('estate.capHours', '不動産', eg, '家賃が溜まる上限の時間(受け取らないと、ここで止まる)', 24, 1, 720, '時間'));
+  L.push(p('estate.sellPct', '不動産', eg, '売るときの、買った値段に対する割合', 80, 0, 200, '%'));
+  L.push(p('estate.tradeFeePct', '不動産', eg, '買うときの、手数料(値段に対する割合)', 0, 0, 100, '%'));
   L.push(p('bail.perMin', 'その他', '🔓 保釈', '保釈金(留置場の残り1分あたり)', 100, 0, 1e6, '$'));
   return L;
 }
@@ -139,6 +143,7 @@ export const timeoutCfg = (s) => ({ finePct: val(s, 'heist.timeoutFinePct') / 10
 export const toolCfg = (s) => ({ success: val(s, 'tool.keepOnSuccess') / 100, fail: val(s, 'tool.keepOnFail') / 100, timeout: val(s, 'tool.keepOnTimeout') / 100 }); // 使った道具が、戻ってくる確率
 export const petCfg = (s) => ({ price: val(s, 'pet.price'), feedCost: val(s, 'pet.feedCost'), feedCd: val(s, 'pet.feedCd') * MIN, playCd: val(s, 'pet.playCd') * MIN, feedHunger: val(s, 'pet.feedHunger'), hungerDecay: val(s, 'pet.hungerDecay'), minHunger: val(s, 'pet.minHunger'), feedXp: val(s, 'pet.feedXp'), playXp: val(s, 'pet.playXp'), power: val(s, 'pet.power') });
 export const stockCfg = (s) => ({ tickMs: val(s, 'stock.tickMin') * MIN, volScale: val(s, 'stock.volPct') / 100, fee: val(s, 'stock.feePermille') / 1000, maxShares: val(s, 'stock.maxShares') });
+export const estateCfg = (s) => ({ capHours: val(s, 'estate.capHours'), sellPct: val(s, 'estate.sellPct') / 100, feePct: val(s, 'estate.tradeFeePct') / 100 });
 export const itemOf = (s, item) => ({ ...item, price: val(s, `item.${item.id}.price`) });
 export const marketCfg = (s) => ({ range: [val(s, 'market.rateLow') / 100, val(s, 'market.rateHigh') / 100], maxStack: val(s, 'market.maxStack') });
 export const wantedCfg = (s) => {

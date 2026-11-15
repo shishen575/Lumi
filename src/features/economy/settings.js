@@ -4,6 +4,7 @@ import { sanitizeBalance } from './balance.js';
 import { DEFAULT_NAMES, sanitizeNames, DEFAULT_LEVELS, sanitizeLevels } from './stocks.js';
 import { DEFAULT_SHOP, sanitizeShopItems } from './shop.js';
 import { DEFAULT_LOTTERY, sanitizeLotteries } from './lottery.js';
+import { DEFAULT_ESTATE, sanitizeEstate } from './estate.js';
 
 // サーバーごとの設定。既定はオフ(管理者がダッシュボードでオンにする)
 export const DEFAULTS = {
@@ -22,6 +23,8 @@ export const DEFAULTS = {
   stocksEnabled: false,    // 株。オンのとき、/stock が使える
   stockLevels: DEFAULT_LEVELS, // 会社ごとの変動の大きさ(1〜10の10段階)
   stockNames: DEFAULT_NAMES, // 会社の名前・ティッカー・絵文字(サーバーごとに変えられる)
+  estateEnabled: false,    // 不動産。オンのとき、/estate が使える
+  estate: DEFAULT_ESTATE,  // 物件の一覧(名前・値段・家賃・維持費などを、サーバーごとに変えられる)
   lotteryEnabled: false,   // 宝くじ。オンのとき、/lottery が使え、決まった時刻に、自動で抽選する
   lotteries: [DEFAULT_LOTTERY], // くじの一覧(サーバーごとに、自由に、最大6つ。名前・値段・間隔・桁数・賞金などを変えられる)
   lotteryChannelId: null,  // 抽選の結果を発表するチャンネル(くじごとに、別のチャンネルも選べる)
@@ -53,6 +56,8 @@ export function saveSettings(guildId, s) {
     shopEnabled: s.shopEnabled === undefined ? cur.shopEnabled : !!s.shopEnabled,
     shopItems: s.shopItems === undefined ? cur.shopItems : sanitizeShopItems(s.shopItems, cur.shopItems),
     petsEnabled: s.petsEnabled === undefined ? cur.petsEnabled : !!s.petsEnabled,
+    estateEnabled: s.estateEnabled === undefined ? cur.estateEnabled : !!s.estateEnabled,
+    estate: s.estate === undefined ? cur.estate : sanitizeEstate(s.estate, cur.estate),
     lotteryEnabled: s.lotteryEnabled === undefined ? cur.lotteryEnabled : !!s.lotteryEnabled,
     lotteries: s.lotteries === undefined ? cur.lotteries : sanitizeLotteries(s.lotteries, cur.lotteries),
     lotteryChannelId: s.lotteryChannelId === undefined ? cur.lotteryChannelId : (/^\d{15,25}$/.test(String(s.lotteryChannelId ?? '')) ? String(s.lotteryChannelId) : null),

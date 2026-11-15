@@ -73,6 +73,13 @@ CREATE TABLE IF NOT EXISTS eco_lottery_draws (     -- 抽選の結果の記録
   tickets INTEGER NOT NULL, sales INTEGER NOT NULL, paid INTEGER NOT NULL, winners TEXT NOT NULL, at INTEGER NOT NULL,
   PRIMARY KEY (guild_id, lottery, round)
 );
+CREATE TABLE IF NOT EXISTS eco_estate (            -- 持っている物件(種類ごとの数と、買った値段の合計)
+  guild_id TEXT NOT NULL, user_id TEXT NOT NULL, property TEXT NOT NULL, count INTEGER NOT NULL DEFAULT 0, spent INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (guild_id, user_id, property)
+);
+CREATE TABLE IF NOT EXISTS eco_estate_rent (       -- 家賃を最後に受け取った(または、物件を買った・売った)時刻
+  guild_id TEXT NOT NULL, user_id TEXT NOT NULL, at INTEGER NOT NULL, PRIMARY KEY (guild_id, user_id)
+);
 CREATE TABLE IF NOT EXISTS eco_audit (            -- 管理者の操作の記録(だれが・だれに・何を・いくら)
   id INTEGER PRIMARY KEY AUTOINCREMENT, guild_id TEXT NOT NULL, actor_id TEXT NOT NULL, actor_name TEXT NOT NULL,
   target_id TEXT, action TEXT NOT NULL, amount INTEGER, note TEXT, at INTEGER NOT NULL
@@ -269,6 +276,20 @@ export const claimOrphanTickets = (g, keepIds) => db.prepare(`DELETE FROM eco_lo
 export const pendingLotteryGuilds = () => db.prepare('SELECT DISTINCT guild_id FROM eco_lottery_tickets').all().map((r) => r.guild_id);
 export const recordDraw = (g, lot, r) => db.prepare('INSERT OR REPLACE INTO eco_lottery_draws (guild_id,lottery,round,winning,jackpot,jackpot_won,tickets,sales,paid,winners,at) VALUES (?,?,?,?,?,?,?,?,?,?,?)').run(g, lot, r.round, r.winning, r.jackpot, r.jackpotWon ? 1 : 0, r.tickets, r.sales, r.paid, JSON.stringify(r.winners), Date.now());
 export const lastDraw = (g, lot) => { const r = db.prepare('SELECT * FROM eco_lottery_draws WHERE guild_id=? AND lottery=? ORDER BY round DESC LIMIT 1').get(g, lot); return r && { ...r, winners: JSON.parse(r.winners) }; };
+/* ---------- 不動産 ---------- */
+export const estateHoldings = (g, u) => db.prepare('SELECT property, count, spent FROM eco_estate WHERE guild_id=? AND user_id=? AND count>0').all(g, u);
+export const estateCount = (g, u, property) => db.prepare('SELECT count, spent FROM eco_estate WHERE guild_id=? AND user_id=? AND property=?').get(g, u, property) ?? { count: 0, spent: 0 };
+export const addEstate = (g, u, property, count, spent) => db.prepare(`INSERT INTO eco_estate (guild_id,user_id,property,count,spent) VALUES (?,?,?,?,?)
+  ON CONFLICT(guild_id,user_id,property) DO UPDATE SET count=count+excluded.count, spent=spent+excluded.spent`).run(g, u, property, count, spent);
+/** 物件を売る(持っている数を超えない)。売れたら、売った分の元の値(買った値段の合計のうち、その数ぶん)を返す。取れなければ null */
+export function takeEstate(g, u, property, n) {
+  const cur = estateCount(g, u, property); if (cur.count < n) return null;
+  const basis = Math.round(cur.spent * n / cur.count);
+  const r = db.prepare('UPDATE eco_estate SET count=count-?, spent=spent-? WHERE guild_id=? AND user_id=? AND property=? AND count>=?').run(n, basis, g, u, property, n);
+  return Number(r.changes) > 0 ? basis : null;
+}
+export const rentAt = (g, u) => db.prepare('SELECT at FROM eco_estate_rent WHERE guild_id=? AND user_id=?').get(g, u)?.at ?? null;
+export const setRentAt = (g, u, at) => db.prepare('INSERT INTO eco_estate_rent (guild_id,user_id,at) VALUES (?,?,?) ON CONFLICT(guild_id,user_id) DO UPDATE SET at=excluded.at').run(g, u, at);
 export const setHeistDeadline = (g, u, deadline) => db.prepare('UPDATE eco_heist SET deadline=? WHERE guild_id=? AND user_id=?').run(deadline, g, u);
 /** ゲームを終わらせる。取れたら、そのゲームを返す(同時に2か所から終わらせても、片方しか取れない=二重に精算されない) */
 export const claimHeist = (g, u) => heistRow(db.prepare('DELETE FROM eco_heist WHERE guild_id=? AND user_id=? RETURNING *').get(g, u));

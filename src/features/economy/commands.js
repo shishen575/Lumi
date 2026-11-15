@@ -1,6 +1,6 @@
 import { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, MessageFlags } from 'discord.js';
 import { getSettings, money } from './settings.js';
-import { addTicket, userTickets, userTicketCount, roundSales, lotteryJackpot, lastDraw, holdings, holding, addHolding, takeHolding, getPet, adoptPet, renamePet, releasePet, updatePet, setStatus, activeStatuses, shiftsOf, allShifts, addShift, getHeat, addHeat, clearHeat, topWanted, itemQty, allItems, addItem, useItem, transfer, adjustBalance, clearCooldowns, audit, peek, deposit, withdraw, cooldownLeft, setCooldown, jailLeft, jail, release, richest, getBj, saveBj, deleteBj, allBj, claimBj, getRamen, saveRamen, claimRamen, getHeist, saveHeist, claimHeist, expiredHeists, setHeistDeadline, releaseAll } from './db.js';
+import { estateHoldings, estateCount, addEstate, takeEstate, rentAt, setRentAt, addTicket, userTickets, userTicketCount, roundSales, lotteryJackpot, lastDraw, holdings, holding, addHolding, takeHolding, getPet, adoptPet, renamePet, releasePet, updatePet, setStatus, activeStatuses, shiftsOf, allShifts, addShift, getHeat, addHeat, clearHeat, topWanted, itemQty, allItems, addItem, useItem, transfer, adjustBalance, clearCooldowns, audit, peek, deposit, withdraw, cooldownLeft, setCooldown, jailLeft, jail, release, richest, getBj, saveBj, deleteBj, allBj, claimBj, getRamen, saveRamen, claimRamen, getHeist, saveHeist, claimHeist, expiredHeists, setHeistDeadline, releaseAll } from './db.js';
 import { ensureAccount, pay, collect, fine, treasury } from './ledger.js';
 import { hasAccessSync, isOperator } from '../../core/access.js';
 import { PermissionFlagsBits } from 'discord.js';
@@ -14,12 +14,13 @@ import { POLICE_BONUS_CAP } from './wanted.js';
 import { userFx } from './userfx.js';
 import { marketNow, unitPrice, sparkline } from './stockmarket.js';
 import { VOL_LABELS, companyOf } from './stocks.js';
+import { MAX_PROPERTIES, estateOf, estateById, hourlyNet, accrued } from './estate.js';
 import { MAX_LOTTERIES, lotteriesOf, estimateRtp, roundOf, drawTimeOf, pad, drawNumber } from './lottery.js';
 import { settleGuild, announce, drawEmbed } from './lotteryengine.js';
 import { SPECIES, levelOf, nextXp, MAX_LEVEL, hungerNow, hungerBar, petFx } from './pets.js';
 import { SLOTS, MAX_SHOP_ITEMS, SHOP_MAX_STACK, shopItems, shopById, itemText } from './shop.js';
 import { describeFx } from './effects.js';
-import { stockCfg, petCfg, toolCfg, timeoutCfg, ramenCfg, crimeOf, jobOf, begOf, heistOf, itemOf, marketCfg, wantedCfg, bailPerMin } from './balance.js';
+import { estateCfg, stockCfg, petCfg, toolCfg, timeoutCfg, ramenCfg, crimeOf, jobOf, begOf, heistOf, itemOf, marketCfg, wantedCfg, bailPerMin } from './balance.js';
 import { starsOf, stars as starText, bountyOf, chanceDelta } from './wanted.js';
 import { ITEMS, itemById, toolFor, priceOf, marketRate } from './market.js';
 import { CRIMES, JOBS, resolveCrime, resolveWork, resolveBeg } from './jobs.js';
@@ -907,6 +908,67 @@ export const lotteryCommand = {
   },
 };
 
+/* ================= 不動産(物件を買って、家賃をもらう) ================= */
+const estateOff = (i) => refuse(i, 'このサーバーでは、不動産はオフです。管理者が、ダッシュボードの「通貨 → お店・ペット・株など」でオンにできます。');
+/** 溜まっている家賃を払って、受け取った時刻を進める。予算が足りなくて、払いきれなかったぶんは、そのまま溜まったままにする。{ paid, short, hourly } を返す */
+function collectRent(s, g, u, now = Date.now()) {
+  const cfg = estateCfg(s), owned = estateHoldings(g, u).map((h) => ({ ...(estateById(s, h.property) ?? {}), count: h.count })).filter((x) => x.id);
+  const hourly = hourlyNet(owned), at = rentAt(g, u) ?? now, amount = accrued(owned, at, now, cfg.capHours);
+  if (amount <= 0) { setRentAt(g, u, owned.length ? now : now); return { paid: 0, short: 0, hourly }; }
+  const p = pay(g, u, amount, s);
+  const unpaidHours = hourly > 0 ? (p.short / hourly) : 0; // 払えなかったぶんは、その時間ぶん、まだ溜まっている扱い
+  setRentAt(g, u, Math.round(now - unpaidHours * 3600_000));
+  return { paid: p.paid, short: p.short, hourly };
+}
+export const estateCommand = {
+  data: guildOnly(new SlashCommandBuilder().setName('estate').setDescription('不動産(物件を買って、家賃をもらいます)')
+    .addSubcommand((c) => c.setName('list').setDescription('物件の一覧と、自分の持ち物件・溜まった家賃を見ます'))
+    .addSubcommand((c) => c.setName('buy').setDescription('物件を買います')
+      .addIntegerOption((o) => o.setName('property').setDescription('物件の番号(/estate list の番号)').setRequired(true).setMinValue(1).setMaxValue(MAX_PROPERTIES))
+      .addIntegerOption((o) => o.setName('count').setDescription('数(省略すると1)').setMinValue(1).setMaxValue(20)))
+    .addSubcommand((c) => c.setName('sell').setDescription('物件を売ります')
+      .addIntegerOption((o) => o.setName('property').setDescription('物件の番号(/estate list の番号)').setRequired(true).setMinValue(1).setMaxValue(MAX_PROPERTIES))
+      .addIntegerOption((o) => o.setName('count').setDescription('数(省略すると1)').setMinValue(1).setMaxValue(20)))
+    .addSubcommand((c) => c.setName('collect').setDescription('溜まった家賃を受け取ります'))),
+  async execute(i) {
+    const s = await open(i); if (!s) return;
+    if (!s.estateEnabled) return estateOff(i);
+    const g = i.guildId, u = i.user.id, now = Date.now(), cfg = estateCfg(s), list = estateOf(s), sub = i.options.getSubcommand();
+    const mine = () => estateHoldings(g, u).map((h) => ({ ...(estateById(s, h.property) ?? {}), count: h.count, spent: h.spent })).filter((x) => x.id);
+    if (sub === 'list') {
+      const own = Object.fromEntries(mine().map((x) => [x.id, x])), items = mine(), hourly = hourlyNet(items), at = rentAt(g, u) ?? now;
+      const waiting = accrued(items, at, now, cfg.capHours), full = (now - at) / 3600_000 >= cfg.capHours;
+      const e = new EmbedBuilder().setColor(0x16a085).setTitle('🏢 不動産')
+        .setDescription(`家賃は、**1時間ごと**に溜まり、最大 **${cfg.capHours}時間ぶん**まで溜まります。\`/estate collect\` で受け取ります。\n手取り: **${money(s, hourly)}/時間**(家賃 − 維持費)・溜まった家賃: **${money(s, waiting)}**${full && waiting ? '(上限です。早く受け取りましょう)' : ''}`)
+        .addFields(list.map((p, n) => { const net = Math.max(0, p.rent - p.upkeep), o = own[p.id]; return { name: `${n + 1}. ${p.emoji} ${p.name}`, value: `**${money(s, p.price)}** ・ 家賃 ${money(s, p.rent)}/時 − 維持費 ${money(s, p.upkeep)} = **${money(s, net)}/時**(1日 ${(net * 24 / p.price * 100).toFixed(1)}%)\n持ち物件 **${o?.count ?? 0}/${p.maxOwn}**${p.desc ? `\n-# ${p.desc}` : ''}`, inline: false }; }))
+        .setFooter({ text: `手持ち ${wallet(i).toLocaleString()} ・ 売るときは、買った値段の ${Math.round(cfg.sellPct * 100)}%` });
+      return i.reply({ embeds: [e], ...EPH });
+    }
+    if (sub === 'collect') {
+      const owned = mine(); if (!owned.length) return refuse(i, '物件を持っていません。`/estate buy` で買えます。');
+      const r = collectRent(s, g, u, now);
+      if (!r.paid && !r.short) return refuse(i, `まだ、家賃は溜まっていません。(手取り ${money(s, r.hourly)}/時間)`);
+      return i.reply({ embeds: [card(i, s, 0x16a085, '🏢 家賃を受け取りました', `**+ ${money(s, r.paid)}**${r.short ? `\n-# 予算が足りず、${money(s, r.short)} は、溜まったままです` : ''}\n手取り: ${money(s, r.hourly)}/時間`)] });
+    }
+    const n = i.options.getInteger('property', true), p = list[n - 1], k = i.options.getInteger('count') ?? 1;
+    if (!p) return refuse(i, `${n} 番の物件は、ありません。(/estate list の番号を指定してください)`);
+    const have = estateCount(g, u, p.id);
+    if (sub === 'buy') {
+      if (have.count + k > p.maxOwn) return refuse(i, `${p.emoji} ${p.name}は、最大 ${p.maxOwn}件までしか持てません。(いま ${have.count}件)`);
+      const gross = p.price * k, fee = Math.ceil(gross * cfg.feePct), total = gross + fee;
+      if (!collect(g, u, total, s)) return refuse(i, `お金が足りません。(必要 ${money(s, total)} / 手持ち ${money(s, Math.max(0, wallet(i)))})`);
+      const r = collectRent(s, g, u, now); // いままでの家賃を、先に受け取る(これからは、新しい物件ぶんも溜まる)
+      addEstate(g, u, p.id, k, total);
+      return i.reply({ embeds: [card(i, s, 0x16a085, `${p.emoji} ${p.name} を買いました`, `**${k}件**\n**- ${money(s, total)}**${fee ? `(手数料 ${money(s, fee)} 込み)` : ''}\n持ち物件: **${have.count + k}件** ・ 家賃 +${money(s, Math.max(0, p.rent - p.upkeep) * k)}/時間${r.paid ? `\n-# 溜まっていた家賃 ${money(s, r.paid)} も、受け取りました` : ''}`)] });
+    }
+    if (have.count < k) return refuse(i, `${p.emoji} ${p.name}を、${k}件は持っていません。(いま ${have.count}件)`);
+    const r = collectRent(s, g, u, now);
+    const basis = takeEstate(g, u, p.id, k); if (basis === null) return refuse(i, `${p.name}が足りません。`); // 取れたときだけ売る(二重に売れない)
+    const sale = Math.round(p.price * k * cfg.sellPct), paid = pay(g, u, sale, s), diff = sale - basis;
+    return i.reply({ embeds: [card(i, s, diff >= 0 ? GREEN : 0x16a085, `${p.emoji} ${p.name} を売りました`, `**${k}件**\n**+ ${money(s, paid.paid)}**(値段の ${Math.round(cfg.sellPct * 100)}%)${shortNote(s, paid)}\n買った値段との差: **${diff >= 0 ? '+' : ''}${money(s, diff)}**${r.paid ? `\n-# 溜まっていた家賃 ${money(s, r.paid)} も、受け取りました` : ''}`)] });
+  },
+};
+
 /* ================= 指名手配 ================= */
 const wantedOff = (i) => refuse(i, 'このサーバーでは、指名手配はオフです。管理者が、ダッシュボードの「通貨 → 指名手配」でオンにできます。');
 export const wantedCommand = {
@@ -956,4 +1018,4 @@ export const arrestCommand = {
   },
 };
 
-export const commands = [balanceCommand, depositCommand, withdrawCommand, richestCommand, crimeCommand, workCommand, begCommand, bailCommand, chinchiroCommand, slotCommand, blackjackCommand, blackjackEndCommand, heistCommand, shopCommand, useCommand, petCommand, stockCommand, lotteryCommand, cooldownsCommand, jobCommand, wantedCommand, arrestCommand, marketCommand, releaseCommand, payCommand, balanceEditCommand, cooldownResetCommand];
+export const commands = [balanceCommand, depositCommand, withdrawCommand, richestCommand, crimeCommand, workCommand, begCommand, bailCommand, chinchiroCommand, slotCommand, blackjackCommand, blackjackEndCommand, heistCommand, shopCommand, useCommand, petCommand, stockCommand, lotteryCommand, estateCommand, cooldownsCommand, jobCommand, wantedCommand, arrestCommand, marketCommand, releaseCommand, payCommand, balanceEditCommand, cooldownResetCommand];
