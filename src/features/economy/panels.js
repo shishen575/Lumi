@@ -1,4 +1,4 @@
-import { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, ModalBuilder, TextInputBuilder, TextInputStyle, MessageFlags } from 'discord.js';
+import { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, UserSelectMenuBuilder, ModalBuilder, TextInputBuilder, TextInputStyle, MessageFlags } from 'discord.js';
 import { getKV, setKV } from '../../core/db.js';
 import { registerHiddenCommands, resyncGuildCommands } from '../../core/commands.js';
 import { getSettings, money } from './settings.js';
@@ -11,28 +11,29 @@ import { petsOpen, bonusLabel } from './pets.js';
 import { estateOf } from './estate.js';
 import { ITEMS as MARKET_ITEMS } from './market.js';
 import { COMPANIES, companyOf } from './stocks.js';
-import { crimeCommand, heistCommand, workCommand, begCommand, shopCommand, useCommand, estateCommand, marketCommand, petCommand, stockCommand } from './commands.js';
+import { arrestCommand, wantedCommand, crimeCommand, heistCommand, workCommand, begCommand, shopCommand, useCommand, estateCommand, marketCommand, petCommand, stockCommand } from './commands.js';
 
 /**
  * パネル: チャンネルに置く、ボタンつきのメッセージ。コマンドを打たなくても、ボタンで、犯罪・バイト・お店が使える。
  * 設置したサーバーでは、元のコマンドを廃止できる(そのサーバーのコマンド一覧から外れる)。設置は、ダッシュボードから。
  */
 export const PANELS = {
-  crime: { title: '犯罪パネル', commands: ['crime', 'heist'] },
+  crime: { title: '犯罪パネル', commands: ['crime', 'heist', 'arrest', 'wanted'], added: { arrest: 3, wanted: 3 } },
   work: { title: 'バイトパネル', commands: ['work', 'beg'] },
-  // お店パネルは、お店・不動産・闇市をまとめたもの(v2 から)。v1 のパネルは、お店だけだったので、廃止するコマンドも、お店だけ
-  shop: { title: 'お店パネル(お店・不動産・闇市)', commands: ['shop', 'use', 'estate', 'market'], v1: ['shop', 'use'] },
+  // お店パネルは、お店・不動産・闇市をまとめたもの(v2 から)
+  shop: { title: 'お店パネル(お店・不動産・闇市)', commands: ['shop', 'use', 'estate', 'market'], added: { estate: 2, market: 2 } },
   pet: { title: 'ペットパネル', commands: ['pet'] },
   stock: { title: '株パネル', commands: ['stock'] },
 };
-export const PANEL_VERSION = 2;
-/** そのパネルで、廃止しているコマンド: retire(名前の配列)があれば、それだけ。なければ(古い設定)、hide が true のとき、パネルの全部のコマンド */
+export const PANEL_VERSION = 3;
+// そのパネルが置かれた版(v)で、パネルに載っていたコマンドだけ(あとから載せたコマンドは、置き直すまで、廃止の対象にしない)
+const commandsOf = (kind, st) => PANELS[kind].commands.filter((n) => (PANELS[kind].added?.[n] ?? 0) <= (st?.v ?? 1));
+/** そのパネルで、廃止しているコマンド: retire(名前の配列)があれば、それだけ。なければ(古い設定)、hide が true のとき、パネルに載っている全部のコマンド */
 export const retiredOf = (kind, st) => {
   const base = commandsOf(kind, st);
-  if (Array.isArray(st?.retire)) return st.retire.filter((n) => base.includes(n));
+  if (Array.isArray(st?.retire)) return st.retire.filter((n) => PANELS[kind].commands.includes(n));
   return st?.hide ? base : [];
 };
-const commandsOf = (kind, st) => (st?.v >= 2 || !PANELS[kind].v1 ? PANELS[kind].commands : PANELS[kind].v1);
 const KEY = 'panels';
 export const panelState = (g) => getKV(g, KEY, {});
 const link = (g, st) => `https://discord.com/channels/${g}/${st.ch}/${st.msg}`;
@@ -50,7 +51,7 @@ registerHiddenCommands((g) => {
 /** コマンドの代わりに、ボタンの操作で、同じ処理を動かすための包み: i.options が、決まった値を返す */
 export const asCommand = (i, values = {}, sub = null) => {
   const get = (k) => values[k] ?? null, none = () => null; // ボタンでは、ユーザー・チャンネル・ロール・ファイルは、指定できない
-  const options = { getString: get, getInteger: get, getNumber: get, getBoolean: get, getUser: none, getMember: none, getChannel: none, getRole: none, getAttachment: none, getMentionable: none, getSubcommand: () => sub, getSubcommandGroup: none };
+  const options = { getString: get, getInteger: get, getNumber: get, getBoolean: get, getUser: get, getMember: none, getChannel: none, getRole: none, getAttachment: none, getMentionable: none, getSubcommand: () => sub, getSubcommandGroup: none };
   return new Proxy(i, { get(t, k) { if (k === 'options') return options; const v = t[k]; return typeof v === 'function' ? v.bind(t) : v; } });
 };
 
@@ -68,10 +69,11 @@ export function panelMessage(kind, g) {
   if (kind === 'crime') {
     const crimes = Object.keys(CRIMES).map((k) => ({ k, c: crimeOf(s, k) })), heists = Object.keys(HEISTS).map((k) => ({ k, T: heistOf(s, k) }));
     return {
-      embeds: [new EmbedBuilder().setColor(0xe74c3c).setTitle('🚨 犯罪パネル').setDescription('ボタンを押すと、その犯罪に挑戦します。成功すると大金、失敗すると罰金と留置場です。')
+      embeds: [new EmbedBuilder().setColor(0xe74c3c).setTitle('🚨 犯罪パネル').setDescription('ボタンを押すと、その犯罪に挑戦します。成功すると大金、失敗すると罰金と留置場です。\n警察のバイトを重ねた人は、「👮 逮捕する」で、指名手配中の人を逮捕できます(「📋 手配書」で、手配中の人を見られます)。')
         .addFields({ name: '犯罪', value: crimes.map(({ c }) => `${c.emoji} **${c.name}** — 成功 ${Math.round(c.chance * 100)}% ・ 報酬 ${range(c.win)}`).join('\n') },
           { name: '大型犯罪(ミニゲーム)', value: heists.map(({ T }) => `${T.emoji} **${T.short ?? T.name}** — 報酬 ${range(T.win)}`).join('\n') })],
-      components: [...rows(crimes.map(({ k, c }) => btn(`panel:crime:c:${k}`, c.name, c.emoji, ButtonStyle.Danger))), ...rows(heists.map(({ k, T }) => btn(`panel:crime:h:${k}`, T.short ?? T.name, T.emoji, ButtonStyle.Danger)))],
+      components: [...rows(crimes.map(({ k, c }) => btn(`panel:crime:c:${k}`, c.name, c.emoji, ButtonStyle.Danger))), ...rows(heists.map(({ k, T }) => btn(`panel:crime:h:${k}`, T.short ?? T.name, T.emoji, ButtonStyle.Danger))),
+        new ActionRowBuilder().addComponents(btn('panel:crime:arrest', '逮捕する', '👮', ButtonStyle.Primary), btn('panel:crime:wanted', '手配書', '📋'))],
     };
   }
   if (kind === 'work') {
@@ -173,7 +175,13 @@ export const panelComponent = {
     const [, kind, action, arg, arg2] = i.customId.split(':'), v0 = i.values?.[0], isModal = i.isModalSubmit?.();
     const say = (content, extra = {}) => i.reply({ content, ...EPH, ...extra });
     const s = getSettings(i.guildId);
-    if (kind === 'crime') return action === 'h' ? heistCommand.execute(asCommand(i, { target: arg })) : crimeCommand.execute(asCommand(i, { type: arg }));
+    if (kind === 'crime') {
+      if (action === 'h') return heistCommand.execute(asCommand(i, { target: arg }));
+      if (action === 'wanted') return wantedCommand.execute(asCommand(i, {}));
+      if (action === 'arrest') return say('逮捕する人を、選んでください。', { components: [new ActionRowBuilder().addComponents(new UserSelectMenuBuilder().setCustomId('panel:crime:arrestsel').setPlaceholder('逮捕する人を選ぶ').setMinValues(1).setMaxValues(1))] });
+      if (action === 'arrestsel') { const target = i.users?.first?.() ?? null; return target ? arrestCommand.execute(asCommand(i, { user: target })) : say('その人が、見つかりません。'); }
+      return crimeCommand.execute(asCommand(i, { type: arg }));
+    }
     if (kind === 'work') return action === 'beg' ? begCommand.execute(asCommand(i)) : workCommand.execute(asCommand(i, { job: arg }));
 
     if (kind === 'shop') {
