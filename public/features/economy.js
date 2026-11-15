@@ -363,15 +363,15 @@ Dash.registerTab({
             ${rows.map((r) => `<div class="card" data-k="${r.kind}"><div class="card-h"><h2>${info[r.kind][0]} ${esc(r.title)}</h2>${r.installed ? '<span class="badge">設置ずみ</span>' : ''}</div>
               <p class="hint" style="margin:0 0 10px">${info[r.kind][1]} 廃止できるコマンド: ${r.commands.map((c) => `<code>/${c}</code>`).join(' ')}</p>
               <div class="grid2"><div class="field"><label class="f">パネルを置くチャンネル</label><select class="p-ch"><option value="">選んでください</option>${chans.map((c) => `<option value="${c.id}" ${r.installed?.channel_id === c.id ? 'selected' : ''}>#${esc(c.name)}</option>`).join('')}</select></div></div>
-              <label class="sw"><input type="checkbox" class="p-hide" ${!r.installed || r.installed.hide ? 'checked' : ''}><i></i><span><b>元のコマンドを廃止する</b><small>オンにすると、このサーバーでは、${r.commands.map((c) => `<code>/${c}</code>`).join(' ')} が使えなくなります(パネルからだけ、使えます)。オフにすると、コマンドも残ります</small></span></label>
+              <div class="field" style="margin-top:8px"><label class="f">廃止するコマンド(チェックしたコマンドは、このサーバーで使えなくなり、パネルからだけ使えます)</label>${r.commands.map((cm) => `<label class="sw" style="margin:2px 0"><input type="checkbox" class="p-ret" data-c="${cm}" ${r.installed ? (r.installed.retire ?? []).includes(cm) : true ? 'checked' : ''}><i></i><span><b><code>/${cm}</code> を廃止する</b></span></label>`).join('')}<p class="hint" style="margin:4px 0 0">チェックを外したコマンドは、パネルを置いても、そのまま残ります。</p></div>
               <label class="sw"><input type="checkbox" class="p-sticky" ${!r.installed || r.installed.sticky ? 'checked' : ''}><i></i><span><b>いつも一番下に出す</b><small>チャンネルで誰かが話したり、ボタンの結果が出たりしたら、パネルを消して、一番下に出し直します(8秒静かになってから)</small></span></label>
               <div class="acts"><button class="btn p-set" type="button">${r.installed ? '置き直す(更新)' : 'パネルを置く'}</button>${r.installed ? `<a class="btn ghost" href="${esc(r.installed.link)}" target="_blank" rel="noopener">パネルを開く</a><button class="btn danger p-rm" type="button">撤去する</button>` : ''}</div></div>`).join('')}`;
           el.querySelectorAll('[data-k]').forEach((c) => {
             const kind = c.dataset.k, row = rows.find((x) => x.kind === kind);
             c.querySelector('.p-set').onclick = async () => {
-              const ch = c.querySelector('.p-ch').value, hide = c.querySelector('.p-hide').checked, sticky = c.querySelector('.p-sticky').checked; if (!ch) { toast('チャンネルを選んでください', 'err'); return; }
-              if (hide && !await confirm({ title: 'コマンドを廃止', message: `パネルを置くと、このサーバーでは、${row.commands.map((x) => '/' + x).join(' ')} が使えなくなります(パネルからだけ、使えます)。`, ok: '置く' })) return;
-              const r = await api(`/panels/${kind}`, { method: 'POST', body: { channel_id: ch, hide, sticky } }); toast('パネルを置きました'); draw(rows.map((x) => (x.kind === kind ? r : x)));
+              const ch = c.querySelector('.p-ch').value, retire = [...c.querySelectorAll('.p-ret:checked')].map((x) => x.dataset.c), sticky = c.querySelector('.p-sticky').checked; if (!ch) { toast('チャンネルを選んでください', 'err'); return; }
+              if (retire.length && !await confirm({ title: 'コマンドを廃止', message: `パネルを置くと、このサーバーでは、${retire.map((x) => '/' + x).join(' ')} が使えなくなります(パネルからだけ、使えます)。`, ok: '置く' })) return;
+              const r = await api(`/panels/${kind}`, { method: 'POST', body: { channel_id: ch, retire, sticky } }); toast('パネルを置きました'); draw(rows.map((x) => (x.kind === kind ? r : x)));
             };
             const rm = c.querySelector('.p-rm');
             if (rm) rm.onclick = async () => {
@@ -387,7 +387,7 @@ Dash.registerTab({
       async render(el, { api, channels: getChannels, esc, toast, confirm, pageHeader }) {
         const [cat, saved, chans] = await Promise.all([api('/command-catalog'), api('/custom-panels'), getChannels()]);
         const cmds = cat.commands.filter((c) => !c.unsupported), colors = { secondary: '灰色', primary: '青', success: '緑', danger: '赤' };
-        const blank = () => ({ id: null, title: '新しいパネル', description: '', ch: '', sticky: true, hide: false, buttons: [] });
+        const blank = () => ({ id: null, title: '新しいパネル', description: '', ch: '', sticky: true, retire: [], buttons: [] });
         let panels = [...saved.map((p) => JSON.parse(JSON.stringify(p))), blank()];
         const optsOf = (b) => { const c = cmds.find((x) => x.name === b.command); if (!c) return []; if (c.subs.length) return c.subs.find((x) => x.name === b.sub)?.options ?? []; return c.options; };
         const modeOf = (b, o) => (b.ask?.includes(o.name) ? 'ask' : (b.values && o.name in b.values) ? 'fixed' : 'skip');
@@ -413,13 +413,13 @@ Dash.registerTab({
                 <div class="field"><label class="f">置くチャンネル</label><select class="p-ch"><option value="">選んでください</option>${chans.map((c) => `<option value="${c.id}" ${p.ch === c.id ? 'selected' : ''}>#${esc(c.name)}</option>`).join('')}</select></div></div>
               <div class="field"><label class="f">説明(省略できる)</label><input class="p-desc" type="text" maxlength="1000" value="${esc(p.description)}"></div>
               <label class="sw"><input type="checkbox" class="p-sticky" ${p.sticky ? 'checked' : ''}><i></i><span><b>いつも一番下に出す</b><small>だれかが話したら、パネルを一番下に出し直します</small></span></label>
-              <label class="sw"><input type="checkbox" class="p-hide" ${p.hide ? 'checked' : ''}><i></i><span><b>元のコマンドを廃止する</b><small>ボタンで使っているコマンドを、このサーバーの一覧から外します</small></span></label>
+              ${(() => { const used = [...new Set(p.buttons.map((b) => b.command).filter((x) => x && x !== 'help'))]; return used.length ? `<div class="field" style="margin-top:8px"><label class="f">廃止するコマンド(ボタンで使っているコマンドから選びます。チェックしたものは、このサーバーで使えなくなり、パネルからだけ使えます。/help は、いつも残ります)</label>${used.map((cm) => `<label class="sw" style="margin:2px 0"><input type="checkbox" class="p-ret" data-c="${esc(cm)}" ${(p.retire ?? []).includes(cm) ? 'checked' : ''}><i></i><span><b><code>/${esc(cm)}</code> を廃止する</b></span></label>`).join('')}</div>` : ''; })()}
               <h3 style="margin:14px 0 8px">ボタン(最大${cat.maxButtons}個)</h3>${p.buttons.map((b, bi) => btnHtml(b, bi)).join('') || '<p class="hint">ボタンが、まだありません。</p>'}
               <div class="acts"><button class="btn ghost p-addb" type="button" ${p.buttons.length >= cat.maxButtons ? 'disabled' : ''}>ボタンを追加</button><button class="btn p-save" type="button">${p.id ? '更新する' : 'パネルを置く'}</button>${p.id ? `<a class="btn ghost" href="${esc(p.link)}" target="_blank" rel="noopener">パネルを開く</a><button class="btn danger p-del" type="button">撤去する</button>` : ''}</div></div>`).join('')}`;
           el.querySelectorAll('.card[data-pi]').forEach((card) => {
             const pi = Number(card.dataset.pi), p = panels[pi];
             const collect = () => {
-              p.title = card.querySelector('.p-title').value; p.ch = card.querySelector('.p-ch').value; p.description = card.querySelector('.p-desc').value; p.sticky = card.querySelector('.p-sticky').checked; p.hide = card.querySelector('.p-hide').checked;
+              p.title = card.querySelector('.p-title').value; p.ch = card.querySelector('.p-ch').value; p.description = card.querySelector('.p-desc').value; p.sticky = card.querySelector('.p-sticky').checked; p.retire = [...card.querySelectorAll('.p-ret:checked')].map((x) => x.dataset.c);
               p.buttons = [...card.querySelectorAll('[data-bi]')].map((bc, bi) => { const old = p.buttons[bi], b = { label: bc.querySelector('.b-label').value, emoji: bc.querySelector('.b-emoji').value, style: bc.querySelector('.b-style').value, command: bc.querySelector('.b-cmd').value, sub: bc.querySelector('.b-sub')?.value ?? '', values: {}, ask: [] };
                 if (b.command !== old.command) b.sub = ''; // コマンドを変えたら、項目は、選び直す
                 bc.querySelectorAll('[data-opt]').forEach((r) => { const m = r.querySelector('.o-mode').value, name = r.dataset.opt; if (m === 'ask') b.ask.push(name); else if (m === 'fixed') b.values[name] = r.querySelector('.o-val').value; });
@@ -431,8 +431,8 @@ Dash.registerTab({
             card.querySelectorAll('[data-rmb]').forEach((x) => (x.onclick = () => { collect(); p.buttons.splice(Number(x.dataset.rmb), 1); draw(); }));
             card.querySelector('.p-save').onclick = async () => {
               collect(); if (!p.ch) { toast('チャンネルを選んでください', 'err'); return; }
-              if (p.hide && !await confirm({ title: 'コマンドを廃止', message: `ボタンで使っているコマンド(${[...new Set(p.buttons.map((b) => '/' + b.command))].join(' ')})が、このサーバーでは、使えなくなります(ボタンからだけ、使えます)。`, ok: '置く' })) return;
-              const body = { title: p.title, description: p.description, channel_id: p.ch, sticky: p.sticky, hide: p.hide, buttons: p.buttons.map((b) => ({ label: b.label, emoji: b.emoji, style: b.style, command: b.command, sub: b.sub, modes: Object.fromEntries([...Object.keys(b.values).map((k) => [k, 'fixed']), ...b.ask.map((k) => [k, 'ask'])]), values: b.values })) };
+              if (p.retire.length && !await confirm({ title: 'コマンドを廃止', message: `廃止するコマンド(${p.retire.map((x) => '/' + x).join(' ')})が、このサーバーでは、使えなくなります(ボタンからだけ、使えます)。`, ok: '置く' })) return;
+              const body = { title: p.title, description: p.description, channel_id: p.ch, sticky: p.sticky, retire: p.retire, buttons: p.buttons.map((b) => ({ label: b.label, emoji: b.emoji, style: b.style, command: b.command, sub: b.sub, modes: Object.fromEntries([...Object.keys(b.values).map((k) => [k, 'fixed']), ...b.ask.map((k) => [k, 'ask'])]), values: b.values })) };
               const r = await api('/custom-panels/' + (p.id ?? 'new'), { method: 'PUT', body }); toast('パネルを置きました');
               panels[pi] = JSON.parse(JSON.stringify(r)); if (!p.id) panels.push(blank()); draw();
             };

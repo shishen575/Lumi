@@ -68,7 +68,9 @@ export function sanitizePanel(raw, catalog) {
   const buttons = [];
   for (const b of (Array.isArray(raw?.buttons) ? raw.buttons : []).slice(0, MAX_BUTTONS)) { const r = sanitizeButton(b, catalog); if (r.error) return { error: r.error }; buttons.push(r.button); }
   if (!buttons.length) return { error: 'ボタンを、1つ以上、作ってください' };
-  return { panel: { title: clean(raw?.title, 80) || 'パネル', description: clean(raw?.description, 1000), sticky: raw?.sticky !== false, hide: !!raw?.hide, buttons } };
+  const used = [...new Set(buttons.map((b) => b.command))].filter((n) => n !== 'help');
+  const retire = Array.isArray(raw?.retire) ? raw.retire.filter((n) => used.includes(n)) : (raw?.hide ? used : []); // 廃止するコマンド(ボタンで使っているものから、選ぶ。/help は、いつも残す)
+  return { panel: { title: clean(raw?.title, 80) || 'パネル', description: clean(raw?.description, 1000), sticky: raw?.sticky !== false, retire, hide: retire.length > 0, buttons } };
 }
 
 export function customMessage(panel, id) {
@@ -84,9 +86,10 @@ export function customMessage(panel, id) {
 // 廃止するコマンド(「廃止する」をオンにしたパネルで、使っているコマンド。/help は、いつも残す)
 registerHiddenCommands((g) => {
   const out = {};
-  for (const [id, p] of Object.entries(customPanels(g))) {
-    if (!p.hide || !p.msg) continue;
-    for (const b of p.buttons) if (b.command !== 'help') out[b.command] = `このサーバーでは、\`/${b.command}\` は廃止されました。パネル(https://discord.com/channels/${g}/${p.ch}/${p.msg})から使えます。`;
+  for (const p of Object.values(customPanels(g))) {
+    if (!p.msg) continue;
+    const used = [...new Set(p.buttons.map((b) => b.command))].filter((n) => n !== 'help');
+    for (const name of (Array.isArray(p.retire) ? p.retire.filter((n) => used.includes(n)) : (p.hide ? used : []))) out[name] = `このサーバーでは、\`/${name}\` は廃止されました。パネル(https://discord.com/channels/${g}/${p.ch}/${p.msg})から使えます。`;
   }
   return out;
 });

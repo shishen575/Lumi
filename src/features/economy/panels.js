@@ -26,6 +26,12 @@ export const PANELS = {
   stock: { title: '株パネル', commands: ['stock'] },
 };
 export const PANEL_VERSION = 2;
+/** そのパネルで、廃止しているコマンド: retire(名前の配列)があれば、それだけ。なければ(古い設定)、hide が true のとき、パネルの全部のコマンド */
+export const retiredOf = (kind, st) => {
+  const base = commandsOf(kind, st);
+  if (Array.isArray(st?.retire)) return st.retire.filter((n) => base.includes(n));
+  return st?.hide ? base : [];
+};
 const commandsOf = (kind, st) => (st?.v >= 2 || !PANELS[kind].v1 ? PANELS[kind].commands : PANELS[kind].v1);
 const KEY = 'panels';
 export const panelState = (g) => getKV(g, KEY, {});
@@ -35,8 +41,8 @@ const link = (g, st) => `https://discord.com/channels/${g}/${st.ch}/${st.msg}`;
 registerHiddenCommands((g) => {
   const out = {};
   for (const [kind, st] of Object.entries(panelState(g))) {
-    if (!st?.hide || !PANELS[kind]) continue;
-    for (const name of commandsOf(kind, st)) out[name] = `このサーバーでは、\`/${name}\` は廃止されました。パネル(${link(g, st)})から使えます。`;
+    if (!PANELS[kind]) continue;
+    for (const name of retiredOf(kind, st)) out[name] = `このサーバーでは、\`/${name}\` は廃止されました。パネル(${link(g, st)})から使えます。`;
   }
   return out;
 });
@@ -117,8 +123,9 @@ export function panelMessage(kind, g) {
   };
 }
 
+const retireList = (kind, v) => (v === true ? PANELS[kind].commands : Array.isArray(v) ? v.filter((n) => PANELS[kind].commands.includes(n)) : []);
 /** パネルを置く(すでにあれば、置き直す)。hide が true なら、元のコマンドを、このサーバーで廃止する */
-export async function installPanel(client, g, kind, channelId, hide, sticky = true) {
+export async function installPanel(client, g, kind, channelId, retire, sticky = true) { // retire: 廃止するコマンドの名前の配列(true なら、全部、false なら、なし)
   if (!PANELS[kind]) throw new Error('パネルの種類が不正です');
   const ch = client.channels.cache.get(channelId); if (!ch?.isTextBased?.() || ch.guildId !== g) throw new Error('チャンネルが不正です');
   const st = panelState(g), old = st[kind], payload = panelMessage(kind, g);
@@ -128,7 +135,7 @@ export async function installPanel(client, g, kind, channelId, hide, sticky = tr
     if (old?.msg && old.ch !== ch.id) await client.channels.cache.get(old.ch)?.messages.delete(old.msg).catch(() => {}); // 別のチャンネルにあった前のものは、消す
     msg = await ch.send({ ...payload, allowedMentions: { parse: [] } });
   }
-  setKV(g, KEY, { ...st, [kind]: { ch: ch.id, msg: msg.id, hide: !!hide, sticky: !!sticky, v: PANEL_VERSION, at: Date.now() } });
+  setKV(g, KEY, { ...st, [kind]: { ch: ch.id, msg: msg.id, retire: retireList(kind, retire), hide: retireList(kind, retire).length > 0, sticky: !!sticky, v: PANEL_VERSION, at: Date.now() } });
   await resyncGuildCommands(g);
   return panelState(g)[kind];
 }

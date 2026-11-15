@@ -9,7 +9,7 @@ import { POLICE_BONUS_CAP } from './wanted.js';
 import { SCHEMA, jobOf, wantedCfg, marketCfg } from './balance.js';
 import { FX_LABELS, SLOTS, MAX_SHOP_ITEMS, DEFAULT_SHOP, SHOP_MAX_STACK, shopById, shopItems } from './shop.js';
 import { COMPANIES, VOL_LABELS, VOL_LEVELS, DEFAULT_NAMES, DEFAULT_LEVELS, companyOf, DEFAULT_EVENTS, MAX_EVENTS } from './stocks.js';
-import { PANELS, panelState, installPanel, removePanel } from './panels.js';
+import { PANELS, panelState, installPanel, removePanel, retiredOf } from './panels.js';
 import { customPanels, saveCustomPanel, removeCustomPanel, MAX_CUSTOM, MAX_BUTTONS } from './custompanels.js';
 import { commandCatalog } from '../../core/commands.js';
 import { MAX_PETS, DEFAULT_PETS, PET_FX_KEYS, speciesOf } from './pets.js';
@@ -132,9 +132,9 @@ export function mountApi(router, client = null) {
     if (!adminOnly(req, res)) return;
     const kind = req.params.kind; if (!PANELS[kind]) return res.status(404).json({ error: 'パネルの種類が不正です' });
     const chId = String(req.body?.channel_id ?? ''); if (!ID.test(chId)) return res.status(400).json({ error: 'チャンネルを選んでください' });
-    try { await installPanel(client, req.guild.id, kind, chId, req.body?.hide !== false, req.body?.sticky !== false); }
+    try { await installPanel(client, req.guild.id, kind, chId, Array.isArray(req.body?.retire) ? req.body.retire : req.body?.hide !== false, req.body?.sticky !== false); }
     catch (e) { return res.status(400).json({ error: e.code === 50013 || e.code === 50001 ? 'そのチャンネルに、メッセージを送る権限がありません' : e.message }); }
-    audit(req.guild.id, req.actor, null, `${PANELS[kind].title}を設置`, null, `${req.body?.hide !== false ? 'コマンドを廃止' : 'コマンドは残す'}`);
+    audit(req.guild.id, req.actor, null, `${PANELS[kind].title}を設置`, null, (Array.isArray(req.body?.retire) ? (req.body.retire.length ? `廃止: ${req.body.retire.map((n) => '/' + n).join(' ')}` : 'コマンドは残す') : req.body?.hide !== false ? 'コマンドを廃止' : 'コマンドは残す'));
     res.json(panelView(req.guild.id, kind));
   });
   router.delete('/panels/:kind', async (req, res) => {
@@ -155,7 +155,7 @@ export function mountApi(router, client = null) {
   router.put('/custom-panels/:id', async (req, res) => {
     if (!adminOnly(req, res)) return;
     const id = req.params.id === 'new' ? null : req.params.id; if (id && !customPanels(req.guild.id)[id]) return res.status(404).json({ error: 'パネルが、ありません' });
-    try { const p = await saveCustomPanel(client, req.guild.id, id, req.body ?? {}, String(req.body?.channel_id ?? '')); audit(req.guild.id, req.actor, null, `カスタムパネルを${id ? '更新' : '設置'}(${p.title})`, null, `ボタン ${p.buttons.length}個${p.hide ? ' / コマンドを廃止' : ''}`); res.json(customView(req.guild.id).find((x) => x.id === p.id)); }
+    try { const p = await saveCustomPanel(client, req.guild.id, id, req.body ?? {}, String(req.body?.channel_id ?? '')); audit(req.guild.id, req.actor, null, `カスタムパネルを${id ? '更新' : '設置'}(${p.title})`, null, `ボタン ${p.buttons.length}個${p.retire?.length ? ` / 廃止: ${p.retire.map((n) => '/' + n).join(' ')}` : ''}`); res.json(customView(req.guild.id).find((x) => x.id === p.id)); }
     catch (e) { res.status(400).json({ error: e.code === 50013 || e.code === 50001 ? 'そのチャンネルに、メッセージを送る権限がありません' : e.message }); }
   });
   router.delete('/custom-panels/:id', async (req, res) => {
