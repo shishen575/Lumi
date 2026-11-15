@@ -2,6 +2,7 @@ import { SlashCommandBuilder, EmbedBuilder, MessageFlags } from 'discord.js';
 import { version } from '../../core/version.js';
 import { setupRestartNotice, getNotice, setNotice } from './restart-notice.js';
 import { latencySummary } from '../../core/latency.js';
+import { storageWarning } from '../../core/storage-check.js';
 import { healthSnapshot, measureRest } from '../../core/health.js';
 
 const GREEN = 0x57f287, YELLOW = 0xfee75c, RED = 0xed4245;
@@ -38,6 +39,7 @@ export const pingCommand = {
         ...(hist?.n >= 3 ? [{ name: '📈 直近1時間(1分ごとの記録)', value: `ゲートウェイ 平均 ${ms(hist.gwAvg)} / 最大 ${ms(hist.gwMax)}\nREST 平均 ${ms(hist.restAvg)} / 最大 ${ms(hist.restMax)}\nコマンドが届くまで 最大 ${ms(hist.arrivalMax)} ・ 応答できなかったコマンド ${hist.missed}回`, inline: false }] : []),
         { name: '🖥️ BOT', value: `稼働 ${up(process.uptime())} ・ メモリ ${Math.round(mem.rss / 1048576)}MB ・ ${i.client.guilds.cache.size}サーバー`, inline: false },
       );
+    const sw = storageWarning(); if (sw) embed.addFields({ name: '⚠️ データの保存', value: sw, inline: false }); // ボリュームがないと、再デプロイでデータが消える
     if (version) embed.setFooter({ text: `バージョン ${version}` });
     await i.editReply({ content: '', embeds: [embed] });
   },
