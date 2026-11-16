@@ -10,9 +10,10 @@ import { allItems, getPets, holding, peek } from './db.js';
 import { marketNow, unitPrice } from './stockmarket.js';
 import { petsOpen, bonusLabel } from './pets.js';
 import { estateOf } from './estate.js';
+import { lotteriesOf, roundOf, drawTimeOf } from './lottery.js';
 import { ITEMS as MARKET_ITEMS } from './market.js';
 import { COMPANIES, companyOf } from './stocks.js';
-import { arrestCommand, wantedCommand, bailCommand, crimeCommand, heistCommand, workCommand, begCommand, shopCommand, useCommand, estateCommand, marketCommand, petCommand, stockCommand, newsCommand, scandalCommand } from './commands.js';
+import { arrestCommand, wantedCommand, bailCommand, crimeCommand, heistCommand, workCommand, begCommand, shopCommand, useCommand, estateCommand, marketCommand, petCommand, stockCommand, newsCommand, scandalCommand, lotteryCommand } from './commands.js';
 
 /**
  * パネル: チャンネルに置く、ボタンつきのメッセージ。コマンドを打たなくても、ボタンで、犯罪・バイト・お店が使える。
@@ -25,6 +26,7 @@ export const PANELS = {
   shop: { title: 'お店パネル(お店・不動産・闇市)', commands: ['shop', 'use', 'estate', 'market'], added: { estate: 2, market: 2 } },
   pet: { title: 'ペットパネル', commands: ['pet'] },
   stock: { title: '株パネル', commands: ['stock', 'news', 'scandal'], added: { news: 4, scandal: 5 } },
+  lottery: { title: '宝くじパネル', commands: ['lottery'] }, // くじは、サーバーで複数作れるので、くじを選んでから、買う・調べる
 };
 export const PANEL_VERSION = 6;
 // そのパネルが置かれた版(v)で、パネルに載っていたコマンドだけ(あとから載せたコマンドは、置き直すまで、廃止の対象にしない)
@@ -113,6 +115,15 @@ export function panelMessage(kind, g) {
         .addFields({ name: '会社', value: COMPANIES.map((c0, n) => { const c = companyOf(s, c0); return `${n + 1}. ${c.emoji} **${c.ticker}** ${c.name}`; }).join('\n') })],
       components: [new ActionRowBuilder().addComponents(btn('panel:stock:list', '株価・持ち株', '📈'), btn('panel:stock:news', 'ニュース', '📰', ButtonStyle.Primary), btn('panel:stock:buy', '買う', '🛒', ButtonStyle.Success), btn('panel:stock:sell', '売る', '💰', ButtonStyle.Danger), btn('panel:stock:holders', '株主', '👥')),
         ...(s.scandalEnabled ? [new ActionRowBuilder().addComponents(btn('panel:stock:scandal', '不祥事を起こす', '🤫', ButtonStyle.Danger))] : [])],
+    };
+  }
+  if (kind === 'lottery') {
+    const list = lotteriesOf(s), now = Date.now();
+    return {
+      embeds: [new EmbedBuilder().setColor(0xf1c40f).setTitle('🎟️ 宝くじパネル').setDescription('くじは、いくつかあります。メニューで、買うくじを選んでから、枚数を選びます。')
+        .addFields({ name: 'くじ', value: list.map((L) => { const at = Math.floor(drawTimeOf(roundOf(now, L), L) / 1000); return `${L.emoji} **${L.name}** 1枚 ${M(L.price)} ・ ${L.digits}桁 ・ 次の抽選 <t:${at}:R>`; }).join('\n').slice(0, 1024) || '(くじが、ありません)' })],
+      components: [...(list.length ? [sel('panel:lottery:buy', '🎟️ くじを買う', list.map((L, n) => opt(`${L.emoji} ${L.name} ${L.price.toLocaleString()}`, String(n + 1), `${L.digits}桁 ・ 1人 ${L.maxTickets}枚まで`)))] : []),
+        new ActionRowBuilder().addComponents(btn('panel:lottery:info', 'くじの情報', 'ℹ️'), btn('panel:lottery:results', '抽選結果', '📜'))],
     };
   }
   // お店パネル(お店・不動産・闇市)
@@ -236,6 +247,30 @@ export const panelComponent = {
       return;
     }
 
+    if (kind === 'lottery') {
+      const list = lotteriesOf(s), pickMenu = (id, title, withAll) => say(title, { components: [selectRow(id, 'くじを選ぶ', [...(withAll ? [{ label: '全部のくじ(一覧)', value: '0' }] : []), ...list.map((L, n) => ({ label: `${L.emoji} ${L.name}`.slice(0, 100), value: String(n + 1) }))])] });
+      if (action === 'info') return pickMenu('panel:lottery:infosel', 'どのくじの情報を、見ますか?', true);
+      if (action === 'results') return pickMenu('panel:lottery:resultssel', 'どのくじの抽選結果を、見ますか?', false);
+      if (action === 'infosel') return lotteryCommand.execute(asCommand(i, { lottery: Number(v0) || null }, 'info'));
+      if (action === 'resultssel') return lotteryCommand.execute(asCommand(i, { lottery: Number(v0) }, 'results'));
+      if (action === 'buy') { // くじを選んだ → 枚数を選ぶ
+        const L = list[Number(v0) - 1]; if (!L) return say('そのくじは、もうありません。パネルが古くなっています。');
+        return i.update({ content: `${L.emoji} ${L.name}(1枚 ${money(s, L.price)})を、何枚買いますか?`, components: [selectRow(`panel:lottery:amt:${v0}`, '枚数を選ぶ', [...[1, 5, 10, 50, 100].filter((n) => n <= L.maxTickets).map((n) => ({ label: `${n}枚`, value: String(n) })), { label: '枚数と番号を、入力する…', value: 'custom' }])] });
+      }
+      if (action === 'amt') {
+        if (v0 === 'custom') return i.showModal(new ModalBuilder().setCustomId(`panel:lottery:m:${arg}`).setTitle('くじを買う').addComponents(
+          new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('count').setLabel('枚数').setStyle(TextInputStyle.Short).setRequired(true).setMaxLength(6).setPlaceholder('1')),
+          new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('number').setLabel('番号(空欄で、ランダム)').setStyle(TextInputStyle.Short).setRequired(false).setMaxLength(6).setPlaceholder('例: 123'))));
+        return lotteryCommand.execute(asCommand(i, { lottery: Number(arg), count: Number(v0) }, 'buy'));
+      }
+      if (action === 'm') { // 入力欄の送信
+        const toN = (x) => { const n = Math.floor(Number(String(x ?? '').normalize('NFKC').replace(/[,\s]/g, ''))); return Number.isFinite(n) ? n : null; };
+        const count = toN(i.fields.getTextInputValue('count')), raw = String(i.fields.getTextInputValue('number') ?? '').trim(), number = raw === '' ? null : toN(raw);
+        if (!count || count < 1) return say('枚数は、1以上の数字で入れてください。'); if (raw !== '' && number === null) return say('番号は、数字で入れてください。');
+        return lotteryCommand.execute(asCommand(i, { lottery: Number(arg), count, number }, 'buy'));
+      }
+      return;
+    }
     if (kind === 'stock') {
       const names = COMPANIES.map((c0) => { const c = companyOf(s, c0); return `${c.emoji} ${c.ticker} ${c.name}`; });
       if (action === 'list') return stockCommand.execute(asCommand(i, {}, 'list'));

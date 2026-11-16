@@ -368,7 +368,7 @@ Dash.registerTab({
     /* ===== パネル(ボタンつきのメッセージ。置くと、元のコマンドを廃止できる) ===== */
     { id: 'panels', title: 'パネル', icon: 'list',
       async render(el, { api, channels: getChannels, esc, toast, confirm, pageHeader }) {
-        const info = { crime: ['🚨', '犯罪・大型犯罪のボタンが並びます。押すと、その犯罪に挑戦します。'], work: ['💼', 'バイトと乞食のボタンが並びます。押すと、バイトをして、給料をもらいます。'], shop: ['🏪', 'お店・不動産・闇市を、まとめたパネルです。買うメニューと、「一覧」「使う」「家賃を受け取る」などのボタンが並びます。'], pet: ['🐾', 'ペットを飼うメニューと、「ようす」「餌」「遊ぶ」「名前」「手放す」のボタンが並びます。'], stock: ['📈', '「株価・持ち株」「ニュース」「買う」「売る」「株主」のボタンが並びます。株数は、プルダウンか入力欄で決めます。「不祥事を起こす」は、「株」の設定で不祥事をオンにしているときだけ、出ます。'] };
+        const info = { crime: ['🚨', '犯罪・大型犯罪のボタンが並びます。押すと、その犯罪に挑戦します。'], work: ['💼', 'バイトと乞食のボタンが並びます。押すと、バイトをして、給料をもらいます。'], shop: ['🏪', 'お店・不動産・闇市を、まとめたパネルです。買うメニューと、「一覧」「使う」「家賃を受け取る」などのボタンが並びます。'], pet: ['🐾', 'ペットを飼うメニューと、「ようす」「餌」「遊ぶ」「名前」「手放す」のボタンが並びます。'], lottery: ['🎟️', 'くじを選ぶメニュー(買う)と、「くじの情報」「抽選結果」のボタンが並びます。くじが複数あっても、選んでから、枚数を決められます。'], stock: ['📈', '「株価・持ち株」「ニュース」「買う」「売る」「株主」のボタンが並びます。株数は、プルダウンか入力欄で決めます。「不祥事を起こす」は、「株」の設定で不祥事をオンにしているときだけ、出ます。'] };
         const [list, chans, cats0] = await Promise.all([api('/panels'), getChannels(), api('/cat-panels')]);
         let cats = cats0;
         const draw = (rows) => {
@@ -380,7 +380,7 @@ Dash.registerTab({
               <label class="sw"><input type="checkbox" class="p-sticky" ${!r.installed || r.installed.sticky ? 'checked' : ''}><i></i><span><b>いつも一番下に出す</b><small>チャンネルで誰かが話したり、ボタンの結果が出たりしたら、パネルを消して、一番下に出し直します(8秒静かになってから)</small></span></label>
               <div class="acts"><button class="btn p-set" type="button">${r.installed ? '置き直す(更新)' : 'パネルを置く'}</button>${r.installed ? `<a class="btn ghost" href="${esc(r.installed.link)}" target="_blank" rel="noopener">パネルを開く</a><button class="btn danger p-rm" type="button">撤去する</button>` : ''}</div></div>`).join('')}
             <h2 class="sec" style="margin:18px 0 8px">カテゴリーパネル(そのほかのコマンド)</h2>
-            <p class="hint" style="margin:0 0 8px">犯罪・バイト・お店・ペット・株は、上の専用パネルが使えます。ここは、そのほかのカテゴリー(お金・宝くじ・ギャンブル・管理者向けなど)を、1つずつ、独立したパネルにします。ボタンを押すと、必要なこと(選択肢・ユーザー・数字)を聞かれて、コマンドが動きます。</p>
+            <p class="hint" style="margin:0 0 8px">犯罪・バイト・お店・ペット・株・宝くじは、上の専用パネルが使えます。ここは、そのほかのカテゴリー(お金・宝くじ・ギャンブル・管理者向けなど)を、1つずつ、独立したパネルにします。ボタンを押すと、必要なこと(選択肢・ユーザー・数字)を聞かれて、コマンドが動きます。</p>
             ${cats.map((c) => `<div class="card" data-cat="${esc(c.id)}"><div class="card-h"><h2>${esc(c.emoji)} ${esc(c.title)}パネル</h2>${c.installed ? '<span class="badge">設置ずみ</span>' : ''}</div>
               <p class="hint" style="margin:0 0 10px">ボタン ${c.buttons}個: ${c.commands.map((n) => `<code>/${esc(n)}</code>`).join(' ')}</p>
               <div class="field"><label class="f">パネルを置くチャンネル</label><select class="c-ch"><option value="">選んでください</option>${chans.map((x) => `<option value="${x.id}" ${c.installed?.channel_id === x.id ? 'selected' : ''}>#${esc(x.name)}</option>`).join('')}</select></div>
