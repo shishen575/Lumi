@@ -717,7 +717,7 @@ export const cooldownsCommand = {
       { name: '🙏 乞食', value: line('乞食', cooldownLeft(g, u, 'beg')) },
       { name: '🏦 大型犯罪', value: Object.values(HEISTS).map((T) => line(`${T.emoji} ${T.short}`, cooldownLeft(g, u, heistKey(T.id)))).join('\n') },
     ];
-    if (s.petsEnabled && getPets(g, u).length) fields.push({ name: '🐾 ペット', value: getPets(g, u).slice(0, 8).map((p, n) => `${n + 1}. ${line('🍖 餌', cooldownLeft(g, u, `pet:feed:${p.id}`))} ・ ${line('🎾 遊び', cooldownLeft(g, u, `pet:play:${p.id}`))}`).join('\n') });
+    if (s.petsEnabled && getPets(g, u).length) fields.push({ name: '🐾 ペット', value: getPets(g, u).slice(0, 8).map((p, n) => `**${n + 1}. ${p.name}**\n${line('🍖 餌', cooldownLeft(g, u, `pet:feed:${p.id}`))}\n${line('🎾 遊び', cooldownLeft(g, u, `pet:play:${p.id}`))}`).join('\n').slice(0, 1024) }); // ペットごとに、名前の行と、餌・遊びの行を、分ける(横に並べると、途中で折り返して、読みにくい)
     if (s.wantedEnabled) {
       const wc = wantedCfg(s), heat = getHeat(g, u, s.wantedDecayMin), n = starsOf(heat, wc.heatPerStar);
       fields.push({ name: '👮 指名手配', value: `${line('逮捕(/arrest)', cooldownLeft(g, u, 'arrest'))}\n${n ? `${starText(n)} あなたは **指名手配 Lv${n}** です(手配度 ${heat})` : `手配されていません(手配度 ${heat})`}` });
