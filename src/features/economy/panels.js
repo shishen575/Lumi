@@ -76,6 +76,13 @@ const btn = (id, label, emoji, style = ButtonStyle.Secondary) => {
 };
 const rows = (buttons) => { const out = []; for (let n = 0; n < buttons.length; n += 5) out.push(new ActionRowBuilder().addComponents(buttons.slice(n, n + 5))); return out; };
 
+/** 一覧(1つずつの文の配列)を、Discordの欄の上限(1024文字)に収まるように、いくつかの欄に分ける(途中で切れないように)。1つの文が長くても、そのまま1つにまとめる */
+const chunkFields = (name, entries, limit = 1000) => {
+  const out = []; let cur = '';
+  for (const e of entries) { if (cur && cur.length + e.length + 1 > limit) { out.push(cur); cur = ''; } cur += (cur ? '\n' : '') + e; }
+  if (cur) out.push(cur);
+  return (out.length ? out : ['(ありません)']).map((v, n) => ({ name: n === 0 ? name : `${name}(続き)`, value: v.slice(0, 1024) }));
+};
 /** パネルのメッセージ(埋め込み + ボタン)を作る。品や数字は、いまのサーバーの設定を反映する */
 export function panelMessage(kind, g) {
   const s = getSettings(g), M = (n) => money(s, n);
@@ -104,7 +111,7 @@ export function panelMessage(kind, g) {
     const list = petsOpen(s), pc = petCfg(s);
     return {
       embeds: [new EmbedBuilder().setColor(0xe67e22).setTitle('🐾 ペットパネル').setDescription(`下のメニューで、ペットを飼えます(最初は ${pc.baseSlots}匹まで。不動産を買うと増えます)。育てると、ボーナスがつきます。`)
-        .addFields({ name: '飼える動物', value: list.map((x) => `${x.emoji} **${x.name}** ${M(x.price)} ・ ${x.foodEmoji}${x.foodName} ${M(x.feedCost)}\n-# ${bonusLabel(x, pc.power)} / レベル`).join('\n').slice(0, 1024) || '(いません)' })],
+        .addFields(...chunkFields('飼える動物', list.map((x) => `${x.emoji} **${x.name}** ${M(x.price)} ・ ${x.foodEmoji}${x.foodName} ${M(x.feedCost)}\n-# ${bonusLabel(x, pc.power)} / レベル`)))],
       components: [...(list.length ? [sel('panel:pet:adopt', '🐾 ペットを飼う', list.map((x) => ({ ...opt(`${x.emoji} ${x.name} ${x.price.toLocaleString()}`, x.id, `${bonusLabel(x, pc.power)} / レベル`) })))] : []),
         new ActionRowBuilder().addComponents(btn('panel:pet:status', 'ようす', '🐾'), btn('panel:pet:feed', '餌', '🍖', ButtonStyle.Primary), btn('panel:pet:play', '遊ぶ', '🎾', ButtonStyle.Primary), btn('panel:pet:rename', '名前', '✏️'), btn('panel:pet:release', '手放す', '👋', ButtonStyle.Danger))],
     };
@@ -121,7 +128,7 @@ export function panelMessage(kind, g) {
     const list = lotteriesOf(s), now = Date.now();
     return {
       embeds: [new EmbedBuilder().setColor(0xf1c40f).setTitle('🎟️ 宝くじパネル').setDescription('くじは、いくつかあります。メニューで、買うくじを選んでから、枚数を選びます。')
-        .addFields({ name: 'くじ', value: list.map((L) => { const at = Math.floor(drawTimeOf(roundOf(now, L), L) / 1000); return `${L.emoji} **${L.name}** 1枚 ${M(L.price)} ・ ${L.digits}桁 ・ 次の抽選 <t:${at}:R>`; }).join('\n').slice(0, 1024) || '(くじが、ありません)' })],
+        .addFields(...chunkFields('くじ', list.map((L) => { const at = Math.floor(drawTimeOf(roundOf(now, L), L) / 1000); return `${L.emoji} **${L.name}** 1枚 ${M(L.price)} ・ ${L.digits}桁 ・ 次の抽選 <t:${at}:R>`; })))],
       components: [...(list.length ? [sel('panel:lottery:buy', '🎟️ くじを買う', list.map((L, n) => opt(`${L.emoji} ${L.name} ${L.price.toLocaleString()}`, String(n + 1), `${L.digits}桁 ・ 1人 ${L.maxTickets}枚まで`)))] : []),
         new ActionRowBuilder().addComponents(btn('panel:lottery:info', 'くじの情報', 'ℹ️'), btn('panel:lottery:results', '抽選結果', '📜'))],
     };
@@ -129,15 +136,15 @@ export function panelMessage(kind, g) {
   // お店パネル(お店・不動産・闇市)
   const items = shopItems(s), props = estateOf(s), fields = [], comps = [];
   if (s.shopEnabled && items.length) {
-    fields.push({ name: '🏪 お店', value: items.map((it) => `${it.emoji} **${it.name}** ${M(it.price)} ・ ${it.minutes}分\n-# ${itemText(it)}`).join('\n').slice(0, 1024) });
+    fields.push(...chunkFields('🏪 お店', items.map((it) => `${it.emoji} **${it.name}** ${M(it.price)} ・ ${it.minutes}分\n-# ${itemText(it)}`)));
     comps.push(sel('panel:shop:buy', '🏪 お店の品を買う', items.map((it) => opt(`${it.emoji} ${it.name} ${it.price.toLocaleString()}`, it.id, itemText(it)))));
   }
   if (s.estateEnabled && props.length) {
-    fields.push({ name: '🏢 不動産', value: props.map((p) => `${p.emoji} **${p.name}** ${M(p.price)} ・ 家賃 ${M(p.rent)}/時 − 維持費 ${M(p.upkeep)}`).join('\n').slice(0, 1024) });
+    fields.push(...chunkFields('🏢 不動産', props.map((p) => `${p.emoji} **${p.name}** ${M(p.price)} ・ 家賃 ${M(p.rent)}/時 − 維持費 ${M(p.upkeep)}`)));
     comps.push(sel('panel:shop:estate', '🏢 不動産を買う', props.map((p) => opt(`${p.emoji} ${p.name} ${p.price.toLocaleString()}`, p.id, `家賃 ${p.rent}/時 − 維持費 ${p.upkeep} ・ 最大 ${p.maxOwn}件`))));
   }
   if (s.blackMarket) {
-    fields.push({ name: '🕶️ 闇市', value: MARKET_ITEMS.map((x) => `${x.emoji} **${x.name}** — ${x.desc}`).join('\n').slice(0, 1024) + '\n-# 値段は、毎日少し変わります(「闇市の相場」で確認)' });
+    fields.push(...chunkFields('🕶️ 闇市', [...MARKET_ITEMS.map((x) => `${x.emoji} **${x.name}** — ${x.desc}`), '-# 値段は、毎日少し変わります(「闇市の相場」で確認)']));
     comps.push(sel('panel:shop:market', '🕶️ 闇市で道具を買う', MARKET_ITEMS.map((x) => opt(`${x.emoji} ${x.name}`, x.id, x.desc))));
   }
   const ctl = [btn('panel:shop:list', 'お店の一覧', '📋'), btn('panel:shop:use', '使う', '🎒', ButtonStyle.Success)];
