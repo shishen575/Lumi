@@ -21,6 +21,7 @@ export function decorateReply(i, p) {
     for (const e of p.embeds) {
       const d = e?.data ?? e; if (!d) continue;
       if (!d.author) d.author = { name: String(name).slice(0, 256), icon_url: i.user.displayAvatarURL?.() };
+      if ((d.fields ?? []).some((f) => f.name === '銀行')) continue; // 残高の表示(手持ち・銀行・合計)は、すでに残高が主役なので、下には足さない
       const text = d.footer?.text ?? '';
       if (!/所持金|手持ち|残高/.test(text)) d.footer = { ...(d.footer ?? {}), text: (text ? `${text} ・ ` : '') + bal };
       else if (/所持金/.test(text) && !/銀行/.test(text)) d.footer = { ...d.footer, text: text.replace(/所持金[^・]*/, bal) };
