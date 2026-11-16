@@ -3,7 +3,7 @@ import { commands, richestButton, blackjackButton, heistButton, ramenButton, res
 import { mountApi } from './api.js';
 import { panelComponent, panelStickItems } from './panels.js';
 import { customComponent, customStickItems } from './custompanels.js';
-import { hubComponent, catStickItems } from './hub.js';
+import { hubComponent, catStickItems, migrateCatPanels } from './hub.js';
 import { crimeHelp, jobHelp, lifeHelp } from './help.js';
 import { settleAll } from './lotteryengine.js';
 import { boardTick, stockStickItem } from './stockboard.js';
@@ -49,6 +49,7 @@ export default {
     // 株価グラフ・値段表のチャンネルで、誰かが話したら、ボードを一番下に出し直す
     client.on(Events.MessageCreate, stickChannels(client, (g) => [priceStickItem(client), stockStickItem(client), ...panelStickItems(client), ...catStickItems(client, g), ...customStickItems(client, g)]));
     client.once(Events.ClientReady, () => {
+      setTimeout(() => migrateCatPanels(client), 15_000).unref?.(); // コマンドの登録が、おちついてから
       holdHeistSweep(30_000); setInterval(() => resolveExpiredHeists(client), 15_000).unref?.();
       // 宝くじ: 1分ごとに、抽選の時刻を過ぎた回を、抽選して、発表する(起動直後にも1回。止まっていた間の分)
       settleAll(client); setInterval(() => settleAll(client), 60_000).unref?.();

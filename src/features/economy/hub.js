@@ -105,6 +105,13 @@ export async function removeCatPanel(client, g, id) {
   await client.channels.cache.get(old.ch)?.messages.delete(old.msg).catch(() => {});
   delete all[id]; setKV(g, KEY, all); await resyncGuildCommands(g); return true;
 }
+/** 専用のパネルができたカテゴリー(宝くじなど)の、古いカテゴリーパネルを、自動で撤去する(ダッシュボードの一覧から消えて、外せなくなるため)。メッセージも、消す */
+export async function migrateCatPanels(client) {
+  for (const g of client.guilds.cache.keys()) {
+    try { for (const id of Object.keys(catPanels(g)).filter((x) => BUILTIN_CATEGORIES.has(x))) { await removeCatPanel(client, g, id); console.log(`[panels] ${g}: 古いカテゴリーパネル(${id})を撤去しました(専用のパネルがあります)`); } }
+    catch (e) { console.warn(`[panels] 古いカテゴリーパネルの撤去に失敗 (${g}): ${e.message}`); }
+  }
+}
 /** 「一番下に出す」の対象(サーバーごと) */
 export const catStickItems = (client, g) => Object.keys(catPanels(g)).filter((id) => catById(id)).map((id, n) => ({ kind: `cat:${id}`, prio: 150 + n,
   state: (gg) => { const st = catPanels(gg)[id]; return st?.msg && st.sticky !== false ? { ch: st.ch, msg: st.msg } : null; },
