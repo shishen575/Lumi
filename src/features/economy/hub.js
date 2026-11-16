@@ -1,7 +1,7 @@
 import { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, UserSelectMenuBuilder, ModalBuilder, TextInputBuilder, TextInputStyle, MessageFlags } from 'discord.js';
 import { getKV, setKV } from '../../core/db.js';
 import { commandCatalog, commandCategories, findCommand, registerHiddenCommands, registerHelpExtras, resyncGuildCommands } from '../../core/commands.js';
-import { asCommand } from './panels.js';
+import { asCommand, closePrompt } from './panels.js';
 import { schemaOf, parseValue } from './custompanels.js';
 
 /**
@@ -132,7 +132,7 @@ export const catStickItems = (client, g) => Object.keys(catPanels(g)).filter((id
 export const hubComponent = {
   id: 'hub',
   async execute(i) {
-    if (i.customId === 'hub:cancel') return i.update({ content: 'キャンセルしました。', components: [], embeds: [] });
+    if (i.customId === 'hub:cancel') return closePrompt(i);
     const cancel = () => new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('hub:cancel').setLabel('キャンセル').setEmoji('❌').setStyle(ButtonStyle.Secondary));
     const [, kind, name, sub = '', kS = '', acc = ''] = i.customId.split(':'), say = (content, extra = {}) => i.reply({ content, ...EPH, ...extra });
     const cmd = findCommand(name), st = stepsOf(name, sub); if (!cmd || !st) return say(`/${name} は、もう使えません。`);

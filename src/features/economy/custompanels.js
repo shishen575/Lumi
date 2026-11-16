@@ -1,7 +1,7 @@
 import { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle, StringSelectMenuBuilder, MessageFlags } from 'discord.js';
 import { getKV, setKV } from '../../core/db.js';
 import { commandCatalog, findCommand, registerHiddenCommands, registerHelpExtras, resyncGuildCommands } from '../../core/commands.js';
-import { asCommand } from './panels.js';
+import { asCommand, closePrompt } from './panels.js';
 
 /**
  * カスタムパネル: どんなコマンドでも、ボタンにして、チャンネルに置ける。
@@ -170,7 +170,7 @@ export const customStickItems = (client, g) => Object.entries(customPanels(g)).m
 export const customComponent = {
   id: 'cpanel',
   async execute(i) {
-    if (i.customId === 'cpanel:cancel') return i.update({ content: 'キャンセルしました。', components: [], embeds: [] });
+    if (i.customId === 'cpanel:cancel') return closePrompt(i);
     const [, pid, idxS, step = '', acc = ''] = i.customId.split(':'), say = (content) => i.reply({ content, flags: MessageFlags.Ephemeral });
     const p = customPanels(i.guildId)[pid], b = p?.buttons?.[Number(idxS)]; if (!b) return say('このボタンは、もう使えません。パネルが古くなっています(管理者が、置き直せます)。');
     const cmd = findCommand(b.command), json = commandCatalog().find((c) => c.name === b.command); if (!cmd || !json) return say(`/${b.command} は、もう使えません。`);

@@ -193,12 +193,17 @@ const modal = (id, title, label, placeholder, required = true) => new ModalBuild
   new TextInputBuilder().setCustomId('v').setLabel(label).setStyle(TextInputStyle.Short).setRequired(required).setMaxLength(20).setPlaceholder(placeholder)));
 const intOf = (i) => { const n = Math.floor(Number(String(i.fields.getTextInputValue('v') ?? '').normalize('NFKC').replace(/[,\s]/g, ''))); return Number.isFinite(n) ? n : null; };
 const selectRow = (id, placeholder, options) => new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId(id).setPlaceholder(placeholder).addOptions(options.slice(0, 25)));
+/** 選ぶ途中の画面(自分にだけ見えるメッセージ)を、閉じる: メッセージごと、消す。消せないときだけ、「キャンセルしました」と書き換える */
+export const closePrompt = async (i) => {
+  try { await i.deferUpdate(); await i.deleteReply(); }
+  catch { try { await i.editReply({ content: 'キャンセルしました。', components: [], embeds: [] }); } catch { /* もう、閉じられている */ } }
+};
 const cancelRow = () => new ActionRowBuilder().addComponents(btn('panel:cancel', 'キャンセル', '❌'));
 export const panelComponent = {
   id: 'panel',
   async execute(i) {
     const [, kind, action, arg, arg2] = i.customId.split(':'), v0 = i.values?.[0], isModal = i.isModalSubmit?.();
-    if (kind === 'cancel') return i.update({ content: 'キャンセルしました。', components: [], embeds: [] }); // 選ぶ途中の画面を、閉じる
+    if (kind === 'cancel') return closePrompt(i); // 選ぶ途中の画面を、閉じる(メッセージごと、消す)
     const say = (content, extra = {}) => i.reply({ content, ...EPH, ...extra, ...(extra.components ? { components: [...extra.components, cancelRow()] } : {}) }); // 選ぶ画面には、キャンセルをつける
     const s = getSettings(i.guildId);
     if (kind === 'crime') {
@@ -257,7 +262,8 @@ export const panelComponent = {
       if (action === 'resultssel') return lotteryCommand.execute(asCommand(i, { lottery: Number(v0) }, 'results'));
       if (action === 'buy') { // くじを選んだ → 枚数を選ぶ
         const L = list[Number(v0) - 1]; if (!L) return say('そのくじは、もうありません。パネルが古くなっています。');
-        return i.update({ content: `${L.emoji} ${L.name}(1枚 ${money(s, L.price)})を、何枚買いますか?`, components: [selectRow(`panel:lottery:amt:${v0}`, '枚数を選ぶ', [...[1, 5, 10, 50, 100].filter((n) => n <= L.maxTickets).map((n) => ({ label: `${n}枚(番号は、ランダム)`, value: String(n) })), { label: '連番で買う…(開始番号と枚数)', value: 'seq' }, { label: '番号を決めて買う…(いくつでも)', value: 'custom' }]), cancelRow()] });
+        return i.reply({ ...EPH, content: `${L.emoji} ${L.name}(1枚 ${money(s, L.price)})を、何枚買いますか?`, // パネル(みんなに見える)は、そのままにして、自分にだけ見える画面を、別に出す
+           components: [selectRow(`panel:lottery:amt:${v0}`, '枚数を選ぶ', [...[1, 5, 10, 50, 100].filter((n) => n <= L.maxTickets).map((n) => ({ label: `${n}枚(番号は、ランダム)`, value: String(n) })), { label: '連番で買う…(開始番号と枚数)', value: 'seq' }, { label: '番号を決めて買う…(いくつでも)', value: 'custom' }]), cancelRow()] });
       }
       if (action === 'amt') {
         if (v0 === 'custom') return i.showModal(new ModalBuilder().setCustomId(`panel:lottery:m:${arg}`).setTitle('くじを買う').addComponents(
