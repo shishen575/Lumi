@@ -93,6 +93,7 @@ async function renderTop(i, metric, page) {
     `${MEDAL[r.rk] ?? `**${r.rk}位**`} <@${r.user_id}> — ${val(r.v)}`);
   const mine = position(gid, metric, i.user.id);
   const embed = new EmbedBuilder()
+    .setAuthor({ name: i.member?.displayName ?? i.user.globalName ?? i.user.username, iconURL: i.user.displayAvatarURL?.() }) // 実行した人の名前
     .setColor(0x6d5dfc)
     .setTitle(`🏆 ${METRICS[metric]}ランキング`)
     .setDescription(lines.join('\n') || 'まだデータがありません')
@@ -175,6 +176,7 @@ export const rolesCommand = {
       fields.push({ name: fields.some((f) => f.metric === metric) ? '\u200b' : `${METRICS[metric]}(あなた: ${fmt(metric, v)})`, value: chunk, metric });
     }
     const embed = new EmbedBuilder()
+      .setAuthor({ name: i.member?.displayName ?? i.user.globalName ?? i.user.username, iconURL: i.user.displayAvatarURL?.() }) // 実行した人の名前
       .setColor(0x6d5dfc)
       .setTitle('取れるロールと昇格の条件')
       .setDescription('✅ 達成済み  ▶ 次の目標  ▫ これから')
