@@ -1004,6 +1004,16 @@ export const scandalCommand = {
 
 /* ================= 宝くじ(サーバーごとに、自由に、複数のくじを作れる) ================= */
 const lotteryOff = (i) => refuse(i, 'このサーバーでは、宝くじはオフです。管理者が、ダッシュボードの「通貨 → お店・ペット・株など」でオンにできます。');
+/** 番号の文字から、番号の一覧を作る。「123, 456」は、そのまま。「100-110」(-・~・〜)は、連番(100〜110)。{ list } か { error } */
+export function parseLotteryNumbers(str, cap) {
+  const text = String(str ?? '').normalize('NFKC'), re = /(\d+)\s*[-~〜]\s*(\d+)|(\d+)/g, out = []; let m;
+  while ((m = re.exec(text))) {
+    if (m[3] !== undefined) out.push(Number(m[3]));
+    else { const a = Number(m[1]), b = Number(m[2]); if (b < a) return { error: `「${m[0]}」は、小さい番号から、大きい番号の順に書いてください。` }; if (b - a + 1 > cap) return { error: `連番は、${cap}枚までです。(「${m[0]}」は、${b - a + 1}枚)` }; for (let n = a; n <= b; n++) out.push(n); }
+    if (out.length > cap) return { error: `1回に買えるのは、最大 ${cap}枚までです。` };
+  }
+  return { list: out };
+}
 export const lotteryCommand = {
   data: guildOnly(new SlashCommandBuilder().setName('lottery').setDescription('宝くじ(番号を選んで買います。決まった時刻に、自動で抽選します)')
     .addSubcommand((c) => c.setName('info').setDescription('くじの一覧、または、1つのくじの詳しい情報(次の抽選・ジャックポット・自分のくじ)')
@@ -1011,7 +1021,8 @@ export const lotteryCommand = {
     .addSubcommand((c) => c.setName('buy').setDescription('くじを買います')
       .addIntegerOption((o) => o.setName('lottery').setDescription('くじの番号(/lottery info の番号。省略すると 1)').setMinValue(1).setMaxValue(MAX_LOTTERIES))
       .addIntegerOption((o) => o.setName('count').setDescription('枚数(省略すると1枚)').setMinValue(1).setMaxValue(100))
-      .addIntegerOption((o) => o.setName('number').setDescription('番号(省略すると、ランダム。指定すると、その番号を枚数ぶん買います)').setMinValue(0).setMaxValue(9999)))
+      .addIntegerOption((o) => o.setName('number').setDescription('番号(省略すると、ランダム。指定すると、その番号を枚数ぶん買います)').setMinValue(0).setMaxValue(9999))
+      .addStringOption((o) => o.setName('numbers').setDescription('番号を、いくつか指定(例: 123,456,789)。「100-110」で連番。枚数より少なければ、残りは、ランダム').setMaxLength(100)))
     .addSubcommand((c) => c.setName('results').setDescription('前回の抽選結果を見ます')
       .addIntegerOption((o) => o.setName('lottery').setDescription('くじの番号(省略すると 1)').setMinValue(1).setMaxValue(MAX_LOTTERIES)).addBooleanOption((o) => o.setName('public').setDescription('全員に表示する(省略すると自分だけ)')))),
   async execute(i) {
@@ -1043,13 +1054,19 @@ export const lotteryCommand = {
         .setFooter({ text: `この回の販売 ${roundSales(g, L.id, round).toLocaleString()}枚 ・ 所持金 ${wallet(i).toLocaleString()}` });
       return i.reply({ embeds: [e], ...vis(i) });
     }
-    const k = i.options.getInteger('count') ?? 1, picked = i.options.getInteger('number'), maxNum = 10 ** L.digits - 1;
+    const maxNum = 10 ** L.digits - 1, picked = i.options.getInteger('number');
+    // numbers: 番号を、いくつか(1枚ずつ)。「100-110」のように書くと、連番(100から110まで)
+    const parsed = parseLotteryNumbers(i.options.getString('numbers'), L.maxTickets); if (parsed.error) return refuse(i, parsed.error);
+    const listed = parsed.list;
+    const k = Math.max(i.options.getInteger('count') ?? (listed.length || 1), listed.length);
     if (picked !== null && picked > maxNum) return refuse(i, `${L.name}の番号は、${pad(0, L.digits)}〜${maxNum} です。`);
+    if (listed.some((n) => n > maxNum)) return refuse(i, `${L.name}の番号は、${pad(0, L.digits)}〜${maxNum} です。(${listed.filter((n) => n > maxNum).join(', ')} は、大きすぎます)`);
     if (count + k > L.maxTickets) return refuse(i, `1回の抽選で買えるのは、最大 ${L.maxTickets}枚までです。(いま ${count}枚)`);
     const total = L.price * k;
     if (!collect(g, u, total, s)) return refuse(i, `お金が足りません。(必要 ${money(s, total)} / 手持ち ${money(s, Math.max(0, wallet(i)))})`);
     const bought = new Map();
-    if (picked !== null) bought.set(picked, k); else for (let q = 0; q < k; q++) { const num = drawNumber(L.digits); bought.set(num, (bought.get(num) ?? 0) + 1); }
+    if (picked !== null && !listed.length) bought.set(picked, k); // 1つの番号を、枚数ぶん
+    else { for (const num of listed) bought.set(num, (bought.get(num) ?? 0) + 1); for (let q = listed.length; q < k; q++) { const num = drawNumber(L.digits); bought.set(num, (bought.get(num) ?? 0) + 1); } } // 決めた番号は1枚ずつ、残りは、ランダム
     for (const [num, qty] of bought) addTicket(g, L.id, round, u, num, L.price, qty);
     const list = [...bought].sort((a, b) => a[0] - b[0]).map(([num, qty]) => `${pad(num, L.digits)}${qty > 1 ? `×${qty}` : ''}`).join('  ');
     await i.reply({ embeds: [card(i, s, 0xf1c40f, `${L.emoji} ${L.name}を買いました`, `**${k}枚**(番号: ${list.slice(0, 900)})\n**- ${money(s, total)}**\n抽選: <t:${Math.floor(drawAt / 1000)}:R>`)], ...EPH });

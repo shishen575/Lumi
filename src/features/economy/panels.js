@@ -255,19 +255,30 @@ export const panelComponent = {
       if (action === 'resultssel') return lotteryCommand.execute(asCommand(i, { lottery: Number(v0) }, 'results'));
       if (action === 'buy') { // くじを選んだ → 枚数を選ぶ
         const L = list[Number(v0) - 1]; if (!L) return say('そのくじは、もうありません。パネルが古くなっています。');
-        return i.update({ content: `${L.emoji} ${L.name}(1枚 ${money(s, L.price)})を、何枚買いますか?`, components: [selectRow(`panel:lottery:amt:${v0}`, '枚数を選ぶ', [...[1, 5, 10, 50, 100].filter((n) => n <= L.maxTickets).map((n) => ({ label: `${n}枚`, value: String(n) })), { label: '枚数と番号を、入力する…', value: 'custom' }])] });
+        return i.update({ content: `${L.emoji} ${L.name}(1枚 ${money(s, L.price)})を、何枚買いますか?`, components: [selectRow(`panel:lottery:amt:${v0}`, '枚数を選ぶ', [...[1, 5, 10, 50, 100].filter((n) => n <= L.maxTickets).map((n) => ({ label: `${n}枚(番号は、ランダム)`, value: String(n) })), { label: '連番で買う…(開始番号と枚数)', value: 'seq' }, { label: '番号を決めて買う…(いくつでも)', value: 'custom' }])] });
       }
       if (action === 'amt') {
         if (v0 === 'custom') return i.showModal(new ModalBuilder().setCustomId(`panel:lottery:m:${arg}`).setTitle('くじを買う').addComponents(
-          new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('count').setLabel('枚数').setStyle(TextInputStyle.Short).setRequired(true).setMaxLength(6).setPlaceholder('1')),
-          new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('number').setLabel('番号(空欄で、ランダム)').setStyle(TextInputStyle.Short).setRequired(false).setMaxLength(6).setPlaceholder('例: 123'))));
+          new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('count').setLabel('枚数(番号を入れたら、省略できる)').setStyle(TextInputStyle.Short).setRequired(false).setMaxLength(6).setPlaceholder('例: 5')),
+          new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('numbers').setLabel('番号(いくつでも。カンマ区切り。100-110で連番)').setStyle(TextInputStyle.Short).setRequired(false).setMaxLength(100).setPlaceholder('例: 123, 456, 789(足りない枚数は、ランダム)'))));
+        if (v0 === 'seq') return i.showModal(new ModalBuilder().setCustomId(`panel:lottery:q:${arg}`).setTitle('連番で買う').addComponents(
+          new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('start').setLabel('開始番号').setStyle(TextInputStyle.Short).setRequired(true).setMaxLength(6).setPlaceholder('例: 100')),
+          new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('count').setLabel('枚数(開始番号から、1ずつ増える)').setStyle(TextInputStyle.Short).setRequired(true).setMaxLength(6).setPlaceholder('例: 10(100〜109)'))));
         return lotteryCommand.execute(asCommand(i, { lottery: Number(arg), count: Number(v0) }, 'buy'));
       }
-      if (action === 'm') { // 入力欄の送信
+      if (action === 'q') { // 連番: 開始番号から、枚数ぶん
         const toN = (x) => { const n = Math.floor(Number(String(x ?? '').normalize('NFKC').replace(/[,\s]/g, ''))); return Number.isFinite(n) ? n : null; };
-        const count = toN(i.fields.getTextInputValue('count')), raw = String(i.fields.getTextInputValue('number') ?? '').trim(), number = raw === '' ? null : toN(raw);
-        if (!count || count < 1) return say('枚数は、1以上の数字で入れてください。'); if (raw !== '' && number === null) return say('番号は、数字で入れてください。');
-        return lotteryCommand.execute(asCommand(i, { lottery: Number(arg), count, number }, 'buy'));
+        const start = toN(i.fields.getTextInputValue('start')), count = toN(i.fields.getTextInputValue('count'));
+        if (start === null || start < 0) return say('開始番号は、0以上の数字で入れてください。'); if (!count || count < 1) return say('枚数は、1以上の数字で入れてください。');
+        return lotteryCommand.execute(asCommand(i, { lottery: Number(arg), count: null, numbers: `${start}-${start + count - 1}` }, 'buy'));
+      }
+      if (action === 'm') { // 入力欄の送信: 枚数と、番号(いくつか)。番号は1枚ずつ、足りない枚数は、ランダム
+        const toN = (x) => { const n = Math.floor(Number(String(x ?? '').normalize('NFKC').replace(/[,\s]/g, ''))); return Number.isFinite(n) ? n : null; };
+        const rawC = String(i.fields.getTextInputValue('count') ?? '').trim(), numbers = String(i.fields.getTextInputValue('numbers') ?? '').trim(), count = rawC === '' ? null : toN(rawC);
+        if (rawC !== '' && (!count || count < 1)) return say('枚数は、1以上の数字で入れてください。');
+        if (rawC === '' && numbers === '') return say('枚数か、番号の、どちらかを入れてください。');
+        if (numbers !== '' && !/\d/.test(numbers)) return say('番号は、数字で入れてください。(例: 123, 456)');
+        return lotteryCommand.execute(asCommand(i, { lottery: Number(arg), count, numbers: numbers || null }, 'buy'));
       }
       return;
     }
