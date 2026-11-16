@@ -193,7 +193,8 @@ export const customComponent = {
         if (!String(raw ?? '').trim() && !o.required) continue;
         const r = parseValue(o, raw); if (r.error) return say(r.error); values[name] = r.v;
       }
-      return cmd.execute(asCommand(i, values, b.sub || null));
+      i.__cmd = b.command; // どのコマンドを動かしたか(返事に、名前と残高を足すかの判断に使う)
+    return cmd.execute(asCommand(i, values, b.sub || null));
     };
     if (step === 'm') return run(chosen);                                         // 入力欄の送信
     if (step.startsWith('s')) {                                                    // プルダウンで選んだ

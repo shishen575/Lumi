@@ -177,6 +177,7 @@ export const hubComponent = {
       else if (stp.t === 'user') { const id = answers[ai++]; try { values[stp.o.name] = i.users?.get?.(id) ?? await i.client.users.fetch(id); } catch { return say('その人が、見つかりません。'); } }
       else if (stp.t === 'ask') for (const o of stp.os) { const r = parseValue(o, i.fields?.getTextInputValue(o.name)); if (r.error) return say(r.error); values[o.name] = r.v; }
     }
+    i.__cmd = name; // どのコマンドを動かしたか(返事に、名前と残高を足すかの判断に使う)
     return cmd.execute(asCommand(i, values, sub || null));
   },
 };

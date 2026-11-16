@@ -43,6 +43,9 @@ export function rewriteHidden(hid, payload) {
 /** /help の「パネル」欄など、機能が、ヘルプに足す欄: (guildId) => [{ name, value }] */
 const helpExtras = [];
 export const registerHelpExtras = (fn) => helpExtras.push(fn);
+/** 返事を送る直前に、中身を整える関数: (interaction, payload) => payload。機能が登録する(例: 通貨は、実行者の名前と残高を足す) */
+const replyDecorators = [];
+export const registerReplyDecorator = (fn) => replyDecorators.push(fn);
 let byNameRef = new Map(), catalogRef = [], categoriesRef = [];
 /** 機能ごとの、コマンドの分類(メニューパネルで使う): [{ id, title, emoji, commands: [名前] }]。機能が categories を持っていなければ、機能ごとに1つ */
 export const commandCategories = () => categoriesRef;
@@ -88,7 +91,11 @@ export function setupCommands(client, features) {
   // コマンドとボタンの共通の実行: 遅延の計測、10062(3秒超過)の扱い、エラー時の応答
   async function run(label, i, fn) {
     const hid = i.guildId ? hiddenFor(i.guildId) : {}; // 廃止されたコマンドが、返事に出てきたら、パネルへの案内にする
-    if (Object.keys(hid).length) for (const m of ['reply', 'editReply', 'followUp', 'update']) if (typeof i[m] === 'function') { const orig = i[m].bind(i); i[m] = (p, ...rest) => orig(rewriteHidden(hid, p), ...rest); }
+    const hidden = Object.keys(hid).length > 0;
+    for (const m of ['reply', 'editReply', 'followUp', 'update']) if (typeof i[m] === 'function') {
+      const orig = i[m].bind(i);
+      i[m] = (p, ...rest) => { let q = hidden ? rewriteHidden(hid, p) : p; for (const d of replyDecorators) { try { q = d(i, q) ?? q; } catch { /* 整えられなくても、返事は送る */ } } return orig(q, ...rest); };
+    }
     const t0 = Date.now();
     const lag = t0 - i.createdTimestamp; // 送られてから、BOTが処理を始めるまで
     noteInteraction({ lagMs: lag });

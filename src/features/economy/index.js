@@ -4,6 +4,10 @@ import { mountApi } from './api.js';
 import { panelComponent, panelStickItems } from './panels.js';
 import { customComponent, customStickItems } from './custompanels.js';
 import { hubComponent, catStickItems, migrateCatPanels } from './hub.js';
+import { decorateReply } from './decorate.js';
+import { registerReplyDecorator } from '../../core/commands.js';
+
+registerReplyDecorator(decorateReply); // 通貨の返事に、実行者の名前と残高を足す
 import { crimeHelp, jobHelp, lifeHelp } from './help.js';
 import { settleAll } from './lotteryengine.js';
 import { boardTick, stockStickItem } from './stockboard.js';
