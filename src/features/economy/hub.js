@@ -10,10 +10,12 @@ import { schemaOf, parseValue } from './custompanels.js';
  * ボタンを押すと、必要な項目(選択肢・ユーザー・数字など)を、順に聞いて、コマンドを実行する。
  */
 const KEY = 'hub';
+// メニューパネルには、出さないコマンド(通信の速さ・更新内容・ヘルプ・詳しい説明は、コマンドのまま使う。廃止もしない)
+export const HUB_EXCLUDE = new Set(['ping', 'releasenotes', 'help', 'detail']);
 const EPH = { flags: MessageFlags.Ephemeral };
 export const hubState = (g) => getKV(g, KEY, null);
 const link = (g, st) => `https://discord.com/channels/${g}/${st.ch}/${st.msg}`;
-const cmdsOfCategories = (ids) => commandCategories().filter((c) => ids.includes(c.id)).flatMap((c) => c.commands).filter((n) => n !== 'help');
+const cmdsOfCategories = (ids) => commandCategories().filter((c) => ids.includes(c.id)).flatMap((c) => c.commands).filter((n) => !HUB_EXCLUDE.has(n));
 /** 廃止しているコマンド: 廃止すると決めたカテゴリーの、全部のコマンド(/help は、いつも残す) */
 export const hubRetired = (st) => (st?.msg ? cmdsOfCategories(st.retire ?? []) : []);
 
@@ -38,7 +40,7 @@ function stepsOf(name, sub) {
 /** カテゴリーの、ボタンの一覧: [{ name, sub, label, desc }] */
 export function buttonsOf(cat) {
   const out = [];
-  for (const name of cat.commands) {
+  for (const name of cat.commands.filter((n) => !HUB_EXCLUDE.has(n))) {
     const json = commandCatalog().find((c) => c.name === name); if (!json) continue;
     const subs = (json.options ?? []).filter((o) => o.type === 1);
     if (!subs.length) { if (stepsOf(name, null)) out.push({ name, sub: '', label: `/${name}`, desc: json.description }); continue; }

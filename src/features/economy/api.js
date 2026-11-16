@@ -13,7 +13,7 @@ import { PANELS, panelState, installPanel, removePanel, retiredOf } from './pane
 import { customPanels, saveCustomPanel, removeCustomPanel, removeCustomButton, retiredOfCustom, MAX_CUSTOM, MAX_BUTTONS } from './custompanels.js';
 import { commandCatalog } from '../../core/commands.js';
 import { marketNow, unitPrice } from './stockmarket.js';
-import { hubState, hubRetired, installHub, removeHub, buttonsOf } from './hub.js';
+import { hubState, hubRetired, installHub, removeHub, buttonsOf, HUB_EXCLUDE } from './hub.js';
 import { commandCategories } from '../../core/commands.js';
 import { MAX_PETS, DEFAULT_PETS, PET_FX_KEYS, speciesOf } from './pets.js';
 import { itemById as marketItemById, ITEMS as MARKET_ITEMS } from './market.js';
@@ -179,7 +179,7 @@ export function mountApi(router, client = null) {
     audit(req.guild.id, req.actor, null, 'カスタムパネルを撤去', null, ''); res.json({ ok: true });
   });
   // メニューパネル(全コマンドを、カテゴリーごとに、ボタンにする)
-  const hubView = (g) => { const st = hubState(g); return { categories: commandCategories().map((c) => ({ id: c.id, title: c.title, emoji: c.emoji ?? '📁', commands: c.commands, buttons: buttonsOf(c).length })).filter((c) => c.buttons), installed: st?.msg ? { channel_id: st.ch, retire: st.retire ?? [], sticky: st.sticky !== false, retired: hubRetired(st), link: `https://discord.com/channels/${g}/${st.ch}/${st.msg}` } : null }; };
+  const hubView = (g) => { const st = hubState(g); return { categories: commandCategories().map((c) => ({ id: c.id, title: c.title, emoji: c.emoji ?? '📁', commands: c.commands.filter((n) => !HUB_EXCLUDE.has(n)), buttons: buttonsOf(c).length })).filter((c) => c.buttons), installed: st?.msg ? { channel_id: st.ch, retire: st.retire ?? [], sticky: st.sticky !== false, retired: hubRetired(st), link: `https://discord.com/channels/${g}/${st.ch}/${st.msg}` } : null }; };
   router.get('/hub', (req, res) => res.json(hubView(req.guild.id)));
   router.post('/hub', async (req, res) => {
     if (!adminOnly(req, res)) return;
