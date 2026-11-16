@@ -3,7 +3,7 @@ import { commands, richestButton, blackjackButton, heistButton, ramenButton, res
 import { mountApi } from './api.js';
 import { panelComponent, panelStickItems } from './panels.js';
 import { customComponent, customStickItems } from './custompanels.js';
-import { hubComponent, hubStickItem } from './hub.js';
+import { hubComponent, catStickItems } from './hub.js';
 import { crimeHelp, jobHelp, lifeHelp } from './help.js';
 import { settleAll } from './lotteryengine.js';
 import { boardTick, stockStickItem } from './stockboard.js';
@@ -47,7 +47,7 @@ export default {
     // 制限時間を過ぎて放置された大型銀行強盗を、15秒ごとに失敗として精算する(放置で罰を逃れられないように)
     // 起動した直後の30秒は、保留する(BOTが止まっていた間に、制限時間が過ぎた強盗を、すぐ失敗にしない)
     // 株価グラフ・値段表のチャンネルで、誰かが話したら、ボードを一番下に出し直す
-    client.on(Events.MessageCreate, stickChannels(client, (g) => [priceStickItem(client), stockStickItem(client), ...panelStickItems(client), hubStickItem(client), ...customStickItems(client, g)]));
+    client.on(Events.MessageCreate, stickChannels(client, (g) => [priceStickItem(client), stockStickItem(client), ...panelStickItems(client), ...catStickItems(client, g), ...customStickItems(client, g)]));
     client.once(Events.ClientReady, () => {
       holdHeistSweep(30_000); setInterval(() => resolveExpiredHeists(client), 15_000).unref?.();
       // 宝くじ: 1分ごとに、抽選の時刻を過ぎた回を、抽選して、発表する(起動直後にも1回。止まっていた間の分)

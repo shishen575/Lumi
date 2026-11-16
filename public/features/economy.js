@@ -369,30 +369,34 @@ Dash.registerTab({
     { id: 'panels', title: 'パネル', icon: 'list',
       async render(el, { api, channels: getChannels, esc, toast, confirm, pageHeader }) {
         const info = { crime: ['🚨', '犯罪・大型犯罪のボタンが並びます。押すと、その犯罪に挑戦します。'], work: ['💼', 'バイトと乞食のボタンが並びます。押すと、バイトをして、給料をもらいます。'], shop: ['🏪', 'お店・不動産・闇市を、まとめたパネルです。買うメニューと、「一覧」「使う」「家賃を受け取る」などのボタンが並びます。'], pet: ['🐾', 'ペットを飼うメニューと、「ようす」「餌」「遊ぶ」「名前」「手放す」のボタンが並びます。'], stock: ['📈', '「株価・持ち株」「ニュース」「買う」「売る」「株主」のボタンが並びます。株数は、プルダウンか入力欄で決めます。「不祥事を起こす」は、「株」の設定で不祥事をオンにしているときだけ、出ます。'] };
-        const [list, chans, hub0] = await Promise.all([api('/panels'), getChannels(), api('/hub')]);
-        let hub = hub0;
+        const [list, chans, cats0] = await Promise.all([api('/panels'), getChannels(), api('/cat-panels')]);
+        let cats = cats0;
         const draw = (rows) => {
           el.innerHTML = `${pageHeader('パネル', 'チャンネルに、ボタンつきのメッセージ(パネル)を置くと、コマンドを打たなくても、ボタンで、犯罪・バイト・お店が使えます。パネルを置いたサーバーでは、元のコマンドを廃止できます(そのサーバーのコマンド一覧から、消えます)。品や数字を変えたときは、「置き直す」で、パネルを更新してください。')}
-            <div class="card" id="hub"><div class="card-h"><h2>📚 メニューパネル(全コマンド)</h2>${hub.installed ? '<span class="badge">設置ずみ</span>' : ''}</div>
-              <p class="hint" style="margin:0 0 10px">すべてのコマンドを、カテゴリーごとに、ボタンにします。パネルには、カテゴリーを選ぶメニューだけを置きます。選ぶと、本人にだけ、そのカテゴリーのコマンドのボタンが出て、押すと、必要なこと(選択肢・ユーザー・数字)を聞いて、実行します。</p>
-              <div class="field"><label class="f">パネルを置くチャンネル</label><select class="h-ch"><option value="">選んでください</option>${chans.map((c) => `<option value="${c.id}" ${hub.installed?.channel_id === c.id ? 'selected' : ''}>#${esc(c.name)}</option>`).join('')}</select></div>
-              <div class="field"><label class="f">廃止するカテゴリー(チェックしたカテゴリーの、すべてのコマンドが、このサーバーで使えなくなり、パネルからだけ使えます。/help は残ります)</label>${hub.categories.map((c) => `<label class="sw" style="margin:2px 0"><input type="checkbox" class="h-ret" data-c="${esc(c.id)}" ${(hub.installed?.retire ?? []).includes(c.id) ? 'checked' : ''}><i></i><span><b>${esc(c.emoji)} ${esc(c.title)}</b><small>${c.commands.map((n) => `<code>/${esc(n)}</code>`).join(' ')}</small></span></label>`).join('')}</div>
-              <label class="sw"><input type="checkbox" class="h-sticky" ${!hub.installed || hub.installed.sticky ? 'checked' : ''}><i></i><span><b>いつも一番下に出す</b></span></label>
-              <div class="acts"><button class="btn h-set" type="button">${hub.installed ? '置き直す(更新)' : 'メニューパネルを置く'}</button>${hub.installed ? `<a class="btn ghost" href="${esc(hub.installed.link)}" target="_blank" rel="noopener">パネルを開く</a><button class="btn danger h-rm" type="button">撤去する</button>` : ''}</div></div>
             ${rows.map((r) => `<div class="card" data-k="${r.kind}"><div class="card-h"><h2>${info[r.kind][0]} ${esc(r.title)}</h2>${r.installed ? '<span class="badge">設置ずみ</span>' : ''}</div>
               <p class="hint" style="margin:0 0 10px">${info[r.kind][1]} 廃止できるコマンド: ${r.commands.map((c) => `<code>/${c}</code>`).join(' ')}</p>
               <div class="grid2"><div class="field"><label class="f">パネルを置くチャンネル</label><select class="p-ch"><option value="">選んでください</option>${chans.map((c) => `<option value="${c.id}" ${r.installed?.channel_id === c.id ? 'selected' : ''}>#${esc(c.name)}</option>`).join('')}</select></div></div>
               <div class="field" style="margin-top:8px"><label class="f">廃止するコマンド(チェックしたコマンドは、このサーバーで使えなくなり、パネルからだけ使えます)</label>${r.commands.map((cm) => `<label class="sw" style="margin:2px 0"><input type="checkbox" class="p-ret" data-c="${cm}" ${(r.installed ? (r.installed.retire ?? []).includes(cm) : true) ? 'checked' : ''}><i></i><span><b><code>/${cm}</code> を廃止する</b></span></label>`).join('')}<p class="hint" style="margin:4px 0 0">チェックを外したコマンドは、パネルを置いても、そのまま残ります。</p></div>
               <label class="sw"><input type="checkbox" class="p-sticky" ${!r.installed || r.installed.sticky ? 'checked' : ''}><i></i><span><b>いつも一番下に出す</b><small>チャンネルで誰かが話したり、ボタンの結果が出たりしたら、パネルを消して、一番下に出し直します(8秒静かになってから)</small></span></label>
-              <div class="acts"><button class="btn p-set" type="button">${r.installed ? '置き直す(更新)' : 'パネルを置く'}</button>${r.installed ? `<a class="btn ghost" href="${esc(r.installed.link)}" target="_blank" rel="noopener">パネルを開く</a><button class="btn danger p-rm" type="button">撤去する</button>` : ''}</div></div>`).join('')}`;
-          const hc = el.querySelector('#hub');
-          hc.querySelector('.h-set').onclick = async () => {
-            const ch = hc.querySelector('.h-ch').value, retire = [...hc.querySelectorAll('.h-ret:checked')].map((x) => x.dataset.c); if (!ch) { toast('チャンネルを選んでください', 'err'); return; }
-            if (retire.length && !await confirm({ title: 'コマンドを廃止', message: `チェックしたカテゴリー(${retire.map((id) => hub.categories.find((c) => c.id === id)?.title).join('・')})のコマンドが、このサーバーでは、使えなくなります(メニューパネルからだけ、使えます)。`, ok: '置く' })) return;
-            hub = await api('/hub', { method: 'POST', body: { channel_id: ch, retire, sticky: hc.querySelector('.h-sticky').checked } }); toast('メニューパネルを置きました'); draw(rows);
-          };
-          const hrm = hc.querySelector('.h-rm');
-          if (hrm) hrm.onclick = async () => { if (!await confirm({ title: 'メニューパネルを撤去', message: 'パネルのメッセージを消して、廃止していたコマンドを、元に戻します。', ok: '撤去する', danger: true })) return; hub = await api('/hub', { method: 'DELETE' }); toast('撤去しました'); draw(rows); };
+              <div class="acts"><button class="btn p-set" type="button">${r.installed ? '置き直す(更新)' : 'パネルを置く'}</button>${r.installed ? `<a class="btn ghost" href="${esc(r.installed.link)}" target="_blank" rel="noopener">パネルを開く</a><button class="btn danger p-rm" type="button">撤去する</button>` : ''}</div></div>`).join('')}
+            <h2 class="sec" style="margin:18px 0 8px">カテゴリーパネル(そのほかのコマンド)</h2>
+            <p class="hint" style="margin:0 0 8px">犯罪・バイト・お店・ペット・株は、上の専用パネルが使えます。ここは、そのほかのカテゴリー(お金・宝くじ・ギャンブル・管理者向けなど)を、1つずつ、独立したパネルにします。ボタンを押すと、必要なこと(選択肢・ユーザー・数字)を聞かれて、コマンドが動きます。</p>
+            ${cats.map((c) => `<div class="card" data-cat="${esc(c.id)}"><div class="card-h"><h2>${esc(c.emoji)} ${esc(c.title)}パネル</h2>${c.installed ? '<span class="badge">設置ずみ</span>' : ''}</div>
+              <p class="hint" style="margin:0 0 10px">ボタン ${c.buttons}個: ${c.commands.map((n) => `<code>/${esc(n)}</code>`).join(' ')}</p>
+              <div class="field"><label class="f">パネルを置くチャンネル</label><select class="c-ch"><option value="">選んでください</option>${chans.map((x) => `<option value="${x.id}" ${c.installed?.channel_id === x.id ? 'selected' : ''}>#${esc(x.name)}</option>`).join('')}</select></div>
+              <div class="field" style="margin-top:8px"><label class="f">廃止するコマンド(チェックしたコマンドは、このサーバーで使えなくなり、パネルからだけ使えます)</label>${c.commands.map((cm) => `<label class="sw" style="margin:2px 0"><input type="checkbox" class="c-ret" data-c="${esc(cm)}" ${(c.installed?.retire ?? []).includes(cm) ? 'checked' : ''}><i></i><span><b><code>/${esc(cm)}</code> を廃止する</b></span></label>`).join('')}</div>
+              <label class="sw"><input type="checkbox" class="c-sticky" ${!c.installed || c.installed.sticky ? 'checked' : ''}><i></i><span><b>いつも一番下に出す</b></span></label>
+              <div class="acts"><button class="btn c-set" type="button">${c.installed ? '置き直す(更新)' : 'パネルを置く'}</button>${c.installed ? `<a class="btn ghost" href="${esc(c.installed.link)}" target="_blank" rel="noopener">パネルを開く</a><button class="btn danger c-rm" type="button">撤去する</button>` : ''}</div></div>`).join('')}`;
+          el.querySelectorAll('[data-cat]').forEach((cc) => {
+            const id = cc.dataset.cat, cat = cats.find((x) => x.id === id);
+            cc.querySelector('.c-set').onclick = async () => {
+              const ch = cc.querySelector('.c-ch').value, retire = [...cc.querySelectorAll('.c-ret:checked')].map((x) => x.dataset.c); if (!ch) { toast('チャンネルを選んでください', 'err'); return; }
+              if (retire.length && !await confirm({ title: 'コマンドを廃止', message: `パネルを置くと、このサーバーでは、${retire.map((x) => '/' + x).join(' ')} が使えなくなります(パネルからだけ、使えます)。`, ok: '置く' })) return;
+              const r = await api(`/cat-panels/${id}`, { method: 'POST', body: { channel_id: ch, retire, sticky: cc.querySelector('.c-sticky').checked } }); toast('パネルを置きました'); cats = cats.map((x) => (x.id === id ? r : x)); draw(rows);
+            };
+            const rm = cc.querySelector('.c-rm');
+            if (rm) rm.onclick = async () => { if (!await confirm({ title: 'パネルを撤去', message: `パネルのメッセージを消して、${cat.commands.map((x) => '/' + x).join(' ')} を、元に戻します。`, ok: '撤去する', danger: true })) return; const r = await api(`/cat-panels/${id}`, { method: 'DELETE' }); toast('撤去しました'); cats = cats.map((x) => (x.id === id ? r : x)); draw(rows); };
+          });
           el.querySelectorAll('[data-k]').forEach((c) => {
             const kind = c.dataset.k, row = rows.find((x) => x.kind === kind);
             c.querySelector('.p-set').onclick = async () => {

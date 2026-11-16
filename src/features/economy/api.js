@@ -13,7 +13,7 @@ import { PANELS, panelState, installPanel, removePanel, retiredOf } from './pane
 import { customPanels, saveCustomPanel, removeCustomPanel, removeCustomButton, retiredOfCustom, MAX_CUSTOM, MAX_BUTTONS } from './custompanels.js';
 import { commandCatalog } from '../../core/commands.js';
 import { marketNow, unitPrice } from './stockmarket.js';
-import { hubState, hubRetired, installHub, removeHub, buttonsOf, HUB_EXCLUDE } from './hub.js';
+import { catPanels, catRetired, installCatPanel, removeCatPanel, buttonsOf, HUB_EXCLUDE, BUILTIN_CATEGORIES } from './hub.js';
 import { commandCategories } from '../../core/commands.js';
 import { MAX_PETS, DEFAULT_PETS, PET_FX_KEYS, speciesOf } from './pets.js';
 import { itemById as marketItemById, ITEMS as MARKET_ITEMS } from './market.js';
@@ -178,16 +178,18 @@ export function mountApi(router, client = null) {
     const ok = await removeCustomPanel(client, req.guild.id, req.params.id); if (!ok) return res.status(404).json({ error: 'パネルが、ありません' });
     audit(req.guild.id, req.actor, null, 'カスタムパネルを撤去', null, ''); res.json({ ok: true });
   });
-  // メニューパネル(全コマンドを、カテゴリーごとに、ボタンにする)
-  const hubView = (g) => { const st = hubState(g); return { categories: commandCategories().map((c) => ({ id: c.id, title: c.title, emoji: c.emoji ?? '📁', commands: c.commands.filter((n) => !HUB_EXCLUDE.has(n)), buttons: buttonsOf(c).length })).filter((c) => c.buttons), installed: st?.msg ? { channel_id: st.ch, retire: st.retire ?? [], sticky: st.sticky !== false, retired: hubRetired(st), link: `https://discord.com/channels/${g}/${st.ch}/${st.msg}` } : null }; };
-  router.get('/hub', (req, res) => res.json(hubView(req.guild.id)));
-  router.post('/hub', async (req, res) => {
+  // カテゴリーパネル(コマンドを、カテゴリーごとに、独立したパネルにする。専用のパネルがあるカテゴリーは、除く)
+  const catView = (g) => { const all = catPanels(g); return commandCategories().filter((c) => !BUILTIN_CATEGORIES.has(c.id) && buttonsOf(c).length).map((c) => { const st = all[c.id]; return { id: c.id, title: c.title, emoji: c.emoji ?? '📁', commands: c.commands.filter((n) => !HUB_EXCLUDE.has(n)), buttons: buttonsOf(c).length,
+    installed: st?.msg ? { channel_id: st.ch, retire: catRetired(c.id, st), sticky: st.sticky !== false, link: `https://discord.com/channels/${g}/${st.ch}/${st.msg}` } : null }; }); };
+  router.get('/cat-panels', (req, res) => res.json(catView(req.guild.id)));
+  router.post('/cat-panels/:id', async (req, res) => {
     if (!adminOnly(req, res)) return;
-    try { await installHub(client, req.guild.id, String(req.body?.channel_id ?? ''), req.body?.retire, req.body?.sticky !== false); }
+    if (BUILTIN_CATEGORIES.has(req.params.id)) return res.status(400).json({ error: 'このカテゴリーは、専用のパネル(上の「犯罪パネル」など)を使ってください' });
+    try { await installCatPanel(client, req.guild.id, req.params.id, String(req.body?.channel_id ?? ''), Array.isArray(req.body?.retire) ? req.body.retire : [], req.body?.sticky !== false); }
     catch (e) { return res.status(400).json({ error: e.code === 50013 || e.code === 50001 ? 'そのチャンネルに、メッセージを送る権限がありません' : e.message }); }
-    audit(req.guild.id, req.actor, null, 'メニューパネルを設置', null, (req.body?.retire ?? []).length ? `廃止: ${hubRetired(hubState(req.guild.id)).map((n) => '/' + n).join(' ')}` : 'コマンドは残す'); res.json(hubView(req.guild.id));
+    const v = catView(req.guild.id).find((x) => x.id === req.params.id); audit(req.guild.id, req.actor, null, `カテゴリーパネルを設置(${v?.title})`, null, v?.installed?.retire.length ? `廃止: ${v.installed.retire.map((n) => '/' + n).join(' ')}` : 'コマンドは残す'); res.json(v);
   });
-  router.delete('/hub', async (req, res) => { if (!adminOnly(req, res)) return; await removeHub(client, req.guild.id); audit(req.guild.id, req.actor, null, 'メニューパネルを撤去', null, 'コマンドを元に戻した'); res.json(hubView(req.guild.id)); });
+  router.delete('/cat-panels/:id', async (req, res) => { if (!adminOnly(req, res)) return; await removeCatPanel(client, req.guild.id, req.params.id); audit(req.guild.id, req.actor, null, `カテゴリーパネルを撤去(${req.params.id})`, null, 'コマンドを元に戻した'); res.json(catView(req.guild.id).find((x) => x.id === req.params.id) ?? null); });
   // みんなの持ち株: 会社ごとの株主と、株の割合(その人の持ち株 ÷ みんなの持ち株の合計)
   router.get('/stock-holders', async (req, res) => {
     const g = req.guild.id, s = getSettings(g), market = marketNow(s, g), all = stockHoldersAll(g);

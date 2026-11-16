@@ -5,26 +5,31 @@ import { asCommand } from './panels.js';
 import { schemaOf, parseValue } from './custompanels.js';
 
 /**
- * メニューパネル: すべてのコマンドを、カテゴリーごとに、ボタンにして出す。
- * パネルには、カテゴリーを選ぶメニューだけを置く。選ぶと、本人にだけ、そのカテゴリーのコマンドのボタンが並ぶ。
- * ボタンを押すと、必要な項目(選択肢・ユーザー・数字など)を、順に聞いて、コマンドを実行する。
+ * カテゴリーパネル: コマンドを、カテゴリーごとに、1つずつ独立したパネル(ボタンのメッセージ)にする。
+ * パネルを押すと、必要な項目(選択肢・ユーザー・数字など)を、順に聞いて、コマンドを実行する。
+ * 犯罪・バイト・お店・ペット・株は、専用のパネル(panels.js)がある。ここは、それ以外のカテゴリー(お金・宝くじ・ギャンブル・管理者向け・活動ロール・大喜利など)
  */
-const KEY = 'hub';
-// メニューパネルには、出さないコマンド(通信の速さ・更新内容・ヘルプ・詳しい説明は、コマンドのまま使う。廃止もしない)
-export const HUB_EXCLUDE = new Set(['ping', 'releasenotes', 'help', 'detail']);
+const KEY = 'catpanels';
 const EPH = { flags: MessageFlags.Ephemeral };
-export const hubState = (g) => getKV(g, KEY, null);
+// パネルに出さない(いつも、コマンドのまま): 通信の速さ・更新内容・ヘルプ・詳しい説明
+export const HUB_EXCLUDE = new Set(['ping', 'releasenotes', 'help', 'detail']);
+export const BUILTIN_CATEGORIES = new Set(['crime', 'work', 'shop', 'pet', 'stock']); // 専用のパネルがあるカテゴリー
+export const catPanels = (g) => getKV(g, KEY, {});
 const link = (g, st) => `https://discord.com/channels/${g}/${st.ch}/${st.msg}`;
-const cmdsOfCategories = (ids) => commandCategories().filter((c) => ids.includes(c.id)).flatMap((c) => c.commands).filter((n) => !HUB_EXCLUDE.has(n));
-/** 廃止しているコマンド: 廃止すると決めたカテゴリーの、全部のコマンド(/help は、いつも残す) */
-export const hubRetired = (st) => (st?.msg ? cmdsOfCategories(st.retire ?? []) : []);
+const catById = (id) => commandCategories().find((c) => c.id === id);
+const cmdsOf = (cat) => cat.commands.filter((n) => !HUB_EXCLUDE.has(n));
+/** そのパネルで、廃止しているコマンド(名前の配列。カテゴリーのコマンドの中から) */
+export const catRetired = (id, st) => { const cat = catById(id); return cat && st?.msg ? (st.retire ?? []).filter((n) => cmdsOf(cat).includes(n)) : []; };
 
 registerHiddenCommands((g) => {
-  const st = hubState(g), out = {};
-  for (const name of hubRetired(st)) out[name] = `このサーバーでは、\`/${name}\` は廃止されました。メニューパネル(${link(g, st)})から使えます。`;
+  const out = {};
+  for (const [id, st] of Object.entries(catPanels(g))) for (const name of catRetired(id, st)) out[name] = `このサーバーでは、\`/${name}\` は廃止されました。パネル(${link(g, st)})から使えます。`;
   return out;
 });
-registerHelpExtras((g) => { const st = hubState(g); return st?.msg ? [{ name: '📚 メニューパネル(全コマンド)', value: `[メニューパネル](${link(g, st)}) — <#${st.ch}>${hubRetired(st).length ? ` ・ 廃止: ${hubRetired(st).join(' ')}` : ''}` }] : []; });
+registerHelpExtras((g) => {
+  const lines = Object.entries(catPanels(g)).filter(([id, st]) => st?.msg && catById(id)).map(([id, st]) => { const c = catById(id), gone = catRetired(id, st); return `[${c.emoji ?? '📁'} ${c.title}パネル](${link(g, st)}) — <#${st.ch}>${gone.length ? ` ・ 廃止: ${gone.join(' ')}` : ''}`; });
+  return lines.length ? [{ name: '🧩 カテゴリーパネル', value: lines.join('\n') }] : [];
+});
 
 /** 1つのコマンド(+サブコマンド)を、ボタンにできるか。できないときは、null。必要な項目を、聞く順番に並べて返す */
 function stepsOf(name, sub) {
@@ -49,45 +54,44 @@ export function buttonsOf(cat) {
   return out;
 }
 
-export function hubMessage(g) {
-  const cats = commandCategories().filter((c) => buttonsOf(c).length);
-  return {
-    embeds: [new EmbedBuilder().setColor(0x6d5dfc).setTitle('📚 メニュー').setDescription('下のメニューで、カテゴリーを選ぶと、そのカテゴリーのコマンドが、ボタンで出ます(あなたにだけ見えます)。ボタンを押すと、必要なことを聞かれて、コマンドが動きます。')
-      .addFields({ name: 'カテゴリー', value: cats.map((c) => `${c.emoji ?? '📁'} **${c.title}** — ${buttonsOf(c).length}個`).join('\n').slice(0, 1024) || '(ありません)' })],
-    components: cats.length ? [new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId('hub:cat').setPlaceholder('カテゴリーを選ぶ').addOptions(cats.slice(0, 25).map((c) => ({ label: `${c.title}`.slice(0, 100), value: c.id, emoji: c.emoji ?? undefined, description: buttonsOf(c).slice(0, 4).map((b) => b.label).join(' ').slice(0, 100) }))))] : [],
-  };
+/** カテゴリーのパネルの、メッセージ(説明 + コマンドのボタン。25個まで) */
+export function catMessage(cat) {
+  const bs = buttonsOf(cat).slice(0, 25), rows = [];
+  for (let n = 0; n < bs.length; n += 5) rows.push(new ActionRowBuilder().addComponents(bs.slice(n, n + 5).map((b) => new ButtonBuilder().setCustomId(`hub:b:${b.name}:${b.sub}`).setLabel(b.label.slice(0, 80)).setStyle(ButtonStyle.Secondary))));
+  return { embeds: [new EmbedBuilder().setColor(0x6d5dfc).setTitle(`${cat.emoji ?? '📁'} ${cat.title}`).setDescription(`ボタンを押すと、必要なこと(選択肢・ユーザー・数字など)を聞かれて、コマンドが動きます。\n\n${bs.map((b) => `**${b.label}** — ${b.desc}`).join('\n').slice(0, 3800)}`)], components: rows };
 }
 
-export async function installHub(client, g, channelId, retire, sticky = true) {
+export async function installCatPanel(client, g, id, channelId, retire, sticky = true) {
+  const cat = catById(id); if (!cat || !buttonsOf(cat).length) throw new Error('そのカテゴリーは、ありません');
   const ch = client.channels.cache.get(channelId); if (!ch?.isTextBased?.() || ch.guildId !== g) throw new Error('チャンネルが不正です');
-  const old = hubState(g), payload = hubMessage(g), valid = new Set(commandCategories().map((c) => c.id)), retireIds = (Array.isArray(retire) ? retire : []).filter((x) => valid.has(x));
+  const all = catPanels(g), old = all[id], payload = catMessage(cat), names = cmdsOf(cat), retireNames = retire === true ? names : (Array.isArray(retire) ? retire.filter((n) => names.includes(n)) : []);
   let msg = null;
   if (old?.msg && old.ch === ch.id) { try { msg = await ch.messages.edit(old.msg, payload); } catch { /* 消されていたら、新しく置く */ } }
   if (!msg) {
     if (old?.msg && old.ch !== ch.id) await client.channels.cache.get(old.ch)?.messages.delete(old.msg).catch(() => {});
     msg = await ch.send({ ...payload, allowedMentions: { parse: [] } });
   }
-  setKV(g, KEY, { ch: ch.id, msg: msg.id, retire: retireIds, sticky: !!sticky, at: Date.now() });
+  all[id] = { ch: ch.id, msg: msg.id, retire: retireNames, sticky: !!sticky, at: Date.now() }; setKV(g, KEY, all);
   await resyncGuildCommands(g);
-  return hubState(g);
+  return all[id];
 }
-export async function removeHub(client, g) {
-  const old = hubState(g); if (!old) return false;
+export async function removeCatPanel(client, g, id) {
+  const all = catPanels(g), old = all[id]; if (!old) return false;
   await client.channels.cache.get(old.ch)?.messages.delete(old.msg).catch(() => {});
-  setKV(g, KEY, null); await resyncGuildCommands(g); return true;
+  delete all[id]; setKV(g, KEY, all); await resyncGuildCommands(g); return true;
 }
-/** 「一番下に出す」の対象 */
-export const hubStickItem = (client) => ({ kind: 'hub', prio: 90, state: (g) => { const st = hubState(g); return st?.msg && st.sticky !== false ? { ch: st.ch, msg: st.msg } : null; },
-  run: async (g) => {
-    const st = hubState(g); if (!st?.msg || st.sticky === false) return;
+/** 「一番下に出す」の対象(サーバーごと) */
+export const catStickItems = (client, g) => Object.keys(catPanels(g)).filter((id) => catById(id)).map((id, n) => ({ kind: `cat:${id}`, prio: 150 + n,
+  state: (gg) => { const st = catPanels(gg)[id]; return st?.msg && st.sticky !== false ? { ch: st.ch, msg: st.msg } : null; },
+  run: async (gg) => {
+    const all = catPanels(gg), st = all[id], cat = catById(id); if (!st?.msg || st.sticky === false || !cat) return;
     const ch = client.channels.cache.get(st.ch); if (!ch?.isTextBased?.() || ch.lastMessageId === st.msg) return;
     await ch.messages.delete(st.msg).catch(() => {});
-    const m = await ch.send({ ...hubMessage(g), allowedMentions: { parse: [] } }); setKV(g, KEY, { ...hubState(g), msg: m.id, at: Date.now() });
-  } });
+    const m = await ch.send({ ...catMessage(cat), allowedMentions: { parse: [] } }); all[id] = { ...st, msg: m.id, at: Date.now() }; setKV(gg, KEY, all);
+  } }));
 
 /**
  * ボタン・メニュー・入力欄の処理。customId:
- *   hub:cat                                カテゴリーを選ぶメニュー
  *   hub:b:<コマンド>:<サブ>                 コマンドのボタン
  *   hub:s:<コマンド>:<サブ>:<k>:<途中の答え>  k 番目の項目を答えるメニュー(選択肢・ユーザー)
  *   hub:m:<コマンド>:<サブ>:<途中の答え>      入力欄の送信
@@ -97,12 +101,6 @@ export const hubComponent = {
   id: 'hub',
   async execute(i) {
     const [, kind, name, sub = '', kS = '', acc = ''] = i.customId.split(':'), say = (content, extra = {}) => i.reply({ content, ...EPH, ...extra });
-    if (kind === 'cat') {
-      const cat = commandCategories().find((c) => c.id === i.values?.[0]); if (!cat) return say('そのカテゴリーは、もうありません。パネルが古くなっています。');
-      const bs = buttonsOf(cat).slice(0, 25), rows = [];
-      for (let n = 0; n < bs.length; n += 5) rows.push(new ActionRowBuilder().addComponents(bs.slice(n, n + 5).map((b) => new ButtonBuilder().setCustomId(`hub:b:${b.name}:${b.sub}`).setLabel(b.label.slice(0, 80)).setStyle(ButtonStyle.Secondary))));
-      return say(`${cat.emoji ?? '📁'} **${cat.title}**\n${bs.map((b) => `\`${b.label}\` — ${b.desc}`).join('\n').slice(0, 1700)}`, { components: rows });
-    }
     const cmd = findCommand(name), st = stepsOf(name, sub); if (!cmd || !st) return say(`/${name} は、もう使えません。`);
     const answers = (kind === 'b' ? '' : kind === 's' ? acc : kS).split('.').filter((x) => x !== '');
     const stepIdx = kind === 'b' ? 0 : kind === 's' ? Number(kS) + 1 : st.steps.length;   // いま答えて、次に聞くのは、何番目か
