@@ -132,6 +132,8 @@ export const catStickItems = (client, g) => Object.keys(catPanels(g)).filter((id
 export const hubComponent = {
   id: 'hub',
   async execute(i) {
+    if (i.customId === 'hub:cancel') return i.update({ content: 'キャンセルしました。', components: [], embeds: [] });
+    const cancel = () => new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('hub:cancel').setLabel('キャンセル').setEmoji('❌').setStyle(ButtonStyle.Secondary));
     const [, kind, name, sub = '', kS = '', acc = ''] = i.customId.split(':'), say = (content, extra = {}) => i.reply({ content, ...EPH, ...extra });
     const cmd = findCommand(name), st = stepsOf(name, sub); if (!cmd || !st) return say(`/${name} は、もう使えません。`);
     const answers = (kind === 'b' ? '' : kind === 's' ? acc : kS).split('.').filter((x) => x !== '');
@@ -143,11 +145,11 @@ export const hubComponent = {
       const id = (k) => `hub:s:${name}:${sub}:${k}:${answers.join('.')}`;
       if (next.t === 'pick') {
         const o = next.o, list = o.type === 5 ? [{ name: 'オン', value: true }, { name: 'オフ', value: false }] : o.choices;
-        const body = { content: `${labelOf(name, sub, '').label}: ${o.description || o.name} を、選んでください。`, components: [new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId(id(stepIdx)).setPlaceholder(String(o.description || o.name).slice(0, 100)).addOptions(list.slice(0, 25).map((c, n) => ({ label: String(c.name).slice(0, 100), value: String(n) }))))] };
+        const body = { content: `${labelOf(name, sub, '').label}: ${o.description || o.name} を、選んでください。`, components: [new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId(id(stepIdx)).setPlaceholder(String(o.description || o.name).slice(0, 100)).addOptions(list.slice(0, 25).map((c, n) => ({ label: String(c.name).slice(0, 100), value: String(n) })))), cancel()] };
         return kind === 'b' ? i.reply({ ...body, ...EPH }) : i.update(body);
       }
       if (next.t === 'user') {
-        const body = { content: `${labelOf(name, sub, '').label}: ${next.o.description || next.o.name} を、選んでください。`, components: [new ActionRowBuilder().addComponents(new UserSelectMenuBuilder().setCustomId(id(stepIdx)).setPlaceholder(String(next.o.description || next.o.name).slice(0, 100)).setMinValues(1).setMaxValues(1))] };
+        const body = { content: `${labelOf(name, sub, '').label}: ${next.o.description || next.o.name} を、選んでください。`, components: [new ActionRowBuilder().addComponents(new UserSelectMenuBuilder().setCustomId(id(stepIdx)).setPlaceholder(String(next.o.description || next.o.name).slice(0, 100)).setMinValues(1).setMaxValues(1)), cancel()] };
         return kind === 'b' ? i.reply({ ...body, ...EPH }) : i.update(body);
       }
       if (next.t === 'ask') {

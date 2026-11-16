@@ -170,6 +170,7 @@ export const customStickItems = (client, g) => Object.entries(customPanels(g)).m
 export const customComponent = {
   id: 'cpanel',
   async execute(i) {
+    if (i.customId === 'cpanel:cancel') return i.update({ content: 'キャンセルしました。', components: [], embeds: [] });
     const [, pid, idxS, step = '', acc = ''] = i.customId.split(':'), say = (content) => i.reply({ content, flags: MessageFlags.Ephemeral });
     const p = customPanels(i.guildId)[pid], b = p?.buttons?.[Number(idxS)]; if (!b) return say('このボタンは、もう使えません。パネルが古くなっています(管理者が、置き直せます)。');
     const cmd = findCommand(b.command), json = commandCatalog().find((c) => c.name === b.command); if (!cmd || !json) return say(`/${b.command} は、もう使えません。`);
@@ -178,7 +179,7 @@ export const customComponent = {
     const selectMenu = (k) => { // k 番目のプルダウン
       const name = picks[k], list = b.pick[name], o = sc.options.find((x) => x.name === name);
       return { content: `${b.label}: ${o?.description || name} を、選んでください。`, flags: MessageFlags.Ephemeral,
-        components: [new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId(`cpanel:${pid}:${idxS}:s${k}:${chosen.join('.')}`).setPlaceholder(String(o?.description || name).slice(0, 100)).addOptions(list.slice(0, 25).map((e, n) => ({ label: String(e.label).slice(0, 100), value: String(n) }))))] };
+        components: [new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId(`cpanel:${pid}:${idxS}:s${k}:${chosen.join('.')}`).setPlaceholder(String(o?.description || name).slice(0, 100)).addOptions(list.slice(0, 25).map((e, n) => ({ label: String(e.label).slice(0, 100), value: String(n) })))), new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('cpanel:cancel').setLabel('キャンセル').setEmoji('❌').setStyle(ButtonStyle.Secondary))] };
     };
     const askModal = (accNow) => i.showModal(new ModalBuilder().setCustomId(`cpanel:${pid}:${idxS}:m:${accNow}`).setTitle(b.label.slice(0, 45)).addComponents(...b.ask.map((name) => {
       const o = sc.options.find((x) => x.name === name);
