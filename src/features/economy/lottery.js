@@ -61,7 +61,7 @@ export function estimateRtp(L) {
 export function settleRound(tickets, winning, L, jackpot) {
   const payouts = new Map(), win1 = [];
   let sales = 0, qty1 = 0;
-  const add = (u, tier, qty, amount) => { const p = payouts.get(u) ?? { amount: 0, tiers: { 1: 0, 2: 0, 3: 0 } }; p.amount += amount; p.tiers[tier] += qty; payouts.set(u, p); };
+  const add = (u, tier, qty, amount) => { const p = payouts.get(u) ?? { amount: 0, tiers: { 1: 0, 2: 0, 3: 0 }, amounts: { 1: 0, 2: 0, 3: 0 } }; p.amount += amount; p.tiers[tier] += qty; p.amounts[tier] += amount; payouts.set(u, p); }; // amounts: 等ごとの当選金(発表で、等ごとに見せる)
   for (const t of tickets) {
     sales += t.price * t.qty;
     const tier = prizeTier(t.number, winning, L.digits);

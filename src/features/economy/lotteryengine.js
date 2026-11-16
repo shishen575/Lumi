@@ -24,7 +24,7 @@ export function settleGuild(s, g, now = Date.now(), rng = null) {
       for (const round of [...byRound.keys()].sort((a, b) => a - b)) {
         const tickets = byRound.get(round), winning = drawNumber(L.digits, rng), res = settleRound(tickets, winning, L, jackpot);
         let paid = 0, short = 0; const winners = [];
-        for (const [user, p] of res.payouts) { const got = give(user, p.amount); paid += got; short += p.amount - got; winners.push({ user, amount: got, short: p.amount - got, tiers: p.tiers }); }
+        for (const [user, p] of res.payouts) { const got = give(user, p.amount); paid += got; short += p.amount - got; winners.push({ user, amount: got, short: p.amount - got, tiers: p.tiers, amounts: p.amounts }); }
         const next = nextJackpot(res, L, jackpot);
         setLotteryJackpot(g, L.id, next);
         const count = tickets.reduce((a, t) => a + t.qty, 0);
@@ -42,11 +42,17 @@ export function settleGuild(s, g, now = Date.now(), rng = null) {
 
 /** 抽選結果の発表の文(埋め込み) */
 export function drawEmbed(s, d) {
-  const L = d.lottery, w1 = d.winners.filter((x) => x.tiers[1] > 0), w2 = d.winners.reduce((a, x) => a + x.tiers[2], 0), w3 = d.winners.reduce((a, x) => a + x.tiers[3], 0);
+  const L = d.lottery, w1 = d.winners.filter((x) => x.tiers[1] > 0);
+  // 等ごとの、当たった人と、枚数・当選金(多い順。10人まで)
+  const tierField = (n) => {
+    const rows = d.winners.filter((x) => x.tiers[n] > 0).sort((a, b) => b.tiers[n] - a.tiers[n]), total = rows.reduce((a, x) => a + x.tiers[n], 0);
+    if (!rows.length) return '該当なし';
+    return `${rows.length}人 ・ 合計 ${total.toLocaleString()}枚\n${rows.slice(0, 10).map((x) => `<@${x.user}> **${x.tiers[n].toLocaleString()}枚**${x.amounts?.[n] ? ` → ${money(s, x.amounts[n])}` : ''}`).join('\n')}${rows.length > 10 ? `\n…ほか ${rows.length - 10}人` : ''}`.slice(0, 1024);
+  };
   const e = new EmbedBuilder().setColor(d.jackpotWon ? 0xf1c40f : 0x3498db).setTitle(`${L.emoji} ${L.name} 抽選結果`)
     .setDescription(`当選番号: **${pad(d.winning, L.digits)}**\n販売 ${d.tickets.toLocaleString()}枚`)
     .addFields({ name: `🥇 1等(${L.digits}桁一致)${d.jackpotWon ? '' : ' — 該当なし'}`, value: d.jackpotWon ? w1.map((x) => `<@${x.user}> **${money(s, x.amount)}**${x.tiers[1] > 1 ? `(${x.tiers[1]}枚)` : ''}`).slice(0, 10).join('\n') : `ジャックポット **${money(s, d.nextJackpot)}** を、次回に持ち越し!`, inline: false },
-      { name: `🥈 2等(下${L.digits - 1}桁一致)`, value: `${w2}枚`, inline: true }, ...(L.digits >= 3 ? [{ name: `🥉 3等(下${L.digits - 2}桁一致)`, value: `${w3}枚`, inline: true }] : []))
+      { name: `🥈 2等(下${L.digits - 1}桁一致)`, value: tierField(2), inline: false }, ...(L.digits >= 3 ? [{ name: `🥉 3等(下${L.digits - 2}桁一致)`, value: tierField(3), inline: false }] : []))
     .setFooter({ text: `当選金の合計 ${d.paid.toLocaleString()}${d.short ? `(予算が足りず ${d.short.toLocaleString()} は減額)` : ''}${d.jackpotWon ? ` ・ 次回のジャックポット ${d.nextJackpot.toLocaleString()}` : ''}` });
   return e;
 }
