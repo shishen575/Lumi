@@ -168,7 +168,8 @@ function helpCommand(cmds, features) {
       const embed = new EmbedBuilder().setColor(0x6d5dfc).setTitle('Lumi ヘルプ');
       // コマンドが増えても、Discordの上限(1フィールド1024字)を超えないよう、分けて出す
       const hid = hiddenFor(i.guildId); // 廃止されたコマンドは、載せない
-      const lines = [...new Map(all.map((d) => [d.name, d])).values()].filter((d) => !(d.name in hid)).map((d) => `\`/${d.name}\` — ${d.description}`);
+      const isAdmin = hasAccessSync(i.guild, i.member, i.user.id); // 【管理者向け】のコマンドは、管理者にだけ、載せる
+      const lines = [...new Map(all.map((d) => [d.name, d])).values()].filter((d) => !(d.name in hid) && (isAdmin || !String(d.description).startsWith('【管理者向け】'))).map((d) => `\`/${d.name}\` — ${d.description}`);
       let chunk = '', first = true;
       const pushChunk = () => { embed.addFields({ name: first ? 'コマンド一覧' : '\u200b', value: chunk }); first = false; chunk = ''; };
       for (const line of lines) { if (chunk && chunk.length + line.length + 1 > 1000) pushChunk(); chunk += (chunk ? '\n' : '') + line; }

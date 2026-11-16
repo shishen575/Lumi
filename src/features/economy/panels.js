@@ -12,14 +12,14 @@ import { petsOpen, bonusLabel } from './pets.js';
 import { estateOf } from './estate.js';
 import { ITEMS as MARKET_ITEMS } from './market.js';
 import { COMPANIES, companyOf } from './stocks.js';
-import { arrestCommand, wantedCommand, bailCommand, releaseCommand, crimeCommand, heistCommand, workCommand, begCommand, shopCommand, useCommand, estateCommand, marketCommand, petCommand, stockCommand, newsCommand, scandalCommand } from './commands.js';
+import { arrestCommand, wantedCommand, bailCommand, crimeCommand, heistCommand, workCommand, begCommand, shopCommand, useCommand, estateCommand, marketCommand, petCommand, stockCommand, newsCommand, scandalCommand } from './commands.js';
 
 /**
  * パネル: チャンネルに置く、ボタンつきのメッセージ。コマンドを打たなくても、ボタンで、犯罪・バイト・お店が使える。
  * 設置したサーバーでは、元のコマンドを廃止できる(そのサーバーのコマンド一覧から外れる)。設置は、ダッシュボードから。
  */
 export const PANELS = {
-  crime: { title: '犯罪パネル', commands: ['crime', 'heist', 'arrest', 'wanted', 'bail', 'release'], added: { arrest: 3, wanted: 3, bail: 6, release: 6 } },
+  crime: { title: '犯罪パネル', commands: ['crime', 'heist', 'arrest', 'wanted', 'bail'], added: { arrest: 3, wanted: 3, bail: 6 } },
   work: { title: 'バイトパネル', commands: ['work', 'beg'] },
   // お店パネルは、お店・不動産・闇市をまとめたもの(v2 から)
   shop: { title: 'お店パネル(お店・不動産・闇市)', commands: ['shop', 'use', 'estate', 'market'], added: { estate: 2, market: 2 } },
@@ -81,11 +81,11 @@ export function panelMessage(kind, g) {
   if (kind === 'crime') {
     const crimes = Object.keys(CRIMES).map((k) => ({ k, c: crimeOf(s, k) })), heists = Object.keys(HEISTS).map((k) => ({ k, T: heistOf(s, k) }));
     return {
-      embeds: [new EmbedBuilder().setColor(0xe74c3c).setTitle('🚨 犯罪パネル').setDescription('ボタンを押すと、その犯罪に挑戦します。成功すると大金、失敗すると罰金と留置場です。\n警察のバイトを重ねた人は、「👮 逮捕する」で、指名手配中の人を逮捕できます(「📋 手配書」で、手配中の人を見られます)。留置場に入ったら、「🔓 保釈」で、保釈金を払って出られます。管理者は、「🔑 釈放」で、留置場の人を出せます。')
+      embeds: [new EmbedBuilder().setColor(0xe74c3c).setTitle('🚨 犯罪パネル').setDescription('ボタンを押すと、その犯罪に挑戦します。成功すると大金、失敗すると罰金と留置場です。\n警察のバイトを重ねた人は、「👮 逮捕する」で、指名手配中の人を逮捕できます(「📋 手配書」で、手配中の人を見られます)。留置場に入ったら、「🔓 保釈」で、保釈金を払って出られます。')
         .addFields({ name: '犯罪', value: crimes.map(({ c }) => `${c.emoji} **${c.name}** — 成功 ${Math.round(c.chance * 100)}% ・ 報酬 ${range(c.win)}`).join('\n') },
           { name: '大型犯罪(ミニゲーム)', value: heists.map(({ T }) => `${T.emoji} **${T.short ?? T.name}** — 報酬 ${range(T.win)}`).join('\n') })],
       components: [...rows(crimes.map(({ k, c }) => btn(`panel:crime:c:${k}`, c.name, c.emoji, ButtonStyle.Danger))), ...rows(heists.map(({ k, T }) => btn(`panel:crime:h:${k}`, T.short ?? T.name, T.emoji, ButtonStyle.Danger))),
-        new ActionRowBuilder().addComponents(btn('panel:crime:arrest', '逮捕する', '👮', ButtonStyle.Primary), btn('panel:crime:wanted', '手配書', '📋'), btn('panel:crime:bail', '保釈', '🔓', ButtonStyle.Success), btn('panel:crime:release', '釈放(管理者)', '🔑'))],
+        new ActionRowBuilder().addComponents(btn('panel:crime:arrest', '逮捕する', '👮', ButtonStyle.Primary), btn('panel:crime:wanted', '手配書', '📋'), btn('panel:crime:bail', '保釈', '🔓', ButtonStyle.Success))],
     };
   }
   if (kind === 'work') {
@@ -192,9 +192,6 @@ export const panelComponent = {
       if (action === 'h') return heistCommand.execute(asCommand(i, { target: arg }));
       if (action === 'wanted') return wantedCommand.execute(asCommand(i, {}));
       if (action === 'bail') return bailCommand.execute(asCommand(i, {}));
-      if (action === 'release') return say('釈放する人を、選んでください。(管理者だけが、使えます)', { components: [new ActionRowBuilder().addComponents(new UserSelectMenuBuilder().setCustomId('panel:crime:releasesel').setPlaceholder('釈放する人を選ぶ').setMinValues(1).setMaxValues(1)), new ActionRowBuilder().addComponents(btn('panel:crime:releaseall', '留置場の全員を釈放', '🔓', ButtonStyle.Danger))] });
-      if (action === 'releasesel') { const target = i.users?.first?.() ?? null; return target ? releaseCommand.execute(asCommand(i, { user: target })) : say('その人が、見つかりません。'); }
-      if (action === 'releaseall') return releaseCommand.execute(asCommand(i, { all: true }));
       if (action === 'arrest') return say('逮捕する人を、選んでください。', { components: [new ActionRowBuilder().addComponents(new UserSelectMenuBuilder().setCustomId('panel:crime:arrestsel').setPlaceholder('逮捕する人を選ぶ').setMinValues(1).setMaxValues(1))] });
       if (action === 'arrestsel') { const target = i.users?.first?.() ?? null; return target ? arrestCommand.execute(asCommand(i, { user: target })) : say('その人が、見つかりません。'); }
       return crimeCommand.execute(asCommand(i, { type: arg }));

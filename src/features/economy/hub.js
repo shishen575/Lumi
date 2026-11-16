@@ -12,7 +12,7 @@ import { schemaOf, parseValue } from './custompanels.js';
 const KEY = 'catpanels';
 const EPH = { flags: MessageFlags.Ephemeral };
 // パネルに出さない(いつも、コマンドのまま): 通信の速さ・更新内容・ヘルプ・詳しい説明
-export const HUB_EXCLUDE = new Set(['ping', 'releasenotes', 'help', 'detail']);
+export const HUB_EXCLUDE = new Set(['ping', 'releasenotes', 'help', 'detail', 'balance-edit', 'cooldown-reset', 'release', 'blackjack-end']); // 管理者向けのコマンドも、パネルには出さない
 export const BUILTIN_CATEGORIES = new Set(['crime', 'work', 'shop', 'pet', 'stock']); // 専用のパネルがあるカテゴリー
 export const catPanels = (g) => getKV(g, KEY, {});
 const link = (g, st) => `https://discord.com/channels/${g}/${st.ch}/${st.msg}`;
