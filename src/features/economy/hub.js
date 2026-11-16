@@ -31,6 +31,30 @@ registerHelpExtras((g) => {
   return lines.length ? [{ name: '🧩 カテゴリーパネル', value: lines.join('\n') }] : [];
 });
 
+
+/** ボタンの名前(コマンド名ではなく、わかりやすい言葉)。キーは「コマンド」または「コマンド サブコマンド」 */
+const LABELS = {
+  // お金
+  balance: ['🪙', '残高'], deposit: ['🏦', '預ける'], withdraw: ['💵', '引き出す'], richest: ['🏆', 'お金持ちランキング'], pay: ['💸', '送金'], cooldowns: ['⏱️', '待ち時間'],
+  // 犯罪・バイト
+  crime: ['🚨', '犯罪'], heist: ['🏦', '大型犯罪'], arrest: ['👮', '逮捕'], wanted: ['📋', '手配書'], bail: ['🔓', '保釈'], work: ['💼', 'バイト'], beg: ['🙏', '乞食'], job: ['🎖️', '職業・階級'],
+  // お店・闇市・不動産
+  'shop list': ['📋', 'お店の一覧'], 'shop buy': ['🛒', 'お店で買う'], use: ['🎒', '品を使う'], 'give shop': ['🎁', '品をあげる'], 'give market': ['🎁', '道具をあげる'],
+  'market list': ['🕶️', '闇市の相場'], 'market buy': ['🛒', '闇市で買う'], 'estate list': ['🏢', '不動産の一覧'], 'estate buy': ['🏠', '不動産を買う'], 'estate sell': ['💱', '不動産を売る'], 'estate collect': ['💰', '家賃を受け取る'],
+  // ペット
+  'pet status': ['🐾', 'ペットのようす'], 'pet adopt': ['🐶', 'ペットを飼う'], 'pet feed': ['🍖', '餌をあげる'], 'pet play': ['🎾', '遊ぶ'], 'pet rename': ['✏️', 'ペットの名前'], 'pet release': ['👋', 'ペットを手放す'],
+  // 株
+  'stock list': ['📈', '株価・持ち株'], 'stock holders': ['👥', '株主'], 'stock buy': ['🛒', '株を買う'], 'stock sell': ['💰', '株を売る'], news: ['📰', '株のニュース'], scandal: ['🤫', '不祥事を起こす'],
+  // 宝くじ・ギャンブル
+  'lottery info': ['🎟️', 'くじの情報'], 'lottery buy': ['🎟️', 'くじを買う'], 'lottery results': ['📜', '抽選結果'], chinchiro: ['🎲', 'チンチロ'], slot: ['🎰', 'スロット'], blackjack: ['🃏', 'ブラックジャック'],
+  // 管理者向け
+  'balance-edit': ['✏️', '残高を編集'], 'cooldown-reset': ['⏱️', '待ち時間を解除'], release: ['🔓', '釈放'], 'blackjack-end': ['🛑', 'ブラックジャックを終了'],
+  // 活動ロール・大喜利
+  rank: ['📊', 'ランク'], top: ['🏆', 'ランキング'], roles: ['🎖️', 'ロール一覧'], odai: ['💡', 'お題を出す'], kaitou: ['✍️', 'お題に回答'], kekka: ['📣', '結果を発表'], ranking: ['🌱', '大喜利ランキング'], best: ['🌿', '一番の草'], kusaemoji: ['🌱', '草の絵文字'], up: ['⬇️', 'お題を下に出す'],
+};
+/** ボタンの、絵文字と名前。決めていないコマンドは、説明の、はじめの部分を使う */
+const labelOf = (name, sub, desc) => { const l = LABELS[sub ? `${name} ${sub}` : name]; return l ? { emoji: l[0], label: l[1] } : { emoji: null, label: String(desc).split(/[(。(]/)[0].slice(0, 20) || name }; };
+
 /** 1つのコマンド(+サブコマンド)を、ボタンにできるか。できないときは、null。必要な項目を、聞く順番に並べて返す */
 function stepsOf(name, sub) {
   const json = commandCatalog().find((c) => c.name === name); if (!json) return null;
@@ -48,17 +72,18 @@ export function buttonsOf(cat) {
   for (const name of cat.commands.filter((n) => !HUB_EXCLUDE.has(n))) {
     const json = commandCatalog().find((c) => c.name === name); if (!json) continue;
     const subs = (json.options ?? []).filter((o) => o.type === 1);
-    if (!subs.length) { if (stepsOf(name, null)) out.push({ name, sub: '', label: `/${name}`, desc: json.description }); continue; }
-    for (const sc of subs) if (stepsOf(name, sc.name)) out.push({ name, sub: sc.name, label: `/${name} ${sc.name}`, desc: sc.description });
+    if (!subs.length) { if (stepsOf(name, null)) out.push({ name, sub: '', ...labelOf(name, '', json.description), desc: json.description }); continue; }
+    for (const sc of subs) if (stepsOf(name, sc.name)) out.push({ name, sub: sc.name, ...labelOf(name, sc.name, sc.description), desc: sc.description });
   }
   return out;
 }
 
+const hubButton = (b) => { const x = new ButtonBuilder().setCustomId(`hub:b:${b.name}:${b.sub}`).setStyle(ButtonStyle.Secondary); try { if (b.emoji) x.setEmoji(b.emoji); x.setLabel(b.label.slice(0, 78)); } catch { x.setLabel(`${b.emoji ?? ''} ${b.label}`.trim().slice(0, 78)); } return x; };
 /** カテゴリーのパネルの、メッセージ(説明 + コマンドのボタン。25個まで) */
 export function catMessage(cat) {
   const bs = buttonsOf(cat).slice(0, 25), rows = [];
-  for (let n = 0; n < bs.length; n += 5) rows.push(new ActionRowBuilder().addComponents(bs.slice(n, n + 5).map((b) => new ButtonBuilder().setCustomId(`hub:b:${b.name}:${b.sub}`).setLabel(b.label.slice(0, 80)).setStyle(ButtonStyle.Secondary))));
-  return { embeds: [new EmbedBuilder().setColor(0x6d5dfc).setTitle(`${cat.emoji ?? '📁'} ${cat.title}`).setDescription(`ボタンを押すと、必要なこと(選択肢・ユーザー・数字など)を聞かれて、コマンドが動きます。\n\n${bs.map((b) => `**${b.label}** — ${b.desc}`).join('\n').slice(0, 3800)}`)], components: rows };
+  for (let n = 0; n < bs.length; n += 5) rows.push(new ActionRowBuilder().addComponents(bs.slice(n, n + 5).map((b) => hubButton(b))));
+  return { embeds: [new EmbedBuilder().setColor(0x6d5dfc).setTitle(`${cat.emoji ?? '📁'} ${cat.title}`).setDescription(`ボタンを押すと、必要なこと(選択肢・ユーザー・数字など)を聞かれて、コマンドが動きます。\n\n${bs.map((b) => `${b.emoji ?? '▫️'} **${b.label}** — ${b.desc}`).join('\n').slice(0, 3800)}`)], components: rows };
 }
 
 export async function installCatPanel(client, g, id, channelId, retire, sticky = true) {
@@ -111,15 +136,15 @@ export const hubComponent = {
       const id = (k) => `hub:s:${name}:${sub}:${k}:${answers.join('.')}`;
       if (next.t === 'pick') {
         const o = next.o, list = o.type === 5 ? [{ name: 'オン', value: true }, { name: 'オフ', value: false }] : o.choices;
-        const body = { content: `/${name}${sub ? ` ${sub}` : ''}: ${o.description || o.name} を、選んでください。`, components: [new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId(id(stepIdx)).setPlaceholder(String(o.description || o.name).slice(0, 100)).addOptions(list.slice(0, 25).map((c, n) => ({ label: String(c.name).slice(0, 100), value: String(n) }))))] };
+        const body = { content: `${labelOf(name, sub, '').label}: ${o.description || o.name} を、選んでください。`, components: [new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId(id(stepIdx)).setPlaceholder(String(o.description || o.name).slice(0, 100)).addOptions(list.slice(0, 25).map((c, n) => ({ label: String(c.name).slice(0, 100), value: String(n) }))))] };
         return kind === 'b' ? i.reply({ ...body, ...EPH }) : i.update(body);
       }
       if (next.t === 'user') {
-        const body = { content: `/${name}${sub ? ` ${sub}` : ''}: ${next.o.description || next.o.name} を、選んでください。`, components: [new ActionRowBuilder().addComponents(new UserSelectMenuBuilder().setCustomId(id(stepIdx)).setPlaceholder(String(next.o.description || next.o.name).slice(0, 100)).setMinValues(1).setMaxValues(1))] };
+        const body = { content: `${labelOf(name, sub, '').label}: ${next.o.description || next.o.name} を、選んでください。`, components: [new ActionRowBuilder().addComponents(new UserSelectMenuBuilder().setCustomId(id(stepIdx)).setPlaceholder(String(next.o.description || next.o.name).slice(0, 100)).setMinValues(1).setMaxValues(1))] };
         return kind === 'b' ? i.reply({ ...body, ...EPH }) : i.update(body);
       }
       if (next.t === 'ask') {
-        return i.showModal(new ModalBuilder().setCustomId(`hub:m:${name}:${sub}:${answers.join('.')}`).setTitle(`/${name}${sub ? ` ${sub}` : ''}`.slice(0, 45)).addComponents(...next.os.map((o) => new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId(o.name).setLabel(String(o.name).slice(0, 45)).setStyle(TextInputStyle.Short).setRequired(true).setPlaceholder(String(o.description ?? '').slice(0, 100))))));
+        return i.showModal(new ModalBuilder().setCustomId(`hub:m:${name}:${sub}:${answers.join('.')}`).setTitle(labelOf(name, sub, name).label.slice(0, 45)).addComponents(...next.os.map((o) => new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId(o.name).setLabel(String(o.name).slice(0, 45)).setStyle(TextInputStyle.Short).setRequired(true).setPlaceholder(String(o.description ?? '').slice(0, 100))))));
       }
     }
     // 全部、聞いた → 値を集めて、実行する
