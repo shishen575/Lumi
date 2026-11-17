@@ -718,6 +718,11 @@ export const cooldownsCommand = {
       { name: '🏦 大型犯罪', value: Object.values(HEISTS).map((T) => line(`${T.emoji} ${T.short}`, cooldownLeft(g, u, heistKey(T.id)))).join('\n') },
     ];
     if (s.petsEnabled && getPets(g, u).length) fields.push({ name: '🐾 ペット', value: getPets(g, u).slice(0, 8).map((p, n) => `**${n + 1}. ${p.name}**\n${line('🍖 餌', cooldownLeft(g, u, `pet:feed:${p.id}`))}\n${line('🎾 遊び', cooldownLeft(g, u, `pet:play:${p.id}`))}`).join('\n').slice(0, 1024) }); // ペットごとに、名前の行と、餌・遊びの行を、分ける(横に並べると、途中で折り返して、読みにくい)
+    if (s.shopEnabled) { // お店の品(飲み物・タバコなど)の、効果が続く時間(枠ごと)
+      const act = Object.fromEntries(activeStatuses(g, u, now).map((x) => [x.slot, x]));
+      fields.push({ name: '🏪 お店の品の効果', value: Object.entries(SLOTS).map(([slot, label]) => { const st = act[slot], it = st && shopById(s, st.item);
+        return it ? `${it.emoji} **${it.name}**(${label}枠) — あと **${dur(st.until - now)}**(<t:${Math.floor(st.until / 1000)}:R>)\n-# ${itemText(it)}` : `▫️ ${label}枠 — 効いている品は、ありません`; }).join('\n').slice(0, 1024) });
+    }
     if (s.wantedEnabled) {
       const wc = wantedCfg(s), heat = getHeat(g, u, s.wantedDecayMin), n = starsOf(heat, wc.heatPerStar);
       fields.push({ name: '👮 指名手配', value: `${line('逮捕(/arrest)', cooldownLeft(g, u, 'arrest'))}\n${n ? `${starText(n)} あなたは **指名手配 Lv${n}** です(手配度 ${heat})` : `手配されていません(手配度 ${heat})`}` });
