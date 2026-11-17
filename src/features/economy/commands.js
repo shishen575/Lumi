@@ -14,7 +14,7 @@ import { RAMEN, makeOrder, gradeRamen, GRADES } from './ramen.js';
 import { POLICE_BONUS_CAP } from './wanted.js';
 import { userFx } from './userfx.js';
 import { marketNow, unitPrice, sparkline } from './stockmarket.js';
-import { VOL_LABELS, COMPANIES, companyOf, trendArrow } from './stocks.js';
+import { VOL_LABELS, MAX_COMPANIES, companiesOf, companyOf, trendArrow } from './stocks.js';
 import { MAX_PROPERTIES, estateOf, estateById, hourlyNet, accrued } from './estate.js';
 import { MAX_LOTTERIES, lotteriesOf, estimateRtp, roundOf, drawTimeOf, pad, drawNumber } from './lottery.js';
 import { settleGuild, announce, drawEmbed } from './lotteryengine.js';
@@ -895,13 +895,13 @@ export const stockCommand = {
   data: guildOnly(new SlashCommandBuilder().setName('stock').setDescription('株(架空の会社)を売り買いします')
     .addSubcommand((c) => c.setName('list').setDescription('株価と、自分の持ち株を見ます').addStringOption(searchOpt).addBooleanOption((o) => o.setName('public').setDescription('全員に表示する(省略すると自分だけ)')))
     .addSubcommand((c) => c.setName('holders').setDescription('みんなの持ち株と、株の割合(持ち株が、全員の合計の何%か)を見ます')
-      .addIntegerOption((o) => o.setName('company').setDescription('会社の番号(省略すると、全部の会社のまとめ)').setMinValue(1).setMaxValue(5))
+      .addIntegerOption((o) => o.setName('company').setDescription('会社の番号(省略すると、全部の会社のまとめ)').setMinValue(1).setMaxValue(MAX_COMPANIES))
       .addBooleanOption((o) => o.setName('public').setDescription('全員に表示する(省略すると自分だけ)')))
     .addSubcommand((c) => c.setName('buy').setDescription('株を買います')
-      .addIntegerOption((o) => o.setName('company').setDescription('会社の番号(/stock list の番号)').setRequired(true).setMinValue(1).setMaxValue(5))
+      .addIntegerOption((o) => o.setName('company').setDescription('会社の番号(/stock list の番号)').setRequired(true).setMinValue(1).setMaxValue(MAX_COMPANIES))
       .addIntegerOption((o) => o.setName('shares').setDescription('株数').setRequired(true).setMinValue(1)))
     .addSubcommand((c) => c.setName('sell').setDescription('株を売ります')
-      .addIntegerOption((o) => o.setName('company').setDescription('会社の番号(/stock list の番号)').setRequired(true).setMinValue(1).setMaxValue(5))
+      .addIntegerOption((o) => o.setName('company').setDescription('会社の番号(/stock list の番号)').setRequired(true).setMinValue(1).setMaxValue(MAX_COMPANIES))
       .addIntegerOption((o) => o.setName('shares').setDescription('株数(省略すると、持っている全部)').setMinValue(1)))),
   async execute(i) {
     const s = await open(i); if (!s) return;
@@ -961,16 +961,16 @@ export const stockCommand = {
 /* ================= 株のニュース(会社ごとに見る) ================= */
 export const newsCommand = {
   data: guildOnly(new SlashCommandBuilder().setName('news').setDescription('株のニュース(最近起きた出来事)を、会社ごとに見ます')
-    .addIntegerOption((o) => o.setName('company').setDescription('会社の番号(/stock list の番号。省略すると、全部の会社)').setMinValue(1).setMaxValue(COMPANIES.length))
+    .addIntegerOption((o) => o.setName('company').setDescription('会社の番号(/stock list の番号。省略すると、全部の会社)').setMinValue(1).setMaxValue(MAX_COMPANIES))
     .addBooleanOption((o) => o.setName('public').setDescription('全員に表示する(省略すると自分だけ)'))),
   async execute(i) {
     const s = await open(i); if (!s) return;
     if (!s.stocksEnabled) return stockOff(i);
-    const g = i.guildId, n = i.options.getInteger('company'), c0 = n ? COMPANIES[n - 1] : null;
+    const g = i.guildId, n = i.options.getInteger('company'), c0 = n ? companiesOf(s)[n - 1] : null;
     if (n && !c0) return refuse(i, `${n} 番の会社は、ありません。(/stock list の番号を指定してください)`);
     marketNow(s, g); // 株価を、いままで進める(その間に起きたニュースも、記録される)
     const rows = recentNews(g, c0?.id ?? null, 10);
-    const co = (id) => { const k = COMPANIES.find((x) => x.id === id); return k ? companyOf(s, k) : { name: id, ticker: '', emoji: '📰' }; };
+    const co = (id) => { const k = companiesOf(s).find((x) => x.id === id); return k ? companyOf(s, k) : { name: id, ticker: '', emoji: '📰' }; };
     const title = c0 ? `📰 ${companyOf(s, c0).emoji} ${companyOf(s, c0).name} のニュース` : '📰 株のニュース(全部の会社)';
     const e = new EmbedBuilder().setColor(0x3498db).setTitle(title)
       .setDescription(rows.length ? rows.map((r) => { const c = co(r.company), pctv = (r.after_px / r.before_px - 1) * 100, px = (v) => Math.max(1, Math.round(v)).toLocaleString(); return `${r.up ? '📈' : '📉'} ${c0 ? '' : `${c.emoji} **${c.ticker}** `}**${r.text}**\n${r.up ? '🔺' : '🔻'} ${pctv > 0 ? '+' : ''}${pctv.toFixed(1)}%(${px(r.before_px)} → ${px(r.after_px)})・ <t:${r.tick * 60}:R>`; }).join('\n\n') : 'まだ、ニュースは、ありません。(ニュースは、起きるたびに、ここに記録されます)')
@@ -982,12 +982,12 @@ export const newsCommand = {
 /* ================= 不祥事(お金を払って、会社の株価を下げる) ================= */
 export const scandalCommand = {
   data: guildOnly(new SlashCommandBuilder().setName('scandal').setDescription('お金を払って、会社の不祥事を、こっそり起こします(その会社の株価が下がります)')
-    .addIntegerOption((o) => o.setName('company').setDescription('会社の番号(/stock list の番号)').setRequired(true).setMinValue(1).setMaxValue(5))),
+    .addIntegerOption((o) => o.setName('company').setDescription('会社の番号(/stock list の番号)').setRequired(true).setMinValue(1).setMaxValue(MAX_COMPANIES))),
   async execute(i, rng = rnd) {
     const s = await open(i); if (!s) return;
     if (!s.stocksEnabled) return stockOff(i);
     if (!s.scandalEnabled) return refuse(i, 'このサーバーでは、不祥事は、オフです。管理者が、ダッシュボードの「株」でオンにできます。');
-    const g = i.guildId, u = i.user.id, cfg = stockCfg(s), n = i.options.getInteger('company', true), c0 = COMPANIES[n - 1], now = Date.now();
+    const g = i.guildId, u = i.user.id, cfg = stockCfg(s), n = i.options.getInteger('company', true), c0 = companiesOf(s)[n - 1], now = Date.now();
     if (!c0) return refuse(i, `${n} 番の会社は、ありません。(/stock list の番号を指定してください)`);
     const c = companyOf(s, c0), coKey = `co:${c0.id}`;
     const mine = cooldownLeft(g, u, 'scandal'); if (mine) return refuse(i, `🤫 次の不祥事まで、あと ${dur(mine)}。(足がつかないように、しばらく、おとなしく)`);

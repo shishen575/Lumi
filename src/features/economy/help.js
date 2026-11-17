@@ -4,7 +4,7 @@ import { POLICE_BONUS_CAP } from './wanted.js';
 import { RAMEN, GRADES } from './ramen.js';
 import { SLOTS, shopItems, itemText } from './shop.js';
 import { petsOpen, bonusLabel } from './pets.js';
-import { VOL_LABELS, companyOf, COMPANIES } from './stocks.js';
+import { VOL_LABELS, companyOf, companiesOf } from './stocks.js';
 import { lotteriesOf } from './lottery.js';
 import { estateOf } from './estate.js';
 import { estateCfg, stockCfg, petCfg, toolCfg, timeoutCfg, ramenCfg, crimeOf, jobOf, heistOf, itemOf, marketCfg, wantedCfg, bailPerMin } from './balance.js';
@@ -112,7 +112,7 @@ export function lifeHelp({ guildId }) {
   else sections.push(off('🏪 お店', 'お店・ペット'));
   if (s.petsEnabled) { const pc = petCfg(s); sections.push({ name: '🐾 ペット `/pet`', value: cut(['餌と遊びで、なつき度が上がり、レベルが上がると、ボーナスがつきます(おなかがすいていると、ボーナスは出ません)。', '', ...petsOpen(s).map((x, n) => `${n + 1}. ${x.emoji} **${x.name}** ${money(s, x.price)} — ${bonusLabel(x, pc.power)} / レベル(餌 ${x.foodEmoji}${x.foodName} ${money(s, x.feedCost)})`)].join('\n')) }); }
   else sections.push(off('🐾 ペット', 'お店・ペット'));
-  if (s.stocksEnabled) { const sc = stockCfg(s); sections.push({ name: '📈 株 `/stock`', value: cut([`株価は **${Math.round(sc.tickMs / 60000)}分ごと**に動きます。売買の手数料は ${(sc.fee * 100).toFixed(1)}%。値動きの大きさは、会社ごとに10段階です。`, '', ...COMPANIES.map((c0, n) => { const c = companyOf(s, c0), lv = s.stockLevels?.[c.id] ?? c0.level; return `${n + 1}. ${c.emoji} **${c.ticker}** ${c.name} — 変動 Lv${lv}(${VOL_LABELS[lv - 1]})`; })].join('\n')) }); }
+  if (s.stocksEnabled) { const sc = stockCfg(s); sections.push({ name: '📈 株 `/stock`', value: cut([`株価は **${Math.round(sc.tickMs / 60000)}分ごと**に動きます。売買の手数料は ${(sc.fee * 100).toFixed(1)}%。値動きの大きさは、会社ごとに10段階です。`, '', ...companiesOf(s).map((c0, n) => { const c = companyOf(s, c0), lv = s.stockLevels?.[c.id] ?? c0.level; return `${n + 1}. ${c.emoji} **${c.ticker}** ${c.name} — 変動 Lv${lv}(${VOL_LABELS[lv - 1]})`; })].join('\n')) }); }
   else sections.push(off('📈 株', '株'));
   if (s.lotteryEnabled) sections.push({ name: '🎟️ 宝くじ `/lottery`', value: cut(['番号を選んで買うと、決まった時刻に、自動で抽選します。', '', ...lotteriesOf(s).map((L, n) => `${n + 1}. ${L.emoji} **${L.name}** — 1枚 ${money(s, L.price)} ・ ${L.digits}桁 ・ ${L.drawHours}時間おき(日本時間 ${L.drawAtHour}時基準)・ 1等 ${money(s, L.jackpotBase)}〜 ・ 2等 ×${L.prize2}${L.digits >= 3 ? ` ・ 3等 ×${L.prize3}` : ''}`)].join('\n')) });
   else sections.push(off('🎟️ 宝くじ', '宝くじ'));

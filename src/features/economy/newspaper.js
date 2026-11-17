@@ -2,12 +2,12 @@ import { EmbedBuilder } from 'discord.js';
 import { getSettings, money } from './settings.js';
 import { marketNow } from './stockmarket.js';
 import { takeNews } from './db.js';
-import { COMPANIES, companyOf } from './stocks.js';
+import { companiesOf, companyOf } from './stocks.js';
 
 const MIN = 60_000;
 /** ニュース1件の記事(埋め込み): 会社・見出し・株価の変化 */
 export function newsEmbed(s, n) {
-  const c0 = COMPANIES.find((x) => x.id === n.company), c = c0 ? companyOf(s, c0) : { name: n.company, ticker: '', emoji: '📰' };
+  const c0 = companiesOf(s).find((x) => x.id === n.company), c = c0 ? companyOf(s, c0) : { name: n.company, ticker: '', emoji: '📰' };
   const pct = (n.after_px / n.before_px - 1) * 100, up = !!n.up, px = (v) => Math.max(1, Math.round(v)).toLocaleString();
   return new EmbedBuilder().setColor(up ? 0x2ecc71 : 0xe74c3c).setTitle(`${up ? '📈' : '📉'} ${c.emoji} ${c.name}${c.ticker ? `(${c.ticker})` : ''}`)
     .setDescription(`**${n.text}**\n株価 ${s.currencyEmoji} ${px(n.before_px)} → **${px(n.after_px)}** ${up ? '🔺' : '🔻'} ${pct > 0 ? '+' : ''}${pct.toFixed(1)}%`)

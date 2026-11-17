@@ -13,7 +13,7 @@ import { petsOpen, bonusLabel } from './pets.js';
 import { estateOf } from './estate.js';
 import { lotteriesOf, roundOf, drawTimeOf } from './lottery.js';
 import { ITEMS as MARKET_ITEMS } from './market.js';
-import { COMPANIES, companyOf } from './stocks.js';
+import { companiesOf, companyOf } from './stocks.js';
 import { arrestCommand, wantedCommand, bailCommand, crimeCommand, heistCommand, workCommand, begCommand, shopCommand, useCommand, estateCommand, marketCommand, petCommand, stockCommand, newsCommand, scandalCommand, lotteryCommand } from './commands.js';
 
 /**
@@ -120,7 +120,7 @@ export function panelMessage(kind, g) {
   if (kind === 'stock') {
     return {
       embeds: [new EmbedBuilder().setColor(0x2ecc71).setTitle('📈 株パネル').setDescription('架空の会社の株を、売り買いできます。株価は、決まった間隔で動きます。「📰 ニュース」で会社ごとの最近のニュース、「👥 株主」でみんなの持ち株と割合を見られます。')
-        .addFields({ name: '会社', value: COMPANIES.map((c0, n) => { const c = companyOf(s, c0); return `${n + 1}. ${c.emoji} **${c.ticker}** ${c.name}`; }).join('\n') })],
+        .addFields({ name: '会社', value: companiesOf(s).map((c0, n) => { const c = companyOf(s, c0); return `${n + 1}. ${c.emoji} **${c.ticker}** ${c.name}`; }).join('\n') })],
       components: [new ActionRowBuilder().addComponents(btn('panel:stock:list', '株価・持ち株', '📈'), btn('panel:stock:news', 'ニュース', '📰', ButtonStyle.Primary), btn('panel:stock:buy', '買う', '🛒', ButtonStyle.Success), btn('panel:stock:sell', '売る', '💰', ButtonStyle.Danger), btn('panel:stock:holders', '株主', '👥')),
         ...(s.scandalEnabled ? [new ActionRowBuilder().addComponents(btn('panel:stock:scandal', '不祥事を起こす', '🤫', ButtonStyle.Danger))] : [])],
     };
@@ -308,7 +308,7 @@ export const panelComponent = {
       return;
     }
     if (kind === 'stock') {
-      const names = COMPANIES.map((c0) => { const c = companyOf(s, c0); return `${c.emoji} ${c.ticker} ${c.name}`; });
+      const names = companiesOf(s).map((c0) => { const c = companyOf(s, c0); return `${c.emoji} ${c.ticker} ${c.name}`; });
       if (action === 'list') return stockCommand.execute(asCommand(i, {}, 'list'));
       if (action === 'news') return say('どの会社のニュースを、見ますか?', { components: [selectRow('panel:stock:newssel', '会社を選ぶ', [{ label: '全部の会社', value: '0' }, ...names.map((nm, n) => ({ label: nm.slice(0, 100), value: String(n + 1) }))])] });
       if (action === 'newssel') return newsCommand.execute(asCommand(i, { company: Number(v0) || null }));
@@ -318,7 +318,7 @@ export const panelComponent = {
       if (action === 'scandalsel') return scandalCommand.execute(asCommand(i, { company: Number(v0) }));
       if (action === 'buy' || action === 'sell') return say(action === 'buy' ? 'どの会社の株を、買いますか?' : 'どの会社の株を、売りますか?', { components: [selectRow(`panel:stock:pick:${action}`, '会社を選ぶ', names.map((nm, n) => ({ label: nm.slice(0, 100), value: String(n + 1) })))] });
       if (action === 'pick') { // 会社を選んだ → 株数を、プルダウンで選ぶ(自分で入力もできる)
-        const co = companyOf(s, COMPANIES[Number(v0) - 1] ?? COMPANIES[0]), opts = [1, 5, 10, 50, 100, 500].map((n) => ({ label: `${n.toLocaleString()}株`, value: String(n) }));
+        const co = companyOf(s, companiesOf(s)[Number(v0) - 1] ?? companiesOf(s)[0]), opts = [1, 5, 10, 50, 100, 500].map((n) => ({ label: `${n.toLocaleString()}株`, value: String(n) }));
         opts.push(arg === 'buy' ? { label: '買える限り(手持ちと、持てる上限まで)', value: 'max' } : { label: '持っている全部', value: 'all' }, { label: '株数を入力する…', value: 'custom' });
         return i.update({ content: `${co.emoji} ${co.name} の株を、何株${arg === 'buy' ? '買い' : '売り'}ますか?`, components: [selectRow(`panel:stock:amt:${arg}:${v0}`, '株数を選ぶ', opts), cancelRow()] });
       }

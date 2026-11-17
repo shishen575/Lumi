@@ -37,6 +37,27 @@ export function sanitizeNames(input, current = DEFAULT_NAMES) {
   return out;
 }
 export const companyOf = (s, c) => ({ ...c, ...(s.stockNames?.[c.id] ?? {}) });
+// サーバーで作った会社(最大7社)。もともとの5社と、あわせて、そのサーバーの会社の一覧になる
+export const MAX_CUSTOM_STOCKS = 7, MAX_COMPANIES = COMPANIES.length + MAX_CUSTOM_STOCKS;
+export const companiesOf = (s) => [...COMPANIES, ...(s?.customStocks ?? [])];
+/** 作った会社のリストを、正しい形に直す(名前・ティッカー(英数字2〜6)・絵文字・基準の株価・値動きの大きさ1〜10・ひとこと)。ティッカーは、重ならないようにする */
+export function sanitizeCustomStocks(input, current = []) {
+  if (!Array.isArray(input)) return current;
+  const out = [], ids = new Set(COMPANIES.map((c) => c.id)), tickers = new Set(COMPANIES.map((c) => c.ticker));
+  const clean = (x, n) => String(x ?? '').replace(/[\r\n<>@`*_~|]/g, '').trim().slice(0, n);
+  for (const raw of input.filter((x) => clean(x?.name, 16)).slice(0, MAX_CUSTOM_STOCKS)) {
+    let id = /^s_[a-z0-9]{1,10}$/.test(String(raw?.id ?? '')) ? raw.id : null;
+    if (!id || ids.has(id)) { let n = 1; while (ids.has(`s_n${n}`)) n++; id = `s_n${n}`; }
+    ids.add(id);
+    let ticker = clean(raw?.ticker, 6).toUpperCase().replace(/[^A-Z0-9]/g, '');
+    if (ticker.length < 2) ticker = `CO${out.length + 1}`;
+    for (let n = 2; tickers.has(ticker); n++) ticker = `${ticker.slice(0, 5)}${n}`.slice(0, 6);
+    tickers.add(ticker);
+    const base = Math.round(Number(raw?.base)), level = Math.round(Number(raw?.level));
+    out.push({ id, ticker, name: clean(raw.name, 16), emoji: [...clean(raw?.emoji, 8)].slice(0, 2).join('') || '🏢', base: Number.isFinite(base) ? Math.min(1_000_000, Math.max(10, base)) : 1000, level: Number.isFinite(level) ? Math.min(10, Math.max(1, level)) : 5, drift: 0, blurb: clean(raw?.blurb, 20) });
+  }
+  return out;
+}
 
 // 決まった乱数(同じ入力なら、いつも同じ値)
 function hash(str) { let h = 2166136261; for (const ch of str) { h ^= ch.charCodeAt(0); h = Math.imul(h, 16777619) >>> 0; } return h >>> 0; }
@@ -87,7 +108,7 @@ export function sanitizeEvents(input, current = DEFAULT_EVENTS) {
     let id = /^ev_[a-z0-9]{1,10}$/.test(String(raw?.id ?? '')) ? raw.id : null;
     if (!id || used.has(id)) { let n = 1; while (used.has(`ev_n${n}`)) n++; id = `ev_n${n}`; }
     used.add(id);
-    out.push({ id, enabled: raw?.enabled !== false, text: evClean(raw.text, 30), pct: Math.max(-50, Math.min(50, pct)), company: COMPANIES.some((c) => c.id === raw?.company) ? raw.company : '', weight: Math.max(1, Math.min(10, Math.round(Number(raw?.weight)) || 3)) });
+    out.push({ id, enabled: raw?.enabled !== false, text: evClean(raw.text, 30), pct: Math.max(-50, Math.min(50, pct)), company: COMPANIES.some((c) => c.id === raw?.company) || /^s_[a-z0-9]{1,10}$/.test(String(raw?.company ?? '')) ? raw.company : '', weight: Math.max(1, Math.min(10, Math.round(Number(raw?.weight)) || 3)) });
   }
   return out.length ? out : current;
 }
@@ -105,7 +126,7 @@ export function eventAt(guild, companyId, tick, stepFactor = 1, news = DEFAULT_N
   if (news.every > 0) {
     const N = news.every, k = Math.floor(tick / N);
     if (k === Math.floor((tick - news.step) / N)) return null; // その区間の、最初の更新のときだけ
-    const r = mulberry(hash(`nws:${guild}:${k}`)), ids = COMPANIES.map((c) => c.id).filter((id) => applicable(events, id).length);
+    const r = mulberry(hash(`nws:${guild}:${k}`)), ids = (news.companyIds ?? COMPANIES.map((c) => c.id)).filter((id) => applicable(events, id).length);
     if (!ids.length || ids[Math.floor(r() * ids.length)] !== companyId) return null;
     e = pickEvent(r, applicable(events, companyId));
   } else {

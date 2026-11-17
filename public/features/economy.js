@@ -234,9 +234,28 @@ Dash.registerTab({
           <p class="hint" style="margin:0 0 8px">ときどき、ニュースが起きて、株価が決まった割合で上がったり、下がったりします。起きやすさは、「ゲームバランス」の「ニュースの起きやすさ」で、変えられます。どのニュースが起きるかは、下の「起きやすさ」(1〜10)で決まります。</p>
           <div id="evl"></div>
           <div class="acts"><span class="mut small" id="evcount"></span><button class="btn ghost" id="evadd" type="button">出来事を追加</button><button class="btn ghost" id="evmerge" type="button">初期の出来事のうち、足りないものを足す</button><button class="btn ghost" id="evreset" type="button">初期の出来事に戻す</button></div>
+          <h2 class="sec" style="margin:18px 0 8px">株を作る(新しい会社)</h2>
+          <p class="hint" style="margin:0 0 8px">自分のサーバーだけの、新しい会社を作れます(最大${meta.maxCustomStocks}社)。基準の株価と、値動きの大きさ(10段階)を決めます。作った会社は、売買・ニュース・不祥事・株主の一覧など、ぜんぶで、使えます。会社の番号は、もともとの5社のあとに、作った順に付きます。消すときは、その会社の株を持っている人が、いないことが必要です。出来事を、その会社だけに起こすには、保存したあと、ページを開き直して、出来事の「会社」で選びます。</p>
+          <div id="cs"></div>
+          <div class="acts"><button class="btn ghost" id="csadd" type="button">会社を作る</button></div>
           <div id="holders"></div>
           <div class="card"><h2>値動きの目安</h2><p class="hint" style="margin:0">1日の値動きの目安は、レベル1で約1.5%、レベル5で約7%、レベル10で約28%です。ニュースが起きると、書いた割合だけ、動きます(動く強さは、上の「ニュースで動く強さ」で変えられます)。</p></div>
           <div class="acts"><button class="btn ghost" id="reset" type="button">初期値に戻す</button><button class="btn" id="save" type="button">保存</button></div>`;
+        let customs = JSON.parse(JSON.stringify(st.customStocks ?? []));
+        const csCollect = () => { customs = [...el.querySelectorAll('.cs-row[data-cs]')].map((r, n) => ({ id: customs[n]?.id, emoji: r.querySelector('.cs-emoji').value, ticker: r.querySelector('.cs-tick').value, name: r.querySelector('.cs-name').value, base: r.querySelector('.cs-base').value, level: r.querySelector('.cs-lv').value, blurb: r.querySelector('.cs-blurb').value })); };
+        const csDraw = () => {
+          el.querySelector('#cs').innerHTML = customs.length ? customs.map((c, n) => `<div class="card" data-cs="${n}"><div class="card-h"><h2>${esc(c.emoji)} ${esc(c.ticker || '')} ${esc(c.name)}</h2><button class="btn danger icon" type="button" data-csrm="${n}" aria-label="削除">✕</button></div>
+            <div class="grid2"><div class="field"><label class="f">会社の名前</label><input class="cs-name" type="text" maxlength="16" value="${esc(c.name)}"></div>
+              <div class="field"><label class="f">ティッカー(英数字2〜6文字)</label><input class="cs-tick" type="text" maxlength="6" value="${esc(c.ticker ?? '')}"></div>
+              <div class="field"><label class="f">絵文字</label><input class="cs-emoji" type="text" maxlength="8" value="${esc(c.emoji)}"></div>
+              <div class="field"><label class="f">基準の株価(最初の値段)</label><input class="cs-base" type="number" min="10" max="1000000" value="${c.base}"></div>
+              <div class="field"><label class="f">値動きの大きさ(10段階)</label><select class="cs-lv">${meta.volLabels.map((l, k) => `<option value="${k + 1}" ${Number(c.level) === k + 1 ? 'selected' : ''}>${k + 1}. ${esc(l)}</option>`).join('')}</select></div>
+              <div class="field"><label class="f">ひとこと(20文字まで)</label><input class="cs-blurb" type="text" maxlength="20" value="${esc(c.blurb ?? '')}"></div></div></div>`).join('').replace(/class="card" data-cs/g, 'class="card cs-row" data-cs') : '<div class="card"><p class="hint" style="margin:0">作った会社は、まだありません。</p></div>';
+          el.querySelector('#csadd').disabled = customs.length >= meta.maxCustomStocks;
+          el.querySelectorAll('[data-csrm]').forEach((b) => (b.onclick = () => { csCollect(); customs.splice(Number(b.dataset.csrm), 1); csDraw(); }));
+        };
+        el.querySelector('#csadd').onclick = () => { csCollect(); customs.push({ emoji: '🏢', ticker: '', name: '新しい会社', base: 1000, level: 5, blurb: '' }); csDraw(); };
+        csDraw();
         let events = JSON.parse(JSON.stringify(st.newsEvents));
         const evCollect = () => { events = [...el.querySelectorAll('.ev-row[data-ev]')].map((c, n) => ({ id: events[n]?.id, enabled: c.querySelector('.ev-on').checked, text: c.querySelector('.ev-text').value, pct: c.querySelector('.ev-pct').value, company: c.querySelector('.ev-co').value, weight: c.querySelector('.ev-w').value })); };
         const evDraw = () => {
@@ -245,7 +264,7 @@ Dash.registerTab({
             <label class="sw" style="margin:0" title="有効"><input type="checkbox" class="ev-on" ${e.enabled ? 'checked' : ''}><i></i></label>
             <input class="ev-text" type="text" maxlength="30" value="${esc(e.text)}" aria-label="出来事">
             <input class="ev-pct" type="number" min="-50" max="50" step="1" value="${e.pct}" aria-label="割合" style="${Number(e.pct) > 0 ? 'color:var(--ok)' : 'color:var(--err)'}">
-            <select class="ev-co" aria-label="会社"><option value="">全部</option>${meta.companies.map((c) => `<option value="${c.id}" ${e.company === c.id ? 'selected' : ''}>${esc(names[c.id].emoji)} ${esc(names[c.id].name)}</option>`).join('')}</select>
+            <select class="ev-co" aria-label="会社"><option value="">全部</option>${[...meta.companies.map((c) => ({ id: c.id, label: `${names[c.id].emoji} ${names[c.id].name}` })), ...(st.customStocks ?? []).map((c) => ({ id: c.id, label: `${c.emoji} ${c.name}` }))].map((c) => `<option value="${c.id}" ${e.company === c.id ? 'selected' : ''}>${esc(c.label)}</option>`).join('')}</select>
             <input class="ev-w" type="number" min="1" max="10" value="${e.weight}" aria-label="起きやすさ">
             <button class="btn danger icon" type="button" data-evrm="${n}" aria-label="削除">✕</button></div>`).join('') || '<p class="hint" style="padding:6px 18px;margin:0">出来事が、ありません。「出来事を追加」で、作れます。</p>'}</div>`;
           el.querySelector('#evadd').disabled = events.length >= meta.maxEvents;
@@ -265,10 +284,10 @@ Dash.registerTab({
         }).catch(() => {});
         el.querySelector('#reset').onclick = () => { el.querySelectorAll('[data-c]').forEach((c) => { const id = c.dataset.c; c.querySelector('.s-name').value = meta.defaultNames[id].name; c.querySelector('.s-tick').value = meta.defaultNames[id].ticker; c.querySelector('.s-emoji').value = meta.defaultNames[id].emoji; c.querySelector('.s-lv').value = meta.defaultLevels[id]; }); };
         el.querySelector('#save').onclick = async () => {
-          evCollect();
+          evCollect(); csCollect();
           const stockNames = {}, stockLevels = {};
           el.querySelectorAll('[data-c]').forEach((c) => { const id = c.dataset.c; stockNames[id] = { name: c.querySelector('.s-name').value, ticker: c.querySelector('.s-tick').value, emoji: c.querySelector('.s-emoji').value }; stockLevels[id] = Number(c.querySelector('.s-lv').value); });
-          await api('/settings', { method: 'PUT', body: { stocksEnabled: el.querySelector('#on').checked, scandalEnabled: el.querySelector('#scan').checked, stockNames, stockLevels, newsEvents: events, newsEvery: Number(el.querySelector('#nevery').value), newsPower: Number(el.querySelector('#npow').value), stockChannelId: el.querySelector('#bch').value || null, newsChannelId: el.querySelector('#nch').value || null, stockBoardMin: Number(el.querySelector('#bmin').value), stockBoardEdit: el.querySelector('#bedit').checked } }); toast('保存しました');
+          await api('/settings', { method: 'PUT', body: { customStocks: customs, stocksEnabled: el.querySelector('#on').checked, scandalEnabled: el.querySelector('#scan').checked, stockNames, stockLevels, newsEvents: events, newsEvery: Number(el.querySelector('#nevery').value), newsPower: Number(el.querySelector('#npow').value), stockChannelId: el.querySelector('#bch').value || null, newsChannelId: el.querySelector('#nch').value || null, stockBoardMin: Number(el.querySelector('#bmin').value), stockBoardEdit: el.querySelector('#bedit').checked } }); toast('保存しました');
         };
       } },
     /* ===== 宝くじ ===== */

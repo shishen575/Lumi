@@ -4,7 +4,7 @@ import { SLOTS, shopItems, itemText } from './shop.js';
 import { ITEMS as MARKET_ITEMS, marketRate, priceOf, toolFor } from './market.js';
 import { estateOf, hourlyNet } from './estate.js';
 import { petsOpen, petList, bonusLabel, LEVEL_XP, MAX_LEVEL } from './pets.js';
-import { COMPANIES, companyOf, VOL_LABELS } from './stocks.js';
+import { companiesOf, companyOf, VOL_LABELS } from './stocks.js';
 import { CRIMES, JOBS } from './jobs.js';
 import { HEISTS } from './heist.js';
 import { crimeOf, jobOf, heistOf, itemOf, marketCfg, petCfg, estateCfg, stockCfg } from './balance.js';
@@ -25,7 +25,7 @@ export function choicesOf(kind, s) {
   if (kind === 'market') return s.blackMarket ? MARKET_ITEMS.map((x) => ({ id: x.id, label: `${x.emoji} ${x.name}`, hay: `${x.name} ${x.desc}` })) : [];
   if (kind === 'estate') return s.estateEnabled ? estateOf(s).map((x) => ({ id: x.id, label: `${x.emoji} ${x.name}`, hay: `${x.name} ${x.desc ?? ''}` })) : [];
   if (kind === 'pet') return s.petsEnabled ? petList(s).map((x) => ({ id: x.id, label: `${x.emoji} ${x.name}${x.enabled ? '' : '(無効)'}`, hay: `${x.name} ${x.foodName}` })) : [];
-  if (kind === 'stock') return s.stocksEnabled ? COMPANIES.map((c0) => { const c = companyOf(s, c0); return { id: c0.id, label: `${c.emoji} ${c.ticker} ${c.name}`, hay: `${c.ticker} ${c.name}` }; }) : [];
+  if (kind === 'stock') return s.stocksEnabled ? companiesOf(s).map((c0) => { const c = companyOf(s, c0); return { id: c0.id, label: `${c.emoji} ${c.ticker} ${c.name}`, hay: `${c.ticker} ${c.name}` }; }) : [];
   if (kind === 'crime') return [...Object.entries(CRIMES).map(([k, c]) => ({ id: `c:${k}`, label: `${c.emoji} ${c.name}`, hay: c.name })), ...Object.values(HEISTS).map((T) => ({ id: `h:${T.id}`, label: `${T.emoji} ${T.name}(大型)`, hay: `${T.name} ${T.short ?? ''}` }))];
   if (kind === 'job') return Object.entries(JOBS).map(([k, j]) => ({ id: k, label: `${j.emoji} ${j.name}`, hay: j.name }));
   return [];

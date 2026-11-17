@@ -1,4 +1,4 @@
-import { COMPANIES, MAX_TICK_STEPS, KEEP_MINUTES, BASE_STEP, nextPrice, prevPrice, eventAt, DEFAULT_LEVELS } from './stocks.js';
+import { companiesOf, MAX_TICK_STEPS, KEEP_MINUTES, BASE_STEP, nextPrice, prevPrice, eventAt, DEFAULT_LEVELS } from './stocks.js';
 import { addNews, lastStockRow, firstStockRow, stockPriceAt, stockRange, insertStockPrices } from './db.js';
 import { stockCfg } from './balance.js';
 
@@ -13,9 +13,9 @@ export const sparkline = (values) => { const lo = Math.min(...values), hi = Math
  */
 export function marketNow(s, g, now = Date.now()) {
   const cfg = stockCfg(s), step = Math.max(1, Math.round(cfg.tickMs / MIN)), nowMin = Math.floor(now / MIN), factor = step / BASE_STEP;
-  const newsCfg = { rate: cfg.newsRate, events: s.newsEvents, every: s.newsEvery, step, power: s.newsPower / 100 }; // ニュースの設定(間隔・強さ)
-  return COMPANIES.map((c) => {
-    const level = s.stockLevels?.[c.id] ?? DEFAULT_LEVELS[c.id];
+  const newsCfg = { companyIds: companiesOf(s).map((c) => c.id), rate: cfg.newsRate, events: s.newsEvents, every: s.newsEvery, step, power: s.newsPower / 100 }; // ニュースの設定(間隔・強さ)
+  return companiesOf(s).map((c) => {
+    const level = s.stockLevels?.[c.id] ?? c.level ?? DEFAULT_LEVELS[c.id];
     let last = lastStockRow(g, c.id);
     if (!last) { last = { tick: nowMin, price: c.base }; insertStockPrices(g, c.id, [last], nowMin - KEEP_MINUTES); }
     let n = Math.floor((nowMin - last.tick) / step);

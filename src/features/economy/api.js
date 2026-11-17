@@ -8,7 +8,7 @@ import { DEFAULT_RANKS, MAX_RANKS } from './ranks.js';
 import { POLICE_BONUS_CAP } from './wanted.js';
 import { SCHEMA, jobOf, wantedCfg, marketCfg } from './balance.js';
 import { FX_LABELS, SLOTS, MAX_SHOP_ITEMS, DEFAULT_SHOP, SHOP_MAX_STACK, shopById, shopItems } from './shop.js';
-import { COMPANIES, VOL_LABELS, VOL_LEVELS, DEFAULT_NAMES, DEFAULT_LEVELS, companyOf, DEFAULT_EVENTS, MAX_EVENTS } from './stocks.js';
+import { COMPANIES, MAX_CUSTOM_STOCKS, companiesOf, sanitizeCustomStocks, VOL_LABELS, VOL_LEVELS, DEFAULT_NAMES, DEFAULT_LEVELS, companyOf, DEFAULT_EVENTS, MAX_EVENTS } from './stocks.js';
 import { PANELS, panelState, installPanel, removePanel, retiredOf } from './panels.js';
 import { customPanels, saveCustomPanel, removeCustomPanel, removeCustomButton, retiredOfCustom, MAX_CUSTOM, MAX_BUTTONS } from './custompanels.js';
 import { commandCatalog } from '../../core/commands.js';
@@ -38,7 +38,7 @@ export function mountApi(router, client = null) {
   // お店・ペット・株・宝くじ・不動産の設定画面に必要な、固定の情報
   router.get('/extras-meta', (req, res) => res.json({
     fx: FX_LABELS, slots: SLOTS, maxShop: MAX_SHOP_ITEMS, defaultShop: DEFAULT_SHOP, maxEvents: MAX_EVENTS, defaultEvents: DEFAULT_EVENTS, maxPets: MAX_PETS, defaultPets: DEFAULT_PETS, petFx: PET_FX_KEYS,
-    companies: COMPANIES.map((c) => ({ id: c.id, base: c.base, blurb: c.blurb })), volLabels: VOL_LABELS, volLevels: VOL_LEVELS, defaultNames: DEFAULT_NAMES, defaultLevels: DEFAULT_LEVELS,
+    maxCustomStocks: MAX_CUSTOM_STOCKS, companies: COMPANIES.map((c) => ({ id: c.id, base: c.base, blurb: c.blurb })), volLabels: VOL_LABELS, volLevels: VOL_LEVELS, defaultNames: DEFAULT_NAMES, defaultLevels: DEFAULT_LEVELS,
     maxLotteries: MAX_LOTTERIES, defaultLottery: DEFAULT_LOTTERY, maxProperties: MAX_PROPERTIES, defaultEstate: DEFAULT_ESTATE,
   }));
   // ゲームバランス: 変えられる数字の一覧(初期値・いまの値)と、保存
@@ -56,6 +56,11 @@ export function mountApi(router, client = null) {
     // 予算のオン・オフは、お金の総量を決めるので、オーナー・管理者・運営だけ
     if (b.budgetEnabled !== undefined && !!b.budgetEnabled !== getSettings(req.guild.id).budgetEnabled && !canEditAccess(req.access)) {
       return res.status(403).json({ error: '予算のオン・オフを変えられるのは、サーバーのオーナー・管理者・運営だけです' });
+    }
+    if (b.customStocks !== undefined) { // 作った会社を消すときは、その会社の株を持っている人が、いないこと(株が、行き場を失わないように)
+      const g = req.guild.id, cur = getSettings(g).customStocks ?? [], next = sanitizeCustomStocks(b.customStocks, cur), gone = cur.filter((c) => !next.some((n) => n.id === c.id));
+      const held = stockHoldersAll(g).filter((r) => gone.some((c) => c.id === r.company));
+      if (held.length) return res.status(400).json({ error: `「${gone.filter((c) => held.some((r) => r.company === c.id)).map((c) => c.name).join('・')}」の株を持っている人がいるので、消せません。全員が売ったあとで、消してください。` });
     }
     saveSettings(req.guild.id, b);
     res.json(view(req));
@@ -84,7 +89,7 @@ export function mountApi(router, client = null) {
     for (const x of h.status) { const sh = shopById(s, x.item); row(x.user_id).effects.push({ name: sh?.name ?? '(削除された品)', emoji: sh?.emoji ?? '❔', left: x.until - Date.now() }); }
     for (const x of h.pets) { const sp = speciesOf(s, x.species); row(x.user_id).pets.push({ name: x.name, species: sp.name, emoji: sp.emoji, xp: x.xp }); }
     for (const x of h.estate) { const p = estateById(s, x.property); row(x.user_id).estate.push({ name: p?.name ?? '(削除された物件)', emoji: p?.emoji ?? '🏠', count: x.count }); }
-    for (const x of h.stocks) { const c = COMPANIES.find((k) => k.id === x.company); if (c) { const n = companyOf(s, c); row(x.user_id).stocks.push({ name: n.ticker, emoji: n.emoji, shares: x.shares }); } }
+    for (const x of h.stocks) { const c = companiesOf(s).find((k) => k.id === x.company); if (c) { const n = companyOf(s, c); row(x.user_id).stocks.push({ name: n.ticker, emoji: n.emoji, shares: x.shares }); } }
     const list = [...users.values()].filter((u) => u.items.length || u.effects.length || u.pets.length || u.estate.length || u.stocks.length).sort((a, b) => b.money - a.money).slice(0, 300);
     const out = await Promise.all(list.map(async (u) => { const m = req.guild.members.cache.get(u.user_id) ?? (await req.guild.members.fetch(u.user_id).catch(() => null)); return { ...u, name: m?.displayName ?? u.user_id }; }));
     res.json({ currencyEmoji: s.currencyEmoji, users: out });
