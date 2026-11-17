@@ -295,7 +295,7 @@ Dash.registerTab({
       async render(el, { api, channels: getChannels, esc, toast, pageHeader }) {
         const [st, meta, chans] = await Promise.all([api('/settings'), api('/extras-meta'), getChannels()]);
         let lots = JSON.parse(JSON.stringify(st.lotteries)), on = st.lotteryEnabled, mention = st.lotteryMention !== false, ch = st.lotteryChannelId || '';
-        const rtp = (L) => { const d = Number(L.digits), p1 = 1 / 10 ** d, q2 = 1 / 10 ** (d - 1), p2 = q2 - p1, q3 = d >= 3 ? 1 / 10 ** (d - 2) : q2, p3 = d >= 3 ? q3 - q2 : 0; return (p1 * (L.jackpotBase / L.price) + p2 * L.prize2 + p3 * L.prize3) * 100; };
+        const rtp = (L) => { const d = Number(L.digits), p1 = 1 / 10 ** d, q2 = 1 / 10 ** (d - 1), p2 = q2 - p1, q3 = d >= 3 ? 1 / 10 ** (d - 2) : q2, p3 = d >= 3 ? q3 - q2 : 0; return (p1 * (L.jackpotBase / L.price + L.prize2 + (d >= 3 ? L.prize3 : 0)) + p2 * (L.prize2 + (d >= 3 ? L.prize3 : 0)) + p3 * L.prize3) * 100; };
         const chOpts = (sel, blank) => `<option value="">${blank}</option>${chans.map((c) => `<option value="${c.id}" ${sel === c.id ? 'selected' : ''}>#${esc(c.name)}</option>`).join('')}`;
         const draw = () => {
           el.innerHTML = `${pageHeader('宝くじ', '番号(2〜4桁)のくじを買って、決まった時刻に、自動で抽選します。くじは、サーバーで、自由に、複数作れます(名前・値段・抽選の間隔と時刻・桁数・賞金・発表のチャンネル)。')}
@@ -318,7 +318,7 @@ Dash.registerTab({
                 <div class="field"><label class="f">3等(下の桁が、2桁を残して一致。3桁以上)の倍率</label><input class="l-p3" type="number" min="0" value="${L.prize3}"></div>
                 <div class="field"><label class="f">このくじの発表チャンネル</label><select class="l-ch">${chOpts(L.channelId || '', '共通のチャンネル')}</select></div></div>
               <p class="hint" style="margin:6px 0 0">還元率の目安(ジャックポットが最低額のとき): <b>${rtp(L).toFixed(0)}%</b>。100%を超えると、遊ぶほど、お金が増えます。</p></div>`).join('')}
-            <div class="card"><h2>仕組み</h2><ul style="margin:0;padding-left:1.2em"><li><b>1等</b>: 全部の桁が一致。ジャックポットを、当たりのくじの枚数で、等分します。当たりが出なければ、次回に持ち越しです</li><li><b>2等・3等</b>: くじ代の倍率が、当選金です(買ったときのくじ代で計算)</li><li>くじを<b>削除</b>すると、売れ残りのくじは、買ったときの値段で、払い戻されます</li></ul></div>
+            <div class="card"><h2>仕組み</h2><ul style="margin:0;padding-left:1.2em"><li><b>1等</b>: 全部の桁が一致。ジャックポットを、当たりのくじの枚数で、等分します。当たりが出なければ、次回に持ち越しです</li><li><b>2等・3等</b>: くじ代の倍率が、当選金です(買ったときのくじ代で計算)</li><li><b>賞金は重なります</b>: 1等のくじは、2等・3等の条件も満たすので、2等・3等の賞金も、あわせて受け取れます(2等は3等も)</li><li>くじを<b>削除</b>すると、売れ残りのくじは、買ったときの値段で、払い戻されます</li></ul></div>
             <div class="acts"><button class="btn ghost" id="add" type="button" ${lots.length >= meta.maxLotteries ? 'disabled' : ''}>くじを追加</button><button class="btn" id="save" type="button">保存</button></div>`;
           const collect = () => {
             on = el.querySelector('#on').checked; ch = el.querySelector('#ch').value; mention = el.querySelector('#mention').checked;

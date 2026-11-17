@@ -3,8 +3,9 @@ import { randomInt } from 'node:crypto';
 /**
  * 宝くじ: 番号(2〜4桁)のくじを買う。決まった時刻に、自動で抽選する。サーバーごとに、自由に、複数のくじを作れる。
  *   1等 = 全部の桁が一致 → ジャックポット(当たりが出なければ、次回に持ち越し。当たりが複数なら、枚数で等分)
- *   2等 = 下の(桁数-1)桁が一致(1等を除く)→ くじ代の x倍率
- *   3等 = 下の(桁数-2)桁が一致(1・2等を除く。桁数が3以上のとき)→ くじ代の x倍率
+ *   2等 = 下の(桁数-1)桁が一致 → くじ代の x倍率
+ *   3等 = 下の(桁数-2)桁が一致(桁数が3以上のとき)→ くじ代の x倍率
+ *   賞金は重なる: 1等のくじは、2等・3等の条件も満たすので、2等・3等の賞金も、あわせて受け取る(2等は3等も)
  */
 export const MAX_LOTTERIES = 6;
 export const DAY_MS = 86400_000;
@@ -53,7 +54,7 @@ export const drawNumber = (digits = 3, rng = null) => (rng ? Math.floor(rng() * 
 export function estimateRtp(L) {
   const d = L.digits, p1 = 1 / 10 ** d, q2 = 1 / 10 ** (d - 1), p2 = q2 - p1;
   const q3 = d >= 3 ? 1 / 10 ** (d - 2) : q2, p3 = d >= 3 ? q3 - q2 : 0;
-  return { win1: p1, win2: p2, win3: p3, rtp: p1 * (L.jackpotBase / L.price) + p2 * L.prize2 + p3 * L.prize3 };
+  return { win1: p1, win2: p2, win3: p3, rtp: p1 * (L.jackpotBase / L.price + L.prize2 + (d >= 3 ? L.prize3 : 0)) + p2 * (L.prize2 + L.prize3 * (d >= 3 ? 1 : 0)) + p3 * L.prize3 };
 }
 /**
  * 抽選の結果を計算する(お金の移動は、しない)。tickets: [{ user_id, number, qty, price }]。ticket.price = 買ったときのくじ代
@@ -66,8 +67,8 @@ export function settleRound(tickets, winning, L, jackpot) {
     sales += t.price * t.qty;
     const tier = prizeTier(t.number, winning, L.digits);
     if (tier === 1) { win1.push(t); qty1 += t.qty; }
-    else if (tier === 2) add(t.user_id, 2, t.qty, Math.round(t.price * L.prize2 * t.qty));
-    else if (tier === 3) add(t.user_id, 3, t.qty, Math.round(t.price * L.prize3 * t.qty));
+    if (tier >= 1 && tier <= 2) add(t.user_id, 2, t.qty, Math.round(t.price * L.prize2 * t.qty)); // 賞金は重なる(1等は2等・3等も、2等は3等も)
+    if (tier >= 1 && L.digits >= 3) add(t.user_id, 3, t.qty, Math.round(t.price * L.prize3 * t.qty));
   }
   if (qty1 > 0) for (const t of win1) add(t.user_id, 1, t.qty, Math.floor(jackpot * t.qty / qty1)); // ジャックポットを、当たりのくじの枚数で等分
   return { winning, jackpot, jackpotWon: qty1 > 0, payouts, sales, win1Qty: qty1 };
