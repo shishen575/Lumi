@@ -4,9 +4,10 @@ import { registerHiddenCommands, registerHelpExtras, resyncGuildCommands } from 
 import { getSettings, money } from './settings.js';
 import { CRIMES, JOBS } from './jobs.js';
 import { HEISTS } from './heist.js';
-import { crimeOf, jobOf, heistOf, begOf, petCfg, stockCfg } from './balance.js';
+import { crimeOf, jobOf, heistOf, begOf, petCfg, stockCfg, wantedCfg } from './balance.js';
 import { shopItems, itemText } from './shop.js';
-import { allItems, getPets, holding, peek } from './db.js';
+import { allItems, getPets, holding, peek, topWanted, jailLeft } from './db.js';
+import { starsOf, bountyOf } from './wanted.js';
 import { marketNow, unitPrice } from './stockmarket.js';
 import { petsOpen, bonusLabel } from './pets.js';
 import { estateOf } from './estate.js';
@@ -217,8 +218,17 @@ export const panelComponent = {
       if (action === 'h') return heistCommand.execute(asCommand(i, { target: arg }));
       if (action === 'wanted') return wantedCommand.execute(asCommand(i, {}));
       if (action === 'bail') return bailCommand.execute(asCommand(i, {}));
-      if (action === 'arrest') return say('逮捕する人を、選んでください。', { components: [new ActionRowBuilder().addComponents(new UserSelectMenuBuilder().setCustomId('panel:crime:arrestsel').setPlaceholder('逮捕する人を選ぶ').setMinValues(1).setMaxValues(1))] });
-      if (action === 'arrestsel') { const target = i.users?.first?.() ?? null; return target ? arrestCommand.execute(asCommand(i, { user: target })) : say('その人が、見つかりません。'); }
+      if (action === 'arrest') { // 名前を入れなくていい: いま手配中の人の一覧から選ぶ(「おまかせ」は、いちばん手配度の高い人)
+        const wc = wantedCfg(s), rows = topWanted(i.guildId, s.wantedDecayMin, wc.heatPerStar, 24).filter((r) => r.user_id !== i.user.id && !jailLeft(i.guildId, r.user_id));
+        if (!rows.length) return say('いま、逮捕できる、手配中の人は、いません。(「📋 手配書」で、手配書を見られます)');
+        const names = await Promise.all(rows.map(async (r) => (await i.guild?.members?.fetch?.(r.user_id).catch(() => null))?.displayName ?? (await i.client?.users?.fetch?.(r.user_id).catch(() => null))?.username ?? '手配中の人'));
+        return say('逮捕する人を、選んでください。', { components: [selectRow('panel:crime:arrestsel', '手配中の人', [{ label: '🎯 いちばん手配度の高い人(おまかせ)', value: 'top' }, ...rows.map((r, n) => ({ label: `${names[n]}(${'⭐'.repeat(starsOf(r.heat, wc.heatPerStar))} 懸賞金 ${bountyOf(r.heat, s.bountyPerStar, wc.heatPerStar).toLocaleString()})`.slice(0, 100), value: r.user_id }))])] });
+      }
+      if (action === 'arrestsel') {
+        if (v0 === 'top') return arrestCommand.execute(asCommand(i, {}));
+        const target = await i.client.users.fetch(v0).catch(() => null);
+        return target ? arrestCommand.execute(asCommand(i, { user: target })) : say('その人が、見つかりません。');
+      }
       return crimeCommand.execute(asCommand(i, { type: arg }));
     }
     if (kind === 'work') return action === 'beg' ? begCommand.execute(asCommand(i)) : workCommand.execute(asCommand(i, { job: arg }));

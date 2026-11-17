@@ -1157,11 +1157,17 @@ export const wantedCommand = {
 };
 export const arrestCommand = {
   data: guildOnly(new SlashCommandBuilder().setName('arrest').setDescription('指名手配中の人を、逮捕します(警察のバイトを重ねた人だけ)')
-    .addUserOption((o) => o.setName('user').setDescription('逮捕する人').setRequired(true))),
+    .addUserOption((o) => o.setName('user').setDescription('逮捕する人(省略すると、いちばん手配度の高い人)'))),
   async execute(i, rng = rnd) {
     const s = await open(i); if (!s) return;
     if (!s.wantedEnabled) return wantedOff(i);
-    const g = i.guildId, me = i.user.id, target = i.options.getUser('user', true);
+    const g = i.guildId, me = i.user.id;
+    let target = i.options.getUser('user');
+    if (!target) { // 名前を入れなかった: いま手配中の人のうち、手配度がいちばん高い人(自分と、留置場にいる人は除く)
+      const top = topWanted(g, s.wantedDecayMin, wantedCfg(s).heatPerStar, 25).filter((r) => r.user_id !== me && !jailLeft(g, r.user_id))[0];
+      if (!top) return refuse(i, '逮捕できる、手配中の人が、いません。(/wanted で、手配書を見られます)');
+      target = await i.client?.users?.fetch?.(top.user_id).catch(() => null) ?? { id: top.user_id, bot: false, username: '手配中の人' };
+    }
     if (target.bot || target.id === me) return refuse(i, 'その相手は、逮捕できません。');
     const jl = jailLeft(g, me); if (jl) return refuse(i, `🚔 留置場にいる間は、逮捕できません。(あと ${dur(jl)})`);
     const n = shiftsOf(g, me, 'police');
