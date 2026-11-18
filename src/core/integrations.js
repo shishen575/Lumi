@@ -27,20 +27,26 @@ const sha = (s) => crypto.createHash('sha256').update(s).digest('hex');
 const rowOut = (r) => r && { id: r.id, guildId: r.guild_id, name: r.name, status: r.status, manifest: r.manifest ? JSON.parse(r.manifest) : null, config: JSON.parse(r.config || '{}'), createdBy: r.created_by, createdAt: r.created_at, lastSeen: r.last_seen, pairExp: r.pair_exp };
 
 /** 相手が送ってきた manifest を、安全な形に直す。許可リストにない機能は、捨てる */
-export function cleanManifest(raw) {
+export function cleanManifest(raw, ignored = { capabilities: [], settings: [] }) {
   if (!raw || typeof raw !== 'object') return null;
   const name = clean(raw.name, 30); if (!name) return null;
-  const caps = [...new Set((Array.isArray(raw.capabilities) ? raw.capabilities : []).filter((c) => typeof c === 'string' && c in CAPS))];
+  const caps = [];
+  for (const c of Array.isArray(raw.capabilities) ? raw.capabilities : []) { if (typeof c === 'string' && c in CAPS) { if (!caps.includes(c)) caps.push(c); } else ignored.capabilities.push(String(c).slice(0, 40)); }
   const used = new Set(Object.values(CAPS).map((c) => c.field?.key).filter(Boolean)), settings = [];
-  for (const f of (Array.isArray(raw.settings) ? raw.settings : []).slice(0, 8)) {
-    const key = String(f?.key ?? ''); if (!/^[a-z][a-z0-9_]{0,23}$/.test(key) || used.has(key) || !FIELD_TYPES.includes(f?.type)) continue;
+  (Array.isArray(raw.settings) ? raw.settings : []).forEach((f, n) => {
+    const key = String(f?.key ?? ''), skip = (why) => ignored.settings.push({ key: key.slice(0, 40), reason: why });
+    if (n >= 8) return skip('9件目以降は、受け付けません(最大8件)');
+    if (!/^[a-z][a-z0-9_]{0,23}$/.test(key)) return skip('key は、英小文字で始まる、英小文字・数字・_ の24文字まで');
+    if (used.has(key)) return skip('key が重複しています(予約済みの key も含みます)');
+    if (!FIELD_TYPES.includes(f?.type)) return skip(`type は ${FIELD_TYPES.join(' / ')} のどれか`);
     used.add(key); settings.push({ key, type: f.type, label: clean(f.label, 30) || key, help: clean(f.help, 100) });
-  }
+  });
   return { name, description: clean(raw.description, 200), capabilities: caps, settings };
 }
 
 /** 接続用トークンを作る(管理者のコマンドから)。トークンは、この1回しか見えない */
 export function createPairing(guildId, name, userId, now = Date.now()) {
+  db.prepare("DELETE FROM integrations WHERE guild_id=? AND status='waiting' AND pair_exp<?").run(guildId, now); // 期限切れの、接続待ちは、消す(数に数えない)
   if (db.prepare("SELECT COUNT(*) c FROM integrations WHERE guild_id=? AND status!='revoked'").get(guildId).c >= MAX_PER_GUILD) return { error: `連携は、1サーバーで最大${MAX_PER_GUILD}件までです。使わないものは、削除してください。` };
   const id = `int_${crypto.randomBytes(6).toString('hex')}`, token = `lumi_${crypto.randomBytes(24).toString('base64url')}`;
   db.prepare("INSERT INTO integrations (id, guild_id, name, pair_hash, pair_exp, status, created_by, created_at) VALUES (?,?,?,?,?,'waiting',?,?)").run(id, guildId, clean(name, 30) || '連携', sha(token), now + PAIR_TTL_MS, userId, now);
@@ -49,13 +55,16 @@ export function createPairing(guildId, name, userId, now = Date.now()) {
 
 /** 相手が、トークンと manifest を送ってきた。成功したら、永続の署名シークレットを、この1回だけ返す */
 export function redeemPairing(token, manifestRaw, now = Date.now()) {
-  const r = db.prepare("SELECT * FROM integrations WHERE pair_hash=? AND status='waiting'").get(sha(String(token ?? '')));
-  if (!r || r.pair_exp < now) return { error: 'invalid_token', status: 401 };
-  const manifest = cleanManifest(manifestRaw); if (!manifest) return { error: 'bad_manifest', status: 400 };
+  const r = db.prepare("SELECT * FROM integrations WHERE pair_hash=?").get(sha(String(token ?? '').trim()));
+  if (!r) return { error: 'invalid_token', status: 401, why: 'トークンが、見つかりません' };
+  if (r.status !== 'waiting') return { error: 'token_used', status: 401, why: `使用済みです(${r.id})` };
+  if (r.pair_exp < now) return { error: 'token_expired', status: 401, why: `期限切れです(${r.id}、${Math.round((now - r.pair_exp) / 1000)}秒前)` };
+  const ignored = { capabilities: [], settings: [] }, manifest = cleanManifest(manifestRaw, ignored);
+  if (!manifest) return { error: 'bad_manifest', status: 400, why: `manifest が不正です(${r.id}。name が必要)` }; // 検証に失敗しても、トークンは、使い切らない
   const secret = crypto.randomBytes(32).toString('hex');
-  db.prepare("UPDATE integrations SET status='active', pair_hash=NULL, pair_exp=NULL, secret_enc=?, manifest=?, name=?, config=? WHERE id=?")
+  db.prepare("UPDATE integrations SET status='active', secret_enc=?, manifest=?, name=?, config=? WHERE id=?")
     .run(encrypt(secret), JSON.stringify(manifest), manifest.name, JSON.stringify({ enabled: {}, values: {} }), r.id);
-  return { id: r.id, guildId: r.guild_id, secret, manifest };
+  return { id: r.id, guildId: r.guild_id, secret, manifest, ignored };
 }
 
 export const getIntegration = (id) => rowOut(db.prepare("SELECT * FROM integrations WHERE id=? AND status!='revoked'").get(String(id)));

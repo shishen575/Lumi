@@ -51,26 +51,30 @@ export function mountInternalApi(app, client) {
     tries.set(ip, t); if (tries.size > 500) for (const [k, v] of tries) if (v.until < now) tries.delete(k);
     const body = jsonOf(req, res); if (!body) return;
     const out = redeemPairing(body.token, body.manifest, now);
-    if (out.error) return res.status(out.status).json({ error: out.error });
+    if (out.error) { console.warn(`[internal] 登録を拒否: ${out.error} — ${out.why}`); return res.status(out.status).json({ error: out.error }); }
+    if (out.ignored.capabilities.length || out.ignored.settings.length) console.warn(`[internal] manifest で、無視した項目 (${out.id}):`, JSON.stringify(out.ignored));
     const base = (process.env.BASE_URL || '').replace(/\/+$/, '');
     console.log(`[internal] 連携を登録しました: ${out.manifest.name} (${out.id}, サーバー ${out.guildId})`);
-    res.json({ ok: true, integrationId: out.id, secret: out.secret, capabilities: out.manifest.capabilities, note: '管理者が、ダッシュボードで、機能をオンにするまで、各APIは使えません(403)。署名には、X-Integration-Id を付けてください。', endpoints: { settings: 'GET /internal/settings', notify: 'POST /internal/meshi-notify', member: 'GET /internal/members/:id', rank: 'GET /internal/users/:id/rank', grant: 'POST /internal/roles/grant' }, base });
+    res.json({ ok: true, integrationId: out.id, secret: out.secret, capabilities: out.manifest.capabilities, settings: out.manifest.settings.map((f) => f.key), ignored: out.ignored, note: '管理者が、ダッシュボードで、機能をオンにするまで、各APIは使えません(403)。署名には、X-Integration-Id を付けてください。', endpoints: { settings: 'GET /internal/settings', notify: 'POST /internal/meshi-notify', member: 'GET /internal/members/:id', rank: 'GET /internal/users/:id/rank', grant: 'POST /internal/roles/grant' }, base });
   });
 
   // ここから下は、署名つき。連携(X-Integration-Id)か、環境変数の固定の1件
   r.use((req, res, next) => {
     const ts = String(req.get('x-timestamp') ?? ''), sig = String(req.get('x-signature') ?? ''), iid = String(req.get('x-integration-id') ?? ''), now = Date.now();
-    if (!/^\d{10,16}$/.test(ts) || !/^[0-9a-f]{64}$/i.test(sig) || Math.abs(now - Number(ts)) > WINDOW_MS) return res.status(401).json({ error: 'unauthorized' });
+    const no = (why) => { console.warn(`[internal] 署名つきの呼び出しを拒否: ${why} (${req.method} ${req.path}${iid ? ', ' + iid : ''})`); return res.status(401).json({ error: 'unauthorized' }); }; // 相手には、理由を教えない。ログにだけ残す
+    if (!/^\d{10,16}$/.test(ts)) return no('X-Timestamp が、ありません・数字ではありません(ミリ秒の数字)');
+    if (!/^[0-9a-f]{64}$/i.test(sig)) return no('X-Signature が、ありません・64桁の16進ではありません');
+    if (Math.abs(now - Number(ts)) > WINDOW_MS) return no(`X-Timestamp が、ずれています(${Math.round((now - Number(ts)) / 1000)}秒。秒ではなくミリ秒で送ってください)`);
     let ctx;
-    if (iid) { const it = getIntegration(iid), sec = it?.status === 'active' ? secretOf(iid) : null; if (!sec) return res.status(401).json({ error: 'unauthorized' }); ctx = { secret: sec, it, guildId: it.guildId, channelId: it.config.values?.notifyChannel ?? '', roleId: it.config.values?.grantRole ?? '', can: (c) => !!it.config.enabled?.[c] && it.manifest.capabilities.includes(c) }; }
+    if (iid) { const it = getIntegration(iid), sec = it?.status === 'active' ? secretOf(iid) : null; if (!sec) return no(it ? '連携が有効ではありません(接続待ち)' : '連携IDが、ありません・削除済みです'); ctx = { secret: sec, it, guildId: it.guildId, channelId: it.config.values?.notifyChannel ?? '', roleId: it.config.values?.grantRole ?? '', can: (c) => !!it.config.enabled?.[c] && it.manifest.capabilities.includes(c) }; }
     else if (legacy) ctx = { secret: envSecret, it: null, ...legacyCfg, can: () => true };
-    else return res.status(401).json({ error: 'unauthorized' });
+    else return no('X-Integration-Id が、ありません(環境変数の固定の連携も、設定されていません)');
     const body = Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0);
     const want = crypto.createHmac('sha256', ctx.secret).update(`${ts}.`).update(body).digest(), got = Buffer.from(sig, 'hex');
-    if (got.length !== want.length || !crypto.timingSafeEqual(got, want)) return res.status(401).json({ error: 'unauthorized' });
+    if (got.length !== want.length || !crypto.timingSafeEqual(got, want)) return no('署名が、一致しません(secret・`timestamp.本文` の組み立て・本文のバイト列を確認)');
     sweep(now);
     const key = `${iid}:${sig.toLowerCase()}`;
-    if (seen.has(key)) return res.status(409).json({ error: 'replay' });
+    if (seen.has(key)) { console.warn(`[internal] 再送を拒否 (${iid || '固定'}, ${req.path})`); return res.status(409).json({ error: 'replay' }); }
     seen.set(key, now + WINDOW_MS * 2);
     req.rawText = body.toString('utf8'); req.ctx = ctx;
     if (ctx.it) touch(ctx.it.id, now);
