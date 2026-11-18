@@ -28,7 +28,14 @@ X-Signature: HMAC-SHA256(secret, X-Timestamp + "." + 本文) の16進
 
 | 機能 | API |
 |---|---|
-| `notify` | `POST /internal/meshi-notify` `{ "embed": { title, url, description, fields, author:{name}, timestamp } }` |
+| `notify` | `POST /internal/meshi-notify` `{ "embed": { title, url, description, fields, author:{name}, timestamp, image:{url} }, "route"?, "thread"? }`(下の「宛先」) |
 | `members` | `GET /internal/members/:discordUserId` → `{ member, roles, joinedAt }`(なければ404) |
 | `rank` | `GET /internal/users/:discordUserId/rank` → `{ messages, rankRole, rankRoleId }`(なければ404) |
 | `grant` | `POST /internal/roles/grant` `{ "userId", "reason" }` → `{ ok, already? }` |
+
+## 宛先(`notify` の `route` と `thread`)
+- `route`(任意): `hokkaido_tohoku` / `kanto` / `chubu` / `kinki` / `chugoku_shikoku` / `kyushu_okinawa`。manifest の `settings` に、`type: "channel"` で `channel_<route>` を入れておくと、管理者が地域ごとの投稿先を選べます。選ばれていない地域・不正な `route` は、通常の通知先に送ります。
+- `thread`(任意): 名前(100文字まで。改行・メンションは取り除きます)。manifest の `settings` に `thread_by_pref`(`toggle`)があり、管理者がオンにしていれば、選ばれたチャンネルの中で、同じ名前のスレッドを探して投稿します。なければ、公開スレッドを作ります(フォーラムなら、その名前の投稿を作ります)。作れない・見つからないときは、スレッドなしでチャンネルに送ります。
+- 宛先のチャンネルIDは、リクエストでは指定できません(`GET /internal/settings` も、チャンネル・ロールの項目は、ID ではなく「選ばれているか(true/false)」だけを返します)。
+- 返事: `{ "ok": true, "thread": true/false, "created": true/false, "routed": true/false }`。
+- `settings` は最大16件、`embed.image.url` は https のみ。

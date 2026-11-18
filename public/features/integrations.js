@@ -5,7 +5,7 @@ Dash.registerTab({
     id: 'list', title: '連携', icon: 'inbox',
     async render(el, { api, esc, toast, pageHeader, channels: getChannels, roles: getRoles }) {
       const st = await api('/');
-      const [chans, roles] = await Promise.all([getChannels(), getRoles()]);
+      const [chans, roles] = await Promise.all([api('/channels'), getRoles()]);
       const when = (t) => (t ? new Date(t).toLocaleString('ja-JP') : 'まだありません');
       const opts = (list, sel, blank) => `<option value="">${blank}</option>${list.map((x) => `<option value="${x.id}" ${sel === x.id ? 'selected' : ''}>${x.name ? (list === chans ? '#' : '') + esc(x.name) : x.id}</option>`).join('')}`;
       const field = (it, f) => {

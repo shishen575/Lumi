@@ -1,6 +1,7 @@
 import express from 'express';
 import crypto from 'node:crypto';
 import { getRules, getStats, metricValue } from '../features/activity-roles/db.js';
+import { deliver } from './notify-route.js';
 import { getIntegration, secretOf, redeemPairing, touch } from './integrations.js';
 
 /**
@@ -28,6 +29,7 @@ export function cleanEmbed(raw) {
   if (title) e.title = title;
   if (desc) e.description = desc;
   if (typeof raw.url === 'string' && /^https:\/\//i.test(raw.url) && raw.url.length <= 2000) e.url = raw.url;
+  if (typeof raw.image?.url === 'string' && /^https:\/\//i.test(raw.image.url) && raw.image.url.length <= 2000) e.image = { url: raw.image.url };
   const an = str(raw.author?.name, 256); if (an) e.author = { name: an };
   if (typeof raw.timestamp === 'string' && !Number.isNaN(Date.parse(raw.timestamp))) e.timestamp = new Date(raw.timestamp).toISOString();
   if (Array.isArray(raw.fields)) e.fields = raw.fields.slice(0, 25).map((f) => ({ name: str(f?.name, 256), value: str(f?.value, 1024), inline: !!f?.inline })).filter((f) => f.name && f.value);
@@ -89,7 +91,8 @@ export function mountInternalApi(app, client) {
   r.get('/settings', (req, res) => {
     const it = req.ctx.it; if (!it) return res.json({ values: {} });
     const keys = new Set(it.manifest.settings.map((f) => f.key)), values = {};
-    for (const [k, v] of Object.entries(it.config.values ?? {})) if (keys.has(k)) values[k] = v;
+    const idTypes = new Set(it.manifest.settings.filter((f) => f.type === 'channel' || f.type === 'role').map((f) => f.key));
+    for (const [k, v] of Object.entries(it.config.values ?? {})) if (keys.has(k)) values[k] = idTypes.has(k) ? !!v : v; // チャンネル・ロールは、IDではなく、「選ばれているか」だけ
     res.json({ enabled: it.config.enabled, values });
   });
 
@@ -99,10 +102,8 @@ export function mountInternalApi(app, client) {
     const embed = cleanEmbed(body.embed); if (!embed) return res.status(400).json({ error: 'bad embed' });
     if (!isId(req.ctx.channelId)) return res.status(403).json({ error: 'not configured', detail: '投稿するチャンネルが、まだ決まっていません' });
     try {
-      const ch = isId(req.ctx.channelId) ? await client.channels.fetch(req.ctx.channelId) : null;
-      if (!ch?.isTextBased?.() || ch.guildId !== req.ctx.guildId) throw new Error('channel not available');
-      await ch.send({ embeds: [embed], allowedMentions: { parse: [] } });
-      res.json({ ok: true });
+      const r = await deliver(client, req.ctx, { embed, route: typeof body.route === 'string' ? body.route : null, thread: typeof body.thread === 'string' ? body.thread : null }); // route・thread は任意(古い呼び出しは、そのまま動く)
+      res.json({ ok: true, ...r });
     } catch (e) { console.error('[internal] 通知に失敗:', e.message); res.status(502).json({ error: 'send failed' }); }
   });
 

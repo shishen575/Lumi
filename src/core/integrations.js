@@ -17,6 +17,7 @@ export const CAPS = {
 const FIELD_TYPES = ['channel', 'role', 'toggle', 'text', 'number'];
 export const PAIR_TTL_MS = 15 * 60_000;
 export const MAX_PER_GUILD = 10;
+export const MAX_SETTINGS = 16;
 
 migrate(`CREATE TABLE IF NOT EXISTS integrations (
   id TEXT PRIMARY KEY, guild_id TEXT NOT NULL, name TEXT NOT NULL, secret_enc TEXT, pair_hash TEXT, pair_exp INTEGER,
@@ -35,7 +36,7 @@ export function cleanManifest(raw, ignored = { capabilities: [], settings: [] })
   const used = new Set(Object.values(CAPS).map((c) => c.field?.key).filter(Boolean)), settings = [];
   (Array.isArray(raw.settings) ? raw.settings : []).forEach((f, n) => {
     const key = String(f?.key ?? ''), skip = (why) => ignored.settings.push({ key: key.slice(0, 40), reason: why });
-    if (n >= 8) return skip('9件目以降は、受け付けません(最大8件)');
+    if (n >= MAX_SETTINGS) return skip(`${MAX_SETTINGS + 1}件目以降は、受け付けません(最大${MAX_SETTINGS}件)`);
     if (!/^[a-z][a-z0-9_]{0,23}$/.test(key)) return skip('key は、英小文字で始まる、英小文字・数字・_ の24文字まで');
     if (used.has(key)) return skip('key が重複しています(予約済みの key も含みます)');
     if (!FIELD_TYPES.includes(f?.type)) return skip(`type は ${FIELD_TYPES.join(' / ')} のどれか`);

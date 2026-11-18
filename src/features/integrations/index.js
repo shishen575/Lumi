@@ -38,7 +38,7 @@ export const integrationCommand = {
   },
 };
 
-const isText = (c) => !!c?.isTextBased?.() && !c.isVoiceBased?.(); // スレッドも、可
+const isText = (c) => (!!c?.isTextBased?.() && !c.isVoiceBased?.()) || c?.type === 15 || c?.type === 16; // スレッド・フォーラムも、可
 
 export default {
   name: 'integrations',
@@ -49,6 +49,7 @@ export default {
   register({ router }) {
     const adminOnly = (req, res, next) => (canEditAccess(req.access) ? next() : res.status(403).json({ error: '連携を扱えるのは、サーバーのオーナー・管理者・運営だけです' }));
     router.get('/', (req, res) => res.json({ caps: CAPS, ttlMin: PAIR_TTL_MS / 60000, base: base(), items: listIntegrations(req.guild.id) }));
+    router.get('/channels', (req, res) => res.json(req.guild.channels.cache.filter(isText).map((c) => ({ id: c.id, name: c.isThread() ? `${c.parent?.name ?? '?'} › ${c.name}` : c.type === 15 || c.type === 16 ? `${c.name}(フォーラム)` : c.name, type: c.type })).sort((a, b) => a.name.localeCompare(b.name))));
     router.post('/pair', adminOnly, (req, res) => {
       const r = createPairing(req.guild.id, req.body?.name, req.actor?.id ?? req.session?.user?.id);
       if (r.error) return res.status(400).json({ error: r.error });
