@@ -8,6 +8,7 @@ import { latencyRows, latencySummary } from './latency.js';
 import { guildAccess, mountAccessRoutes, resolveAccess, isOperator } from './access.js';
 import { getKV, setKV, db } from './db.js';
 import { mountMigration } from './migrate.js';
+import { mountInternalApi } from './internal-api.js';
 
 const API = 'https://discord.com/api/v10';
 const PERM_ADMIN = 0x8n; // 管理者(BOTを招待できるかの判定に使う)
@@ -16,6 +17,7 @@ export function startWeb(client, features) {
   const app = express();
   const BASE = (process.env.BASE_URL || 'http://localhost:3000').trim().replace(/\/+$/, ''); // 末尾のスラッシュは取り除く(あると、ログイン用のアドレスが // になって、Discordのログインが失敗する)
   app.set('trust proxy', 1); // Cloudflare Tunnel / リバプロ越し
+  mountInternalApi(app, client); // INTERNAL_API_SECRET があるときだけ(サイトとの連携。署名の確認のため、本文をそのまま受け取る)
   app.use(express.json());
   mountMigration(app); // MIGRATION_TOKEN があるときだけ(データの引っ越し用)
   app.use(session({
