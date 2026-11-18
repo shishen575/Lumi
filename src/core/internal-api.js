@@ -1,6 +1,7 @@
 import express from 'express';
 import crypto from 'node:crypto';
 import { getRules, getStats, metricValue } from '../features/activity-roles/db.js';
+import { getIntegration, secretOf, redeemPairing, touch } from './integrations.js';
 
 /**
  * サイト → BOT の、サーバー間の内部API(ご当地めし帖との連携)。環境変数がそろったときだけ有効になる。
@@ -8,6 +9,8 @@ import { getRules, getStats, metricValue } from '../features/activity-roles/db.j
  *   INTERNAL_GUILD_ID     対象のサーバー(メンバー確認・ランク・ロール付与は、このサーバーだけ)
  *   INTERNAL_NOTIFY_CHANNEL_ID  新着お店の通知を出すチャンネル(宛先は、リクエストから指定させない)
  *   INTERNAL_GRANT_ROLE_ID      投稿数に応じて付与するロール(これも、固定)
+ * 連携は、`/integration create` のトークンで、相手が `POST /internal/register` を呼んで作る(ダッシュボードに設定画面ができる)。
+ *   相手は、署名に、X-Integration-Id(register の返事の id)をつける。上の環境変数は、それを使わない「固定の1件」用(省略できる)
  * 署名: X-Timestamp(ミリ秒。60秒より古い/先のものは拒否)と X-Signature = HMAC-SHA256(secret, `${timestamp}.${本文}`) の16進。
  * 同じ署名の再送は 409。
  */
@@ -33,71 +36,101 @@ export function cleanEmbed(raw) {
 }
 
 export function mountInternalApi(app, client) {
-  const secret = (process.env.INTERNAL_API_SECRET || '').trim();
-  if (secret.length < 16) return false; // 設定がなければ、道そのものを作らない
-  const guildId = (process.env.INTERNAL_GUILD_ID || '').trim(), channelId = (process.env.INTERNAL_NOTIFY_CHANNEL_ID || '').trim(), roleId = (process.env.INTERNAL_GRANT_ROLE_ID || '').trim();
+  const envSecret = (process.env.INTERNAL_API_SECRET || '').trim(), legacy = envSecret.length >= 16;
+  const legacyCfg = { guildId: (process.env.INTERNAL_GUILD_ID || '').trim(), channelId: (process.env.INTERNAL_NOTIFY_CHANNEL_ID || '').trim(), roleId: (process.env.INTERNAL_GRANT_ROLE_ID || '').trim() };
   const r = express.Router();
   r.use(express.raw({ type: () => true, limit: '64kb' }));
+  const tries = new Map(); // 接続用トークンの総当たり対策(IPごとに、1分に10回まで)
+  const jsonOf = (req, res) => { try { return JSON.parse(Buffer.isBuffer(req.body) ? req.body.toString('utf8') || '{}' : '{}'); } catch { res.status(400).json({ error: 'bad json' }); return null; } };
 
+  // 接続: トークンと manifest(使いたい機能)を送ると、署名用のシークレットが、1回だけ返る
+  r.post('/register', (req, res) => {
+    const now = Date.now(), ip = req.ip, t = tries.get(ip) ?? { n: 0, until: now + 60_000 };
+    if (t.until < now) { t.n = 0; t.until = now + 60_000; }
+    if (++t.n > 10) return res.status(429).json({ error: 'too many requests' });
+    tries.set(ip, t); if (tries.size > 500) for (const [k, v] of tries) if (v.until < now) tries.delete(k);
+    const body = jsonOf(req, res); if (!body) return;
+    const out = redeemPairing(body.token, body.manifest, now);
+    if (out.error) return res.status(out.status).json({ error: out.error });
+    const base = (process.env.BASE_URL || '').replace(/\/+$/, '');
+    console.log(`[internal] 連携を登録しました: ${out.manifest.name} (${out.id}, サーバー ${out.guildId})`);
+    res.json({ ok: true, integrationId: out.id, secret: out.secret, capabilities: out.manifest.capabilities, note: '管理者が、ダッシュボードで、機能をオンにするまで、各APIは使えません(403)。署名には、X-Integration-Id を付けてください。', endpoints: { settings: 'GET /internal/settings', notify: 'POST /internal/meshi-notify', member: 'GET /internal/members/:id', rank: 'GET /internal/users/:id/rank', grant: 'POST /internal/roles/grant' }, base });
+  });
+
+  // ここから下は、署名つき。連携(X-Integration-Id)か、環境変数の固定の1件
   r.use((req, res, next) => {
-    const ts = String(req.get('x-timestamp') ?? ''), sig = String(req.get('x-signature') ?? ''), now = Date.now();
+    const ts = String(req.get('x-timestamp') ?? ''), sig = String(req.get('x-signature') ?? ''), iid = String(req.get('x-integration-id') ?? ''), now = Date.now();
     if (!/^\d{10,16}$/.test(ts) || !/^[0-9a-f]{64}$/i.test(sig) || Math.abs(now - Number(ts)) > WINDOW_MS) return res.status(401).json({ error: 'unauthorized' });
+    let ctx;
+    if (iid) { const it = getIntegration(iid), sec = it?.status === 'active' ? secretOf(iid) : null; if (!sec) return res.status(401).json({ error: 'unauthorized' }); ctx = { secret: sec, it, guildId: it.guildId, channelId: it.config.values?.notifyChannel ?? '', roleId: it.config.values?.grantRole ?? '', can: (c) => !!it.config.enabled?.[c] && it.manifest.capabilities.includes(c) }; }
+    else if (legacy) ctx = { secret: envSecret, it: null, ...legacyCfg, can: () => true };
+    else return res.status(401).json({ error: 'unauthorized' });
     const body = Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0);
-    const want = crypto.createHmac('sha256', secret).update(`${ts}.`).update(body).digest();
-    const got = Buffer.from(sig, 'hex');
+    const want = crypto.createHmac('sha256', ctx.secret).update(`${ts}.`).update(body).digest(), got = Buffer.from(sig, 'hex');
     if (got.length !== want.length || !crypto.timingSafeEqual(got, want)) return res.status(401).json({ error: 'unauthorized' });
     sweep(now);
-    const key = sig.toLowerCase();
+    const key = `${iid}:${sig.toLowerCase()}`;
     if (seen.has(key)) return res.status(409).json({ error: 'replay' });
     seen.set(key, now + WINDOW_MS * 2);
-    req.rawText = body.toString('utf8');
+    req.rawText = body.toString('utf8'); req.ctx = ctx;
+    if (ctx.it) touch(ctx.it.id, now);
     next();
   });
+  const need = (cap) => (req, res, next) => (req.ctx.can(cap) ? next() : res.status(403).json({ error: 'not enabled', detail: 'このサーバーの管理者が、ダッシュボードで、この機能をオンにしていません' }));
   const jsonBody = (req, res) => { try { return JSON.parse(req.rawText || '{}'); } catch { res.status(400).json({ error: 'bad json' }); return null; } };
-  const guild = () => client.guilds.cache.get(guildId) ?? null;
-  const memberOf = async (id) => { const g = guild(); if (!g || !isId(id)) return null; return g.members.fetch(id).catch(() => null); };
+  const guildOf = (req) => client.guilds.cache.get(req.ctx.guildId) ?? null;
+  const memberOf = async (req, id) => { const g = guildOf(req); if (!g || !isId(id)) return null; return g.members.fetch(id).catch(() => null); };
+
+  // 管理者が決めた、設定の値(manifest の settings の項目だけ。チャンネル・ロールのIDは、返さない)
+  r.get('/settings', (req, res) => {
+    const it = req.ctx.it; if (!it) return res.json({ values: {} });
+    const keys = new Set(it.manifest.settings.map((f) => f.key)), values = {};
+    for (const [k, v] of Object.entries(it.config.values ?? {})) if (keys.has(k)) values[k] = v;
+    res.json({ enabled: it.config.enabled, values });
+  });
 
   // 1. 新着お店の通知
-  r.post('/meshi-notify', async (req, res) => {
+  r.post('/meshi-notify', need('notify'), async (req, res) => {
     const body = jsonBody(req, res); if (!body) return;
     const embed = cleanEmbed(body.embed); if (!embed) return res.status(400).json({ error: 'bad embed' });
+    if (!isId(req.ctx.channelId)) return res.status(403).json({ error: 'not configured', detail: '投稿するチャンネルが、まだ決まっていません' });
     try {
-      const ch = isId(channelId) ? await client.channels.fetch(channelId) : null;
-      if (!ch?.isTextBased?.()) throw new Error('channel not available');
+      const ch = isId(req.ctx.channelId) ? await client.channels.fetch(req.ctx.channelId) : null;
+      if (!ch?.isTextBased?.() || ch.guildId !== req.ctx.guildId) throw new Error('channel not available');
       await ch.send({ embeds: [embed], allowedMentions: { parse: [] } });
       res.json({ ok: true });
     } catch (e) { console.error('[internal] 通知に失敗:', e.message); res.status(502).json({ error: 'send failed' }); }
   });
 
   // 2. メンバー確認(ID・ロールID・参加日だけ)
-  r.get('/members/:id', async (req, res) => {
-    const m = await memberOf(req.params.id);
+  r.get('/members/:id', need('members'), async (req, res) => {
+    const m = await memberOf(req, req.params.id);
     if (!m) return res.status(404).json({ member: false });
     res.json({ member: true, roles: [...m.roles.cache.keys()].filter((x) => x !== m.guild.id), joinedAt: m.joinedAt?.toISOString() ?? null });
   });
 
   // 3. 活動ランク(発言数と、発言数のルールで到達している、いちばん高いロール)
-  r.get('/users/:id/rank', async (req, res) => {
-    if (!guild() || !isId(req.params.id)) return res.status(404).json({ error: 'not found' });
-    const stats = getStats(guildId, req.params.id);
+  r.get('/users/:id/rank', need('rank'), async (req, res) => {
+    const g = guildOf(req); if (!g || !isId(req.params.id)) return res.status(404).json({ error: 'not found' });
+    const stats = getStats(g.id, req.params.id);
     if (!stats.messages && !stats.reactions_received && !stats.voice_seconds) return res.status(404).json({ error: 'not found' });
     const v = metricValue(stats, 'messages');
-    const tier = getRules(guildId).filter((x) => x.metric === 'messages' && x.threshold <= v).sort((a, b) => b.threshold - a.threshold)[0];
-    const role = tier ? guild().roles.cache.get(tier.role_id) : null;
-    res.json({ messages: v, rankRole: role?.name ?? null, rankRoleId: tier?.role_id ?? null });
+    const tier = getRules(g.id).filter((x) => x.metric === 'messages' && x.threshold <= v).sort((a, b) => b.threshold - a.threshold)[0];
+    res.json({ messages: v, rankRole: (tier && g.roles.cache.get(tier.role_id)?.name) ?? null, rankRoleId: tier?.role_id ?? null });
   });
 
-  // 4. 投稿数に応じたロール付与(付けるロールは、設定で固定)
-  r.post('/roles/grant', async (req, res) => {
+  // 4. ロール付与(付けるロールは、管理者が、固定)
+  r.post('/roles/grant', need('grant'), async (req, res) => {
     const body = jsonBody(req, res); if (!body) return;
-    if (!isId(body.userId) || !isId(roleId)) return res.status(400).json({ error: 'bad request' });
-    const m = await memberOf(body.userId); if (!m) return res.status(404).json({ error: 'member not found' });
-    if (m.roles.cache.has(roleId)) return res.json({ ok: true, already: true });
-    try { await m.roles.add(roleId, String(body.reason ?? 'ご当地めし帖').replace(/[\r\n]/g, ' ').slice(0, 100)); res.json({ ok: true }); }
+    if (!isId(req.ctx.roleId)) return res.status(403).json({ error: 'not configured', detail: '付与するロールが、まだ決まっていません' });
+    if (!isId(body.userId)) return res.status(400).json({ error: 'bad request' });
+    const m = await memberOf(req, body.userId); if (!m) return res.status(404).json({ error: 'member not found' });
+    if (m.roles.cache.has(req.ctx.roleId)) return res.json({ ok: true, already: true });
+    try { await m.roles.add(req.ctx.roleId, String(body.reason ?? '連携').replace(/[\r\n]/g, ' ').slice(0, 100)); res.json({ ok: true }); }
     catch (e) { console.error('[internal] ロール付与に失敗:', e.message); res.status(502).json({ error: 'grant failed' }); }
   });
 
   app.use('/internal', r);
-  console.log('[internal] 内部APIを有効にしました(/internal/*)');
+  console.log(`[internal] 内部APIを有効にしました(/internal/*${legacy ? '・環境変数の固定の連携あり' : ''})`);
   return true;
 }
