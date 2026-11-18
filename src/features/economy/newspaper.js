@@ -1,3 +1,4 @@
+import { chanOf } from '../../core/channels.js';
 import { EmbedBuilder } from 'discord.js';
 import { getSettings, money } from './settings.js';
 import { marketNow } from './stockmarket.js';
@@ -20,7 +21,7 @@ export async function newspaperTick(client, now = Date.now()) {
       const s = getSettings(g); if (!s.stocksEnabled || !s.newsChannelId) continue;
       marketNow(s, g, now); // 株価を、いままで進める(その間に起きたニュースが記録される)
       const rows = takeNews(g, Math.floor(now / MIN) - 180); if (!rows.length) continue;
-      const ch = client.channels.cache.get(s.newsChannelId); if (!ch?.isTextBased?.() || ch.guildId !== g) continue;
+      const ch = (await chanOf(client, s.newsChannelId)); if (!ch?.isTextBased?.() || ch.guildId !== g) continue;
       for (let i = 0; i < rows.length; i += 10) await ch.send({ content: i === 0 ? '📰 **ルミ新聞 号外**' : undefined, embeds: rows.slice(i, i + 10).map((r) => newsEmbed(s, r)), allowedMentions: { parse: [] } }).catch((e) => console.warn(`[newspaper] 送れませんでした (${g}): ${e.message}`));
     } catch (e) { console.error(`[newspaper] 失敗 (${g}):`, e.message); }
   }

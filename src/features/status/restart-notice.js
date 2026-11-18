@@ -1,3 +1,4 @@
+import { chanOf } from '../../core/channels.js';
 import { Events, EmbedBuilder } from 'discord.js';
 import { loadNotes, unseen, latestN, fieldFor } from '../../core/release-notes.js';
 import { getKV, setKV } from '../../core/db.js';
@@ -12,7 +13,7 @@ const STATE = 'restart_state'; // { shutdownAt, lastStartAt }
 
 async function post(client, g, content, embeds = []) {
   const id = getNotice(g).channel_id; if (!id) return false;
-  const ch = client.channels.cache.get(id);
+  const ch = await chanOf(client, id);
   if (!ch?.isTextBased?.() || ch.guildId !== g) return false;
   try { await ch.send({ content, ...(embeds.length ? { embeds } : {}), allowedMentions: { parse: [] } }); return true; }
   catch (e) { console.warn(`[restart-notice] ${g} に送れませんでした: ${e.message}`); return false; }

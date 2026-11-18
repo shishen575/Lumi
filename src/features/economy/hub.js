@@ -1,3 +1,4 @@
+import { chanOf } from '../../core/channels.js';
 import { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, UserSelectMenuBuilder, ModalBuilder, TextInputBuilder, TextInputStyle, MessageFlags } from 'discord.js';
 import { getKV, setKV } from '../../core/db.js';
 import { commandCatalog, commandCategories, findCommand, registerHiddenCommands, registerHelpExtras, resyncGuildCommands } from '../../core/commands.js';
@@ -95,12 +96,12 @@ export function catMessage(cat) {
 
 export async function installCatPanel(client, g, id, channelId, retire, sticky = true) {
   const cat = catById(id); if (!cat || !buttonsOf(cat).length) throw new Error('そのカテゴリーは、ありません');
-  const ch = client.channels.cache.get(channelId); if (!ch?.isTextBased?.() || ch.guildId !== g) throw new Error('チャンネルが不正です');
+  const ch = (await chanOf(client, channelId)); if (!ch?.isTextBased?.() || ch.guildId !== g) throw new Error('チャンネルが不正です');
   const all = catPanels(g), old = all[id], payload = catMessage(cat), names = cmdsOf(cat), retireNames = retire === true ? names : (Array.isArray(retire) ? retire.filter((n) => names.includes(n)) : []);
   let msg = null;
   if (old?.msg && old.ch === ch.id) { try { msg = await ch.messages.edit(old.msg, payload); } catch { /* 消されていたら、新しく置く */ } }
   if (!msg) {
-    if (old?.msg && old.ch !== ch.id) await client.channels.cache.get(old.ch)?.messages.delete(old.msg).catch(() => {});
+    if (old?.msg && old.ch !== ch.id) await (await chanOf(client, old.ch))?.messages.delete(old.msg).catch(() => {});
     msg = await ch.send({ ...payload, allowedMentions: { parse: [] } });
   }
   all[id] = { ch: ch.id, msg: msg.id, retire: retireNames, sticky: !!sticky, at: Date.now() }; setKV(g, KEY, all);
@@ -109,7 +110,7 @@ export async function installCatPanel(client, g, id, channelId, retire, sticky =
 }
 export async function removeCatPanel(client, g, id) {
   const all = catPanels(g), old = all[id]; if (!old) return false;
-  await client.channels.cache.get(old.ch)?.messages.delete(old.msg).catch(() => {});
+  await (await chanOf(client, old.ch))?.messages.delete(old.msg).catch(() => {});
   delete all[id]; setKV(g, KEY, all); await resyncGuildCommands(g); return true;
 }
 /** 専用のパネルができたカテゴリー(宝くじなど)の、古いカテゴリーパネルを、自動で撤去する(ダッシュボードの一覧から消えて、外せなくなるため)。メッセージも、消す */
@@ -124,7 +125,7 @@ export const catStickItems = (client, g) => Object.keys(catPanels(g)).filter((id
   state: (gg) => { const st = catPanels(gg)[id]; return st?.msg && st.sticky !== false ? { ch: st.ch, msg: st.msg } : null; },
   run: async (gg) => {
     const all = catPanels(gg), st = all[id], cat = catById(id); if (!st?.msg || st.sticky === false || !cat) return;
-    const ch = client.channels.cache.get(st.ch); if (!ch?.isTextBased?.() || ch.lastMessageId === st.msg) return;
+    const ch = (await chanOf(client, st.ch)); if (!ch?.isTextBased?.() || ch.lastMessageId === st.msg) return;
     await ch.messages.delete(st.msg).catch(() => {});
     const m = await ch.send({ ...catMessage(cat), allowedMentions: { parse: [] } }); all[id] = { ...st, msg: m.id, at: Date.now() }; setKV(gg, KEY, all);
   } }));

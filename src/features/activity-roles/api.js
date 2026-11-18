@@ -83,7 +83,7 @@ export function mountApi(router) {
     const chId = req.body.notify_channel_id ? String(req.body.notify_channel_id) : null;
     if (chId) {
       const ch = req.guild.channels.cache.get(chId);
-      if (!ch?.isTextBased() || ch.isThread()) return res.status(400).json({ error: '通知チャンネルが不正です' });
+      if (!ch?.isTextBased() || ch.isVoiceBased()) return res.status(400).json({ error: '通知チャンネルが不正です' });
     }
     const tpl = String(req.body.notify_template ?? '').trim().slice(0, 500) || null;
     saveSettings(req.guild.id, { message_cooldown: cd, voice_require_others: req.body.voice_require_others ? 1 : 0,

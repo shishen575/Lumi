@@ -1,3 +1,4 @@
+import { chanOf } from '../../core/channels.js';
 import { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, UserSelectMenuBuilder, ModalBuilder, TextInputBuilder, TextInputStyle, MessageFlags } from 'discord.js';
 import { getKV, setKV } from '../../core/db.js';
 import { registerHiddenCommands, registerHelpExtras, resyncGuildCommands } from '../../core/commands.js';
@@ -161,12 +162,12 @@ const retireList = (kind, v) => (v === true ? PANELS[kind].commands : Array.isAr
 /** パネルを置く(すでにあれば、置き直す)。hide が true なら、元のコマンドを、このサーバーで廃止する */
 export async function installPanel(client, g, kind, channelId, retire, sticky = true) { // retire: 廃止するコマンドの名前の配列(true なら、全部、false なら、なし)
   if (!PANELS[kind]) throw new Error('パネルの種類が不正です');
-  const ch = client.channels.cache.get(channelId); if (!ch?.isTextBased?.() || ch.guildId !== g) throw new Error('チャンネルが不正です');
+  const ch = (await chanOf(client, channelId)); if (!ch?.isTextBased?.() || ch.guildId !== g) throw new Error('チャンネルが不正です');
   const st = panelState(g), old = st[kind], payload = panelMessage(kind, g);
   let msg = null;
   if (old?.msg && old.ch === ch.id) { try { msg = await ch.messages.edit(old.msg, payload); } catch { /* 消されていたら、新しく置く */ } }
   if (!msg) {
-    if (old?.msg && old.ch !== ch.id) await client.channels.cache.get(old.ch)?.messages.delete(old.msg).catch(() => {}); // 別のチャンネルにあった前のものは、消す
+    if (old?.msg && old.ch !== ch.id) await (await chanOf(client, old.ch))?.messages.delete(old.msg).catch(() => {}); // 別のチャンネルにあった前のものは、消す
     msg = await ch.send({ ...payload, allowedMentions: { parse: [] } });
   }
   setKV(g, KEY, { ...st, [kind]: { ch: ch.id, msg: msg.id, retire: retireList(kind, retire), hide: retireList(kind, retire).length > 0, sticky: !!sticky, v: PANEL_VERSION, at: Date.now() } });
@@ -176,7 +177,7 @@ export async function installPanel(client, g, kind, channelId, retire, sticky = 
 /** パネルが、チャンネルの一番下になければ、前のものを消して、一番下に出し直す(すでに一番下なら、何もしない) */
 export async function repostPanel(client, g, kind) {
   const st = panelState(g)[kind]; if (!st || st.sticky === false) return false;
-  const ch = client.channels.cache.get(st.ch); if (!ch?.isTextBased?.() || ch.guildId !== g) return false;
+  const ch = (await chanOf(client, st.ch)); if (!ch?.isTextBased?.() || ch.guildId !== g) return false;
   if (ch.lastMessageId === st.msg) return false;
   await ch.messages.delete(st.msg).catch(() => {}); // 履歴を読む権限が無くても、消せる
   const msg = await ch.send({ ...panelMessage(kind, g), allowedMentions: { parse: [] } });
@@ -189,7 +190,7 @@ export const panelStickItems = (client) => Object.keys(PANELS).map((kind, n) => 
 /** パネルを外す。メッセージを消して、廃止していたコマンドを、元に戻す */
 export async function removePanel(client, g, kind) {
   const st = panelState(g), old = st[kind]; if (!old) return false;
-  await client.channels.cache.get(old.ch)?.messages.delete(old.msg).catch(() => {});
+  await (await chanOf(client, old.ch))?.messages.delete(old.msg).catch(() => {});
   const { [kind]: _gone, ...rest } = st; setKV(g, KEY, rest);
   await resyncGuildCommands(g);
   return true;

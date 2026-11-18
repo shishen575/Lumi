@@ -1,3 +1,4 @@
+import { chanOf } from '../../core/channels.js';
 import { METRICS, getSettings } from './db.js';
 
 export const DEFAULT_TEMPLATE = '🎉 {user} さんが **{role}** を獲得しました!({condition})';
@@ -5,7 +6,7 @@ export const DEFAULT_TEMPLATE = '🎉 {user} さんが **{role}** を獲得し�
 const render = (tpl, v) => tpl.replace(/\{(user|name|role|condition)\}/g, (_, k) => v[k]);
 
 async function send(guild, channelId, content, userId) {
-  const ch = channelId && guild.channels.cache.get(channelId);
+  const ch = await chanOf(guild.client, channelId);
   if (!ch?.isTextBased()) return false;
   await ch.send({ content: content.slice(0, 2000), allowedMentions: { users: [userId] } }); // ロール/everyoneは絶対にメンションしない
   return true;

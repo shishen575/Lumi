@@ -1,3 +1,4 @@
+import { chanOf } from '../../core/channels.js';
 import { getKV, setKV } from '../../core/db.js';
 
 /**
@@ -7,7 +8,7 @@ import { getKV, setKV } from '../../core/db.js';
  * 状態は、サーバーごとに KV の board:<kind> に、チャンネルと最後のメッセージ・時刻を保存する
  */
 export async function postBoard(client, g, kind, channelId, payload, { replace = true, now = Date.now() } = {}) {
-  const ch = client.channels.cache.get(channelId); if (!ch?.isTextBased?.() || ch.guildId !== g) return false;
+  const ch = (await chanOf(client, channelId)); if (!ch?.isTextBased?.() || ch.guildId !== g) return false;
   const key = `board:${kind}`, st = getKV(g, key, {});
   try {
     if (replace && st.msg && st.ch === ch.id) {
@@ -49,7 +50,7 @@ export function stickChannels(client, itemsOrFn) {
     cur.t = setTimeout(async () => {
       pending.delete(chKey);
       const list = itemsFor(g).filter((it) => it.state(g)?.ch === msg.channelId).sort((a, b) => a.prio - b.prio);
-      const top = list.at(-1), ch = client.channels.cache.get(msg.channelId);
+      const top = list.at(-1), ch = (await chanOf(client, msg.channelId));
       if (!top || !ch || ch.lastMessageId === top.state(g)?.msg) return; // いちばん下に、すでにある
       settling.set(chKey, Infinity);
       try { for (const it of list) await it.run(g).catch((e) => console.warn(`[sticky:${it.kind}] 出し直せませんでした:`, e.message)); }

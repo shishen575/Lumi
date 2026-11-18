@@ -103,7 +103,7 @@ export default {
       const id = req.body?.channel_id ? String(req.body.channel_id) : null;
       if (id) {
         const ch = req.guild.channels.cache.get(id);
-        if (!ch?.isTextBased() || ch.isThread()) return res.status(400).json({ error: 'チャンネルが不正です' });
+        if (!ch?.isTextBased() || ch.isVoiceBased()) return res.status(400).json({ error: 'チャンネルが不正です' });
       }
       setNotice(req.guild.id, id);
       res.json(getNotice(req.guild.id));

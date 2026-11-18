@@ -38,7 +38,7 @@ export const integrationCommand = {
   },
 };
 
-const isText = (c) => c?.isTextBased?.() && !c.isThread?.();
+const isText = (c) => !!c?.isTextBased?.() && !c.isVoiceBased?.(); // スレッドも、可
 
 export default {
   name: 'integrations',

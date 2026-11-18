@@ -1,3 +1,4 @@
+import { chanOf } from '../../core/channels.js';
 import { EmbedBuilder } from 'discord.js';
 import { db } from '../../core/db.js';
 import { claimLotteryRounds, claimOrphanTickets, lotteryJackpot, setLotteryJackpot, recordDraw, pendingLotteryGuilds, addWallet } from './db.js';
@@ -59,7 +60,7 @@ export function drawEmbed(s, d) {
 export async function announce(client, s, g, d) {
   if (d.refund) return false;
   const id = d.lottery.channelId ?? s.lotteryChannelId; if (!id) return false;
-  const ch = client.channels.cache.get(id); if (!ch?.isTextBased?.() || ch.guildId !== g) return false;
+  const ch = (await chanOf(client, id)); if (!ch?.isTextBased?.() || ch.guildId !== g) return false;
   // 買った人全員にメンション(1通のメンションは100人まで・文字数の上限もあるので、多いときは先頭から80人)
   const all = s.lotteryMention === false ? [] : (d.buyers ?? d.winners.map((x) => x.user)), users = all.slice(0, 80);
   const content = users.length ? `${users.map((u) => `<@${u}>`).join(' ')}${all.length > users.length ? ` ほか${all.length - users.length}人` : ''} ${d.lottery.emoji} ${d.lottery.name} の抽選結果です!` : undefined;

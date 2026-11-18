@@ -106,9 +106,10 @@ export function startWeb(client, features) {
       .sort((a, b) => b.position - a.position)
       .map((r) => ({ id: r.id, name: r.name, color: r.hexColor, assignable: r.position < me.roles.highest.position && req.canAssign(r) })));
   });
+  // 文字のチャンネルと、スレッド(いま開いているもの)。スレッドは「親チャンネル › スレッド名」で出す
   guildApi.get('/channels', (req, res) => res.json(
-    req.guild.channels.cache.filter((c) => c.isTextBased() && !c.isThread())
-      .map((c) => ({ id: c.id, name: c.name, type: c.type })).sort((a, b) => a.name.localeCompare(b.name))));
+    req.guild.channels.cache.filter((c) => c.isTextBased() && !c.isVoiceBased())
+      .map((c) => ({ id: c.id, name: c.isThread() ? `${c.parent?.name ?? '?'} › ${c.name}` : c.name, type: c.type, thread: c.isThread() })).sort((a, b) => a.name.localeCompare(b.name))));
 
   // 各機能は /api/guilds/:gid/f/<name>/ に自分のRouterを持つ
   for (const f of features) {

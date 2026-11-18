@@ -1,3 +1,4 @@
+import { chanOf } from '../../core/channels.js';
 import { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle, StringSelectMenuBuilder, MessageFlags } from 'discord.js';
 import { getKV, setKV } from '../../core/db.js';
 import { commandCatalog, findCommand, registerHiddenCommands, registerHelpExtras, resyncGuildCommands } from '../../core/commands.js';
@@ -122,12 +123,12 @@ export async function saveCustomPanel(client, g, id, raw, channelId) {
   const all = customPanels(g), existing = id ? all[id] : null;
   if (!existing && Object.keys(all).length >= MAX_CUSTOM) throw new Error(`カスタムパネルは、${MAX_CUSTOM}個までです`);
   const r = sanitizePanel(raw, commandCatalog()); if (r.error) throw new Error(r.error);
-  const ch = client.channels.cache.get(channelId); if (!ch?.isTextBased?.() || ch.guildId !== g) throw new Error('チャンネルを選んでください');
+  const ch = (await chanOf(client, channelId)); if (!ch?.isTextBased?.() || ch.guildId !== g) throw new Error('チャンネルを選んでください');
   const pid = existing ? id : Math.random().toString(36).slice(2, 10), payload = customMessage(r.panel, pid);
   let msg = null;
   if (existing?.msg && existing.ch === ch.id) { try { msg = await ch.messages.edit(existing.msg, payload); } catch { /* 消されていたら、新しく置く */ } }
   if (!msg) {
-    if (existing?.msg && existing.ch !== ch.id) await client.channels.cache.get(existing.ch)?.messages.delete(existing.msg).catch(() => {});
+    if (existing?.msg && existing.ch !== ch.id) await (await chanOf(client, existing.ch))?.messages.delete(existing.msg).catch(() => {});
     msg = await ch.send({ ...payload, allowedMentions: { parse: [] } });
   }
   all[pid] = { ...r.panel, ch: ch.id, msg: msg.id, at: Date.now() }; save(g, all);
@@ -136,7 +137,7 @@ export async function saveCustomPanel(client, g, id, raw, channelId) {
 }
 export async function removeCustomPanel(client, g, id) {
   const all = customPanels(g), p = all[id]; if (!p) return false;
-  if (p.msg) await client.channels.cache.get(p.ch)?.messages.delete(p.msg).catch(() => {});
+  if (p.msg) await (await chanOf(client, p.ch))?.messages.delete(p.msg).catch(() => {});
   delete all[id]; save(g, all); await resyncGuildCommands(g); return true;
 }
 /** ボタンを1つ、すぐに消す(メッセージを書き換えて、使っていなくなったコマンドは、すぐに元に戻す)。最後の1つは、消せない */
@@ -146,7 +147,7 @@ export async function removeCustomButton(client, g, id, idx) {
   if (p.buttons.length <= 1) throw new Error('最後のボタンは、消せません。パネルごと撤去してください');
   const buttons = p.buttons.filter((_, n) => n !== idx), used = new Set(buttons.map((b) => b.command)), retire = retiredOfCustom(p).filter((n) => used.has(n)); // もう使っていないコマンドは、廃止の対象から外れる
   const next = { ...p, buttons, retire, hide: retire.length > 0, at: Date.now() };
-  const ch = client.channels.cache.get(p.ch);
+  const ch = (await chanOf(client, p.ch));
   if (p.msg && ch) { try { await ch.messages.edit(p.msg, customMessage(next, id)); } catch { /* 消されていたら、そのまま */ } }
   all[id] = next; save(g, all); await resyncGuildCommands(g);
   return { id, ...next };
@@ -156,7 +157,7 @@ export const customStickItems = (client, g) => Object.entries(customPanels(g)).m
   state: (gg) => { const q = customPanels(gg)[id]; return q && q.sticky !== false && q.msg ? { ch: q.ch, msg: q.msg } : null; },
   run: async (gg) => {
     const all = customPanels(gg), q = all[id]; if (!q || q.sticky === false) return;
-    const ch = client.channels.cache.get(q.ch); if (!ch?.isTextBased?.() || ch.lastMessageId === q.msg) return;
+    const ch = (await chanOf(client, q.ch)); if (!ch?.isTextBased?.() || ch.lastMessageId === q.msg) return;
     await ch.messages.delete(q.msg).catch(() => {});
     const m = await ch.send({ ...customMessage(q, id), allowedMentions: { parse: [] } }); all[id] = { ...q, msg: m.id, at: Date.now() }; save(gg, all);
   } }));
