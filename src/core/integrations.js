@@ -9,11 +9,13 @@ import { encrypt, decrypt } from './crypto.js';
  * 相手が使えるのは、下の CAPS(許可リスト)の機能だけ。宛先のチャンネル・ロールは、いつも、管理者が決める。
  */
 export const CAPS = {
-  notify: { label: 'お知らせの投稿', help: '相手のサイトからの知らせを、決めたチャンネルに投稿します(メンションは飛ばしません)', field: { key: 'notifyChannel', type: 'channel', label: '投稿するチャンネル' } },
-  members: { label: 'メンバー確認', help: 'サーバーのメンバーか・持っているロールID・参加日だけを、答えます', field: null },
-  rank: { label: '活動ランクの取得', help: '発言数と、到達しているランクを、答えます', field: null },
-  grant: { label: 'ロール付与', help: '決めたロールを、メンバーに付けます', field: { key: 'grantRole', type: 'role', label: '付与するロール' } },
+  notify: { label: 'お知らせの投稿', help: '相手のサイトからの知らせを、決めたチャンネルに投稿します(メンションは飛ばしません)', fields: [{ key: 'notifyChannel', type: 'channel', label: '投稿するチャンネル(全部まとめる先・地域が決まっていないときの先)' }, { key: 'routeMode', type: 'select', label: '送り分け', help: '相手が地域(route)を付けて送ってきたときの、宛先の決め方です', def: 'region', options: [{ value: 'region', label: '地域ごとに分ける(地域のチャンネルが未選択なら、上のチャンネル)' }, { value: 'single', label: '全部、上のチャンネルに、まとめて流す' }, { value: 'both', label: '両方(地域のチャンネルにも、上のチャンネルにも、送る)' }] }] },
+  members: { label: 'メンバー確認', help: 'サーバーのメンバーか・持っているロールID・参加日だけを、答えます', fields: [] },
+  rank: { label: '活動ランクの取得', help: '発言数と、到達しているランクを、答えます', fields: [] },
+  grant: { label: 'ロール付与', help: '決めたロールを、メンバーに付けます', fields: [{ key: 'grantRole', type: 'role', label: '付与するロール' }] },
 };
+/** 機能ごとの、決まった設定の項目(manifest ではなく、Lumi が持つので、登録済みの連携にも、そのまま増える) */
+export const fieldsOf = (it) => [...it.manifest.capabilities.flatMap((c) => CAPS[c].fields), ...it.manifest.settings];
 const FIELD_TYPES = ['channel', 'role', 'toggle', 'text', 'number'];
 export const PAIR_TTL_MS = 15 * 60_000;
 export const MAX_PER_GUILD = 10;
@@ -33,7 +35,7 @@ export function cleanManifest(raw, ignored = { capabilities: [], settings: [] })
   const name = clean(raw.name, 30); if (!name) return null;
   const caps = [];
   for (const c of Array.isArray(raw.capabilities) ? raw.capabilities : []) { if (typeof c === 'string' && c in CAPS) { if (!caps.includes(c)) caps.push(c); } else ignored.capabilities.push(String(c).slice(0, 40)); }
-  const used = new Set(Object.values(CAPS).map((c) => c.field?.key).filter(Boolean)), settings = [];
+  const used = new Set(Object.values(CAPS).flatMap((c) => c.fields.map((f) => f.key))), settings = [];
   (Array.isArray(raw.settings) ? raw.settings : []).forEach((f, n) => {
     const key = String(f?.key ?? ''), skip = (why) => ignored.settings.push({ key: key.slice(0, 40), reason: why });
     if (n >= MAX_SETTINGS) return skip(`${MAX_SETTINGS + 1}件目以降は、受け付けません(最大${MAX_SETTINGS}件)`);
@@ -79,10 +81,10 @@ export function saveConfig(guildId, id, input) {
   const it = rowOut(db.prepare("SELECT * FROM integrations WHERE id=? AND guild_id=? AND status='active'").get(id, guildId)); if (!it) return null;
   const enabled = {}, values = {};
   for (const c of it.manifest.capabilities) enabled[c] = !!input?.enabled?.[c];
-  const fields = [...it.manifest.capabilities.map((c) => CAPS[c].field).filter(Boolean), ...it.manifest.settings];
-  for (const f of fields) {
+  for (const f of fieldsOf(it)) {
     const v = input?.values?.[f.key];
     if (f.type === 'toggle') values[f.key] = !!v;
+    else if (f.type === 'select') values[f.key] = f.options.some((o) => o.value === v) ? v : f.def;
     else if (f.type === 'number') values[f.key] = Number.isFinite(Number(v)) && v !== '' && v != null ? Number(v) : null;
     else if (f.type === 'text') values[f.key] = clean(v, 200);
     else values[f.key] = /^\d{15,25}$/.test(String(v ?? '')) ? String(v) : '';

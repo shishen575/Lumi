@@ -17,13 +17,28 @@ const locks = new Map();
 const serial = (key, fn) => { const p = (locks.get(key) ?? Promise.resolve()).catch(() => {}).then(fn); locks.set(key, p); p.finally(() => { if (locks.get(key) === p) locks.delete(key); }).catch(() => {}); return p; }; // 同じ名前のスレッドを、同時に2つ作らない
 
 export async function deliver(client, ctx, { embed, route, thread }) {
-  const values = ctx.it?.config?.values ?? {}, noMention = { parse: [] };
-  const routed = ROUTES.includes(route) && isId(values[`channel_${route}`]) ? values[`channel_${route}`] : null;
-  const wanted = routed ?? ctx.channelId, name = cleanThreadName(thread);
+  const values = ctx.it?.config?.values ?? {}, mode = ['region', 'single', 'both'].includes(values.routeMode) ? values.routeMode : 'region';
+  const routed = mode !== 'single' && ROUTES.includes(route) && isId(values[`channel_${route}`]) ? values[`channel_${route}`] : null;
+  // 宛先: 地域ごと(未選択なら、通常)/ 全部まとめる / 両方
+  const dests = mode === 'both' && routed ? [...new Set([routed, ctx.channelId])] : [routed ?? ctx.channelId];
+  const results = [], done = new Set(); // 送り済みのチャンネル(消えたチャンネルの代わりに、通常の先へ送るとき、二重に送らない)
+  for (const id of dests) {
+    try { results.push({ ...(await sendOne(client, ctx, values, { embed, thread, id, routed: id === routed, done })), ok: true }); }
+    catch (e) { console.warn(`[internal] 宛先に送れませんでした: ${e.message}`); results.push({ ok: false }); }
+  }
+  const okOnes = results.filter((r) => r.ok);
+  if (!okOnes.length) throw new Error('channel not available');
+  return { thread: okOnes.some((r) => r.thread), created: okOnes.some((r) => r.created), routed: !!routed, mode, sent: okOnes.filter((r) => !r.dup).length };
+}
+
+async function sendOne(client, ctx, values, { embed, thread, id, routed, done }) {
+  const noMention = { parse: [] }, name = cleanThreadName(thread);
   const find = async (id) => { const c = await chanOf(client, id); return c && c.guildId === ctx.guildId ? c : null; };
-  let ch = await find(wanted);
+  let ch = await find(id);
   if (!ch && routed) ch = await find(ctx.channelId); // 選ばれたチャンネルが、もう無い: 通常の通知先へ
   if (!ch) throw new Error('channel not available');
+  if (done.has(ch.id)) return { thread: false, dup: true };
+  done.add(ch.id);
 
   const sendTo = (c) => c.send({ embeds: [embed], allowedMentions: noMention });
   if (values.thread_by_pref && name && !ch.isThread?.() && ch.threads) {
@@ -37,7 +52,7 @@ export async function deliver(client, ctx, { embed, route, thread }) {
         const made = await ch.threads.create({ name, autoArchiveDuration: 10080, reason: '連携のお知らせ' });
         await sendTo(made); return 'created';
       });
-      return { thread: true, created: out === 'created', routed: !!routed };
+      return { thread: true, created: out === 'created' };
     } catch (e) { console.warn(`[internal] スレッドに送れませんでした(${name}): ${e.message}。スレッドなしで送ります`); }
   }
   if (ch.type === FORUM || ch.type === MEDIA) { // フォーラムには、直接、送れない: 通常の通知先へ
@@ -46,5 +61,5 @@ export async function deliver(client, ctx, { embed, route, thread }) {
     ch = alt;
   }
   await sendTo(ch);
-  return { thread: false, routed: !!routed };
+  return { thread: false };
 }

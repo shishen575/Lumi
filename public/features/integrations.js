@@ -12,6 +12,7 @@ Dash.registerTab({
         const v = it.config.values?.[f.key], id = `${it.id}__${f.key}`;
         const input = f.type === 'channel' ? `<select data-k="${f.key}" data-t="channel">${opts(chans, v, 'チャンネルを選ぶ')}</select>`
           : f.type === 'role' ? `<select data-k="${f.key}" data-t="role">${opts(roles.filter((r) => r.assignable), v, 'ロールを選ぶ')}</select>`
+          : f.type === 'select' ? `<select data-k="${f.key}" data-t="select">${f.options.map((o) => `<option value="${o.value}" ${(v ?? f.def) === o.value ? 'selected' : ''}>${esc(o.label)}</option>`).join('')}</select>`
           : f.type === 'toggle' ? `<label class="sw"><input type="checkbox" data-k="${f.key}" data-t="toggle" ${v ? 'checked' : ''}><i></i><span><b>オン</b></span></label>`
           : `<input data-k="${f.key}" data-t="${f.type}" type="${f.type === 'number' ? 'number' : 'text'}" value="${esc(v ?? '')}">`;
         return `<div class="field"><label class="f" for="${id}">${esc(f.label)}</label>${input}${f.help ? `<div class="mut small">${esc(f.help)}</div>` : ''}</div>`;
@@ -24,7 +25,7 @@ Dash.registerTab({
         return `<div class="card" data-id="${it.id}"><h2>${esc(it.name)}</h2>
           <p class="mut">${esc(m.description || '')}<br>最後の通信: ${when(it.lastSeen)} ・ ID <code>${it.id}</code></p>
           <p class="mut small">相手が、使いたいと言っている機能です。<b>オンにした機能だけ</b>、動きます。</p>
-          ${m.capabilities.map((c) => { const cap = st.caps[c], f = cap.field; return `<div class="card" style="margin:8px 0"><label class="sw"><input type="checkbox" data-cap="${c}" ${it.config.enabled?.[c] ? 'checked' : ''}><i></i><span><b>${esc(cap.label)}</b><small>${esc(cap.help)}</small></span></label>${f ? field(it, f) : ''}</div>`; }).join('') || '<p class="mut">相手は、機能を求めていません。</p>'}
+          ${m.capabilities.map((c) => { const cap = st.caps[c]; return `<div class="card" style="margin:8px 0"><label class="sw"><input type="checkbox" data-cap="${c}" ${it.config.enabled?.[c] ? 'checked' : ''}><i></i><span><b>${esc(cap.label)}</b><small>${esc(cap.help)}</small></span></label>${cap.fields.map((f) => field(it, f)).join('')}</div>`; }).join('') || '<p class="mut">相手は、機能を求めていません。</p>'}
           ${m.settings.length ? `<h3>そのほかの設定</h3>${m.settings.map((f) => field(it, f)).join('')}` : ''}
           <div class="acts"><button class="btn save" type="button">保存</button><button class="btn danger del" type="button">連携を削除</button></div></div>`;
       };

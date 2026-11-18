@@ -1,6 +1,6 @@
 import { SlashCommandBuilder, EmbedBuilder, MessageFlags, PermissionFlagsBits } from 'discord.js';
 import { isOperator, canEditAccess } from '../../core/access.js';
-import { createPairing, listIntegrations, revoke, saveConfig, CAPS, PAIR_TTL_MS } from '../../core/integrations.js';
+import { fieldsOf, createPairing, listIntegrations, revoke, saveConfig, CAPS, PAIR_TTL_MS } from '../../core/integrations.js';
 
 const EPH = { flags: MessageFlags.Ephemeral };
 const base = () => (process.env.BASE_URL || '').replace(/\/+$/, '');
@@ -60,7 +60,7 @@ export default {
       for (const [k, v] of Object.entries(values)) { // チャンネル・ロールは、このサーバーにあるものだけ
         if (!/^\d{15,25}$/.test(String(v ?? ''))) continue;
         const asChannel = g.channels.cache.get(String(v)), asRole = g.roles.cache.get(String(v));
-        const it = listIntegrations(g.id).find((x) => x.id === req.params.id), field = it && [...it.manifest.capabilities.map((c) => CAPS[c].field).filter(Boolean), ...it.manifest.settings].find((f) => f.key === k);
+        const it = listIntegrations(g.id).find((x) => x.id === req.params.id), field = it && fieldsOf(it).find((f) => f.key === k);
         if (field?.type === 'channel' && !isText(asChannel)) values[k] = '';
         if (field?.type === 'role' && (!asRole || asRole.managed || asRole.id === g.id || asRole.position >= me.roles.highest.position)) values[k] = '';
       }
