@@ -235,12 +235,23 @@ export const panelComponent = {
 
     if (kind === 'shop') {
       const items = shopItems(s), gone = () => say('この品は、もうありません。パネルが古くなっています(管理者が、置き直せます)。');
-      if (action === 'buy') { const id = arg ?? v0, n = items.findIndex((x) => x.id === id) + 1; return n ? shopCommand.execute(asCommand(i, { item: n, amount: 1 }, 'buy')) : gone(); } // arg: 古いパネルのボタン / v0: 選択メニュー
+      // 買う個数は、プルダウンで選ぶ(自分で入力もできる)。kind: s = お店 / m = 闇市
+      const qtyPrompt = (kindKey, id, name) => say(`${name} を、何個買いますか?`, { components: [selectRow(`panel:shop:bq:${kindKey}:${id}`, '個数を選ぶ', [1, 2, 3, 5, 10, 20, 50].map((n) => ({ label: `${n}個`, value: String(n) })).concat({ label: '個数を入力する…', value: 'custom' }))] });
+      const buyN = (kindKey, id, n) => {
+        if (kindKey === 'm') return MARKET_ITEMS.some((x) => x.id === id) ? marketCommand.execute(asCommand(i, { item: id, amount: n }, 'buy')) : gone();
+        const idx = items.findIndex((x) => x.id === id) + 1; return idx ? shopCommand.execute(asCommand(i, { item: idx, amount: n }, 'buy')) : gone();
+      };
+      if (action === 'buy') { const id = arg ?? v0, it = items.find((x) => x.id === id); return it ? qtyPrompt('s', id, `${it.emoji} ${it.name}`) : gone(); } // arg: 古いパネルのボタン / v0: 選択メニュー
+      if (action === 'bq') {
+        if (v0 === 'custom') return i.showModal(modal(`panel:shop:bm:${arg}:${arg2}`, '買う個数', '個数', '10'));
+        return buyN(arg, arg2, Number(v0) || 1);
+      }
+      if (action === 'bm') { const n = intOf(i); return n === null || n < 1 ? say('個数は、1以上の数字で入れてください。') : buyN(arg, arg2, n); }
       if (action === 'list') return shopCommand.execute(asCommand(i, {}, 'list'));
       if (action === 'estate') { const n = estateOf(s).findIndex((x) => x.id === v0) + 1; return n ? estateCommand.execute(asCommand(i, { property: n, count: 1 }, 'buy')) : gone(); }
       if (action === 'estlist') return estateCommand.execute(asCommand(i, {}, 'list'));
       if (action === 'collect') return estateCommand.execute(asCommand(i, {}, 'collect'));
-      if (action === 'market') return MARKET_ITEMS.some((x) => x.id === v0) ? marketCommand.execute(asCommand(i, { item: v0, amount: 1 }, 'buy')) : gone();
+      if (action === 'market') { const it = MARKET_ITEMS.find((x) => x.id === v0); return it ? qtyPrompt('m', v0, `${it.emoji} ${it.name}`) : gone(); }
       if (action === 'mlist') return marketCommand.execute(asCommand(i, {}, 'list'));
       if (action === 'use') {
         const own = allItems(i.guildId, i.user.id), have = items.filter((x) => own[x.id] > 0);

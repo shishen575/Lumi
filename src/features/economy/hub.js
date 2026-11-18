@@ -59,7 +59,7 @@ const labelOf = (name, sub, desc) => { const l = LABELS[sub ? `${name} ${sub}` :
 // 預ける・引き出す: 金額を、選ぶか、入力する(どちらも省略できる項目だが、聞かないと、動かない)
 const AMOUNTS = [{ name: '全額', values: { all: true } }, ...[100, 500, 1000, 5000, 10000].map((n) => ({ name: n.toLocaleString(), values: { amount: n } })), { name: '金額を入力…', ask: true }];
 /** 選ぶ項目の、選択肢の一覧: [{ name, value | values | skip | ask }] */
-const listOf = (stp) => (stp.t === 'amount' ? AMOUNTS : stp.t === 'optpick' ? [{ name: '指定しない(おまかせ)', skip: true }, ...stp.o.choices.map((c) => ({ name: c.name, value: c.value }))] : stp.o.type === 5 ? [{ name: 'オン', value: true }, { name: 'オフ', value: false }] : stp.o.choices.map((c) => ({ name: c.name, value: c.value })));
+const listOf = (stp) => (stp.t === 'qty' ? [...[1, 2, 3, 5, 10, 20, 50].map((n) => ({ name: `${n}個`, value: n })), { name: '個数を入力…', ask: true }] : stp.t === 'amount' ? AMOUNTS : stp.t === 'optpick' ? [{ name: '指定しない(おまかせ)', skip: true }, ...stp.o.choices.map((c) => ({ name: c.name, value: c.value }))] : stp.o.type === 5 ? [{ name: 'オン', value: true }, { name: 'オフ', value: false }] : stp.o.choices.map((c) => ({ name: c.name, value: c.value })));
 function stepsOf(name, sub) {
   const json = commandCatalog().find((c) => c.name === name); if (!json) return null;
   const sc = schemaOf(json, sub || null); if (sc.error) return null;
@@ -69,8 +69,9 @@ function stepsOf(name, sub) {
   if (req.filter((o) => o.type === 6).length > 1) return null;                   // ユーザーを2人以上は、聞けない
   const picks = req.filter((o) => (o.choices?.length || o.type === 5) && o.type !== 6), users = req.filter((o) => o.type === 6), asks = req.filter((o) => !o.choices?.length && o.type !== 5 && o.type !== 6);
   if (asks.length > 5) return null;
+  const qty = sc.options.find((o) => !o.required && o.type === 4 && (o.name === 'amount' || o.name === 'count')); // 個数(買う・あげる)は、プルダウンで聞く
   const optPicks = sc.options.filter((o) => !o.required && o.choices?.length && o.type !== 6); // 省略できる選択肢の項目も、聞く(「指定しない」を選べる)
-  return { json, sc, steps: [...picks.map((o) => ({ t: 'pick', o })), ...optPicks.map((o) => ({ t: 'optpick', o })), ...users.map((o) => ({ t: 'user', o })), ...(asks.length ? [{ t: 'ask', os: asks }] : [])] };
+  return { json, sc, steps: [...picks.map((o) => ({ t: 'pick', o })), ...optPicks.map((o) => ({ t: 'optpick', o })), ...(qty ? [{ t: 'qty', o: qty }] : []), ...users.map((o) => ({ t: 'user', o })), ...(asks.length ? [{ t: 'ask', os: asks }] : [])] };
 }
 /** カテゴリーの、ボタンの一覧: [{ name, sub, label, desc }] */
 export function buttonsOf(cat) {
@@ -146,16 +147,16 @@ export const hubComponent = {
     const stepIdx = kind === 'b' ? 0 : kind === 's' ? Number(kS) + 1 : st.steps.length;   // いま答えて、次に聞くのは、何番目か
     if (kind === 's') answers[Number(kS)] = kind === 's' && st.steps[Number(kS)]?.t === 'user' ? (i.values?.[0] ?? '') : String(i.values?.[0]);
     // 「金額を入力…」を選んだ → 入力欄を出す
-    if (kind === 's' && st.steps[Number(kS)]?.t === 'amount' && listOf(st.steps[Number(kS)])[Number(answers[Number(kS)])]?.ask) {
-      return i.showModal(new ModalBuilder().setCustomId(`hub:m:${name}:${sub}:${answers.join('.')}`).setTitle(labelOf(name, sub, name).label.slice(0, 45)).addComponents(new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('amount').setLabel('金額').setStyle(TextInputStyle.Short).setRequired(true).setMaxLength(12).setPlaceholder('例: 1000'))));
+    if (kind === 's' && ['amount', 'qty'].includes(st.steps[Number(kS)]?.t) && listOf(st.steps[Number(kS)])[Number(answers[Number(kS)])]?.ask) {
+      return i.showModal(new ModalBuilder().setCustomId(`hub:m:${name}:${sub}:${answers.join('.')}`).setTitle(labelOf(name, sub, name).label.slice(0, 45)).addComponents(new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('amount').setLabel(st.steps[Number(kS)]?.t === 'qty' ? '個数' : '金額').setStyle(TextInputStyle.Short).setRequired(true).setMaxLength(12).setPlaceholder(st.steps[Number(kS)]?.t === 'qty' ? '例: 10' : '例: 1000'))));
     }
     // 次に聞くこと
     const next = st.steps[stepIdx];
     if (next && kind !== 'm') {
       const id = (k) => `hub:s:${name}:${sub}:${k}:${answers.join('.')}`;
-      if (next.t === 'pick' || next.t === 'optpick' || next.t === 'amount') {
+      if (['pick', 'optpick', 'amount', 'qty'].includes(next.t)) {
         const o = next.o ?? { name: '金額', description: '金額' }, list = listOf(next);
-        const body = { content: `${labelOf(name, sub, '').label}: ${next.t === 'amount' ? '金額' : (o.description || o.name)} を、選んでください。`, components: [new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId(id(stepIdx)).setPlaceholder(String(o.description || o.name).slice(0, 100)).addOptions(list.slice(0, 25).map((c, n) => ({ label: String(c.name).slice(0, 100), value: String(n) })))), cancel()] };
+        const body = { content: `${labelOf(name, sub, '').label}: ${next.t === 'amount' ? '金額' : next.t === 'qty' ? '個数' : (o.description || o.name)} を、選んでください。`, components: [new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId(id(stepIdx)).setPlaceholder(String(o.description || o.name).slice(0, 100)).addOptions(list.slice(0, 25).map((c, n) => ({ label: String(c.name).slice(0, 100), value: String(n) })))), cancel()] };
         return kind === 'b' ? i.reply({ ...body, ...EPH }) : i.update(body);
       }
       if (next.t === 'user') {
@@ -169,7 +170,7 @@ export const hubComponent = {
     // 全部、聞いた → 値を集めて、実行する
     const values = {}; let ai = 0;
     for (const stp of st.steps) {
-      if (stp.t === 'pick' || stp.t === 'optpick' || stp.t === 'amount') {
+      if (['pick', 'optpick', 'amount', 'qty'].includes(stp.t)) {
         const c = listOf(stp)[Number(answers[ai++])]; if (!c) return say('その選択肢は、もう使えません。');
         if (c.values) Object.assign(values, c.values); else if (!c.skip && !c.ask) values[stp.o.name] = c.value;
         if (c.ask) { const r = parseValue(stp.o, i.fields?.getTextInputValue('amount')); if (r.error) return say(r.error); values[stp.o.name] = r.v; }
