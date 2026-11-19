@@ -4,11 +4,16 @@
   "description": "Discord bot that grants roles by activity (messages / reactions / voice time) with a web dashboard",
   "type": "module",
   "main": "src/index.js",
-  "engines": { "node": ">=22.13" },
-  "scripts": { "start": "node src/index.js" },
+  "engines": {
+    "node": ">=22.13"
+  },
+  "scripts": {
+    "start": "node src/index.js"
+  },
   "dependencies": {
     "discord.js": "^14.17.0",
     "express": "^4.21.1",
-    "express-session": "^1.18.1"
+    "express-session": "^1.18.1",
+    "kuromoji": "^0.1.2"
   }
 }

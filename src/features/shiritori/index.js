@@ -1,4 +1,4 @@
-import { SlashCommandBuilder, MessageFlags, EmbedBuilder, Events, PermissionFlagsBits, ChannelType, ActionRowBuilder, ButtonBuilder, ButtonStyle } from 'discord.js';
+import { SlashCommandBuilder, MessageFlags, EmbedBuilder, Events, PermissionFlagsBits, ChannelType, ActionRowBuilder, ButtonBuilder, ButtonStyle, UserSelectMenuBuilder } from 'discord.js';
 import { getKV, setKV, migrate, db } from '../../core/db.js';
 import { isOperator, canEditAccess } from '../../core/access.js';
 import { chanOf } from '../../core/channels.js';
@@ -45,6 +45,14 @@ export function rankingEmbed(g, by = 'wins', uid = null) {
   e.addFields({ name: '📚 サーバーで、よく使われた言葉', value: wordsText(topWords(g, 5)) + '\n-# もっと見る: `/shiritori words`' });
   if (uid) { const all = rankingRows(g, by, 1000), pos = all.findIndex((r) => r.user_id === uid); if (pos >= 10) e.setFooter({ text: `あなたは ${pos + 1}位(${all.length}人中)` }); }
   return e;
+}
+/** 1人の戦績(勝ち負け・最長・順位)と、勝ち数ランキング上位 */
+function statsEmbed(g, u) {
+  const me = statsOf(g, u.id), top = db.prepare('SELECT user_id, wins, losses, best FROM shiritori_stats WHERE guild_id=? AND wins > 0 ORDER BY wins DESC, best DESC LIMIT 5').all(g);
+  const pos = rankingRows(g, 'wins', 1000).findIndex((r) => r.user_id === u.id);
+  return new EmbedBuilder().setColor(0x57f287).setTitle('🔤 しりとりの戦績').setAuthor({ name: u.username, iconURL: u.displayAvatarURL?.() })
+    .setDescription(`**${me.wins}勝 ${me.losses}敗** ・ 最長 **${me.best}語**${pos >= 0 ? ` ・ 勝ち数 **${pos + 1}位**` : ''}`)
+    .addFields({ name: '🏆 勝ち数ランキング', value: top.length ? top.map((r, n) => `${n + 1}. <@${r.user_id}> — ${r.wins}勝 ${r.losses}敗(最長 ${r.best}語)`).join('\n') : 'まだ、記録がありません' });
 }
 const clampInt = (v, lo, hi, def) => { const n = Math.floor(Number(v)); return Number.isFinite(n) ? Math.min(hi, Math.max(lo, n)) : def; };
 export const getSettings = (g) => ({ ...DEFAULTS, ...(getKV(g, 'shiritori_settings', {}) ?? {}) });
@@ -160,14 +168,7 @@ export const shiritoriCommand = {
       try { await installPanel(i.client, g, ch); } catch (e) { return i.reply({ content: `置けませんでした: ${e.message}`, ...EPH }); }
       return i.reply({ content: '✅ このチャンネルに、「しりとりを始める」のボタンを置きました。', ...EPH });
     }
-    if (sub === 'stats') {
-      const u = i.options.getUser('user') ?? i.user, me = statsOf(g, u.id);
-      const top = db.prepare('SELECT user_id, wins, losses, best FROM shiritori_stats WHERE guild_id=? ORDER BY wins DESC, best DESC LIMIT 5').all(g);
-      const e = new EmbedBuilder().setColor(0x57f287).setTitle('🔤 しりとりの戦績').setAuthor({ name: u.username, iconURL: u.displayAvatarURL?.() })
-        .setDescription(`**${me.wins}勝 ${me.losses}敗** ・ 最長 **${me.best}語**`)
-        .addFields({ name: '🏆 勝ち数ランキング', value: top.length ? top.map((r, n) => `${n + 1}. <@${r.user_id}> — ${r.wins}勝 ${r.losses}敗(最長 ${r.best}語)`).join('\n') : 'まだ、記録がありません' });
-      return i.reply({ embeds: [e], allowedMentions: NO_MENTION, ...vis() });
-    }
+    if (sub === 'stats') return i.reply({ embeds: [statsEmbed(g, i.options.getUser('user') ?? i.user)], allowedMentions: NO_MENTION, ...vis() });
     if (!st.enabled) return i.reply({ content: 'このサーバーでは、しりとりはオフです。管理者が、ダッシュボードでオンにできます。', ...EPH });
     if (st.channelId && ch !== st.channelId && i.channel?.parentId !== st.channelId) return i.reply({ content: `しりとりは、<#${st.channelId}> で遊んでください。`, ...EPH });
     const game = getGame(g, ch);
@@ -238,6 +239,12 @@ export const shiritoriButton = {
   id: 'shiritori',
   async execute(i) {
     const action = i.customId.split(':')[1], g = i.guildId, st = getSettings(g);
+    if (action === 'statsme') return i.update({ content: '', embeds: [statsEmbed(g, i.user)], components: [], allowedMentions: NO_MENTION });
+    if (action === 'statsmenu') { // 選んだ人の戦績
+      const id = i.values?.[0], u = i.users?.get?.(id) ?? await i.client.users.fetch(id).catch(() => null);
+      if (!u) return i.update({ content: 'その人が、見つかりません。', components: [] });
+      return i.update({ content: '', embeds: [statsEmbed(g, u)], components: [], allowedMentions: NO_MENTION });
+    }
     if (action === 'rank') return i.reply({ embeds: [rankingEmbed(g, 'wins', i.user.id)], allowedMentions: NO_MENTION, ...EPH });
     if (!st.enabled) return i.reply({ content: 'このサーバーでは、しりとりはオフです。', ...EPH });
     if (action === 'again') { // 同じスレッドで、もう一度(始めた人だけ)
@@ -265,7 +272,10 @@ export default {
   ].join('\n'),
 
   register({ client, router }) {
-    registerButtonOverride('shiritori start', (i) => newThreadGame(i)); // カテゴリーパネルの「しりとりを始める」も、プライベートスレッドで始める
+    registerButtonOverride('shiritori start', (i) => newThreadGame(i));
+    registerButtonOverride('shiritori stats', (i) => i.reply({ content: 'だれの戦績を見ますか?', ...EPH, components: [ // 他の人の戦績も、見られる
+      new ActionRowBuilder().addComponents(new UserSelectMenuBuilder().setCustomId('shiritori:statsmenu').setPlaceholder('見たい人を選ぶ').setMinValues(1).setMaxValues(1)),
+      new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('shiritori:statsme').setLabel('自分の戦績').setEmoji('🙋').setStyle(ButtonStyle.Primary))] })); // カテゴリーパネルの「しりとりを始める」も、プライベートスレッドで始める
     router.get('/settings', (req, res) => res.json({ ...getSettings(req.guild.id), levels: LEVELS, words: dictSize(), intent: client.options.intents.has('MessageContent') }));
     router.put('/settings', (req, res) => {
       if (!canEditAccess(req.access)) return res.status(403).json({ error: '変えられるのは、サーバーのオーナー・管理者・運営だけです' });
