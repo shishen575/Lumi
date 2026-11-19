@@ -30,14 +30,15 @@ migrate(`CREATE TABLE IF NOT EXISTS shiritori_appeals (
   id INTEGER PRIMARY KEY AUTOINCREMENT, guild_id TEXT NOT NULL, word TEXT NOT NULL, user_id TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending',
   created_at INTEGER NOT NULL, decided_by TEXT, decided_at INTEGER, ch_id TEXT, msg_id TEXT)`);
 migrate('CREATE INDEX IF NOT EXISTS shiritori_appeals_g ON shiritori_appeals (guild_id, status)');
+for (const [col, type] of [['game_ch', 'TEXT'], ['chain', 'INTEGER']]) if (!db.prepare("SELECT 1 FROM pragma_table_info('shiritori_appeals') WHERE name=?").get(col)) db.exec(`ALTER TABLE shiritori_appeals ADD COLUMN ${col} ${type}`); // 申し立てたときの、ゲームのチャンネルと、語数(承認されたとき、続きから、始めるため)
 const MAX_PENDING_PER_USER = 5;
 /** 運営が、登録した言葉(辞書にない言葉を、通す) */
 export const approvedWords = (g) => new Set(db.prepare("SELECT word FROM shiritori_appeals WHERE guild_id=? AND status='approved'").all(g).map((r) => r.word));
-export function createAppeal(g, word, uid) {
+export function createAppeal(g, word, uid, { gameCh = null, chain = null } = {}) {
   if (approvedWords(g).has(word)) return { error: 'approved' };
   if (db.prepare("SELECT 1 FROM shiritori_appeals WHERE guild_id=? AND word=? AND status='pending'").get(g, word)) return { error: 'pending' };
   if (db.prepare("SELECT COUNT(*) c FROM shiritori_appeals WHERE guild_id=? AND user_id=? AND status='pending'").get(g, uid).c >= MAX_PENDING_PER_USER) return { error: 'limit' };
-  const r = db.prepare('INSERT INTO shiritori_appeals (guild_id, word, user_id, created_at) VALUES (?,?,?,?)').run(g, word, uid, Date.now());
+  const r = db.prepare('INSERT INTO shiritori_appeals (guild_id, word, user_id, created_at, game_ch, chain) VALUES (?,?,?,?,?,?)').run(g, word, uid, Date.now(), gameCh, chain);
   return { id: Number(r.lastInsertRowid) };
 }
 export const getAppeal = (g, id) => db.prepare('SELECT * FROM shiritori_appeals WHERE guild_id=? AND id=?').get(g, id) ?? null;
@@ -436,7 +437,7 @@ const reviewText = (a, tail = '') => `📣 **異議申し立て** 「**${a.word}
 async function appealButton(i, word) {
   const g = i.guildId, st = getSettings(g);
   if (!isKana(word)) return i.reply({ content: 'この言葉は、申し立てできません。', ...EPH });
-  const r = createAppeal(g, word, i.user.id);
+  const gm = getGame(g, i.channelId), r = createAppeal(g, word, i.user.id, { gameCh: gm ? i.channelId : null, chain: gm ? chainOf(gm) : null });
   if (r.error === 'approved') return i.reply({ content: `「${word}」は、もう、登録されています。もう一度、送ってみてください。`, ...EPH });
   if (r.error === 'pending') return i.reply({ content: `「${word}」は、もう、申し立てられています。運営の確認を、待ってください。`, ...EPH });
   if (r.error === 'limit') return i.reply({ content: `確認待ちの申し立てが、${MAX_PENDING_PER_USER}件あります。決まってから、また、申し立ててください。`, ...EPH });
@@ -462,6 +463,27 @@ async function notifyStaff(client, g, fromCh, content) {
   const ch = await chanOf(client, st.appealChannelId); await ch?.send?.({ content, allowedMentions: NO_MENTION }).catch(() => {});
 }
 const msgLink = (g, ch, id) => `https://discord.com/channels/${g}/${ch}/${id}`;
+/**
+ * 異議申し立てが、承認されたとき: そのゲームが、まだ、続いていて、申し立てのあと、次の言葉が、来ていなければ、
+ * 申し立てた言葉から、続ける(その言葉を、いま、出したことにして、ルミが返す/次の文字を、知らせる)
+ */
+export async function continueAfterApproval(client, g, a) {
+  try {
+    if (!a.game_ch || a.chain == null) return false;
+    const game = getGame(g, a.game_ch), now = Date.now();
+    if (!game || chainOf(game) !== a.chain || game.dlb || now > game.until) return false;          // 終わった・次の言葉が来た・審議中・時間切れ: 何もしない
+    if (game.mode === 'solo' && a.user_id !== game.starter) return false;                           // ひとりの勝負は、始めた人の言葉だけ
+    if (game.words.at(-1)?.by === a.user_id && game.mode === 'pvp') return false;                    // 人どうしで、続けて2回は、できない
+    const r = await play(g, a.game_ch, a.user_id, a.word, { now });
+    if (!r || r.invalid || (r.react && !r.accepted && !r.ended)) return false;
+    const chan = await chanOf(client, a.game_ch); if (!chan?.send) return false;
+    const gm = getGame(g, a.game_ch);
+    const body = r.accepted ? `✅ 「${r.shown}」 → 次は「**${gm?.need}**」から!` : r.text;
+    await chan.send({ content: `📣 <@${a.user_id}> さんの異議申し立て「**${a.word}**」が、**認められました!** そこから、続けます。\n${body}`, allowedMentions: { users: [a.user_id] }, ...(r.again ? { components: againRow() } : {}) });
+    return true;
+  } catch (e) { console.warn('[shiritori] 申し立ての続きに失敗:', e.message); return false; }
+}
+
 /** 確認用のメッセージの、ボタンを、消して、結果を書く(ダッシュボードで決めたときも) */
 async function closeReview(client, a, text) {
   if (!a.ch_id || !a.msg_id) return;
@@ -473,6 +495,7 @@ async function decideButton(i, id, decision) {
   const r = decideAppeal(i.guildId, id, decision, i.user.id);
   if (!r) return i.reply({ content: 'その申し立ては、見つかりません。', ...EPH });
   if (r.error) return i.reply({ content: 'この申し立ては、もう、決まっています。', ...EPH });
+  if (decision === 'approved') continueAfterApproval(i.client, i.guildId, getAppeal(i.guildId, id) ?? r.appeal);
   return i.update({ content: decidedText(r.appeal, i.user.id), components: [], allowedMentions: NO_MENTION });
 }
 
@@ -585,6 +608,7 @@ export default {
       if (!r) return res.status(404).json({ error: '申し立てが見つかりません' });
       if (r.error) return res.status(409).json({ error: 'もう、決まっています' });
       if (decision !== 'removed') await closeReview(client, r.appeal, decidedText(r.appeal, r.appeal.decided_by));
+      if (decision === 'approved') continueAfterApproval(client, g, getAppeal(g, Number(req.params.id)) ?? r.appeal);
       res.json({ ok: true });
     });
     // 過去ログの取り込み: すでに、人どうしで、しりとりをしていたチャンネル(スレッド)の言葉を、ランキングに数える
