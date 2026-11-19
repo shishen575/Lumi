@@ -44,18 +44,18 @@ const BUILTIN = new Set(WORDS.map(toHira));
  * 人の言葉を調べる。戻り値: { ok: true, reading, surface } / { ok: false, why }
  * check = false なら、辞書チェックは、しない(かなは、そのまま、漢字は、読みを取れたときだけ)
  */
-export async function resolveWord(raw, { check = true } = {}) {
+export async function resolveWord(raw, { check = true, extra = null } = {}) {
   const text = String(raw ?? '').normalize('NFKC').replace(/[\s・]/g, ''), hira = toHira(text);
   if (!text) return { ok: false, why: '言葉が、空です。' };
   const kana = isKana(hira);
-  if (kana && (!check || BUILTIN.has(hira))) return { ok: true, reading: hira, surface: text };
+  if (kana && (!check || BUILTIN.has(hira) || extra?.has(hira))) return { ok: true, reading: hira, surface: text }; // extra: 運営が、登録した言葉
   const tk = await tokenizer();
   if (!tk) { // 辞書が使えない: かなは、そのまま通す。漢字は、読めないので、断る
     return kana ? { ok: true, reading: hira, surface: text } : { ok: false, why: '漢字は、いま、読み取れません。ひらがな・カタカナで、書いてください。' };
   }
   if (kana) { // かな: ひらがな・カタカナ、どちらかで、名詞として、載っているか
     for (const cand of [toKata(hira), hira]) { const r = nounReading(tk.tokenize(cand), false); if (r && isKana(r)) return { ok: true, reading: r, surface: text }; }
-    return { ok: false, why: `「${text}」は、辞書に見つかりません。(名詞で、別の書き方(カタカナ・漢字)も、試してください)` };
+    return { ok: false, appeal: hira, why: `「${text}」は、辞書に見つかりません。(名詞で、別の書き方(カタカナ・漢字)も、試してください。**本当にある言葉なら、「異議申し立て」を、押してください**)` };
   }
   if (!/[一-鿿々〆ヶ]/.test(text) || /[A-Za-z0-9]/.test(text)) return { ok: false, why: 'ひらがな・カタカナ・漢字だけで、書いてください。(英数字・記号は、使えません)' };
   const r = nounReading(tk.tokenize(text), false);

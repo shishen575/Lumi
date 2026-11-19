@@ -1,4 +1,5 @@
-import { SlashCommandBuilder, MessageFlags, EmbedBuilder, Events, PermissionFlagsBits, ChannelType, ActionRowBuilder, ButtonBuilder, ButtonStyle, UserSelectMenuBuilder } from 'discord.js';
+import { hasAccessSync } from '../../core/access.js';
+import { StringSelectMenuBuilder, SlashCommandBuilder, MessageFlags, EmbedBuilder, Events, PermissionFlagsBits, ChannelType, ActionRowBuilder, ButtonBuilder, ButtonStyle, UserSelectMenuBuilder } from 'discord.js';
 import { getKV, setKV, migrate, db } from '../../core/db.js';
 import { isOperator, canEditAccess } from '../../core/access.js';
 import { chanOf } from '../../core/channels.js';
@@ -15,7 +16,7 @@ const EPH = { flags: MessageFlags.Ephemeral };
 const NO_MENTION = { parse: [] };
 const BOT = '🤖 ルミ';
 const LEVELS = { easy: 'やさしい', normal: 'ふつう', hard: 'むずかしい' };
-export const DEFAULTS = { enabled: true, level: 'normal', timeSec: 60, messageMode: true, channelId: null, wordCheck: true };
+export const DEFAULTS = { enabled: true, allowSpectate: true, level: 'normal', timeSec: 60, messageMode: true, channelId: null, wordCheck: true, appealChannelId: null };
 
 migrate(`CREATE TABLE IF NOT EXISTS shiritori_stats (
   guild_id TEXT NOT NULL, user_id TEXT NOT NULL, wins INTEGER NOT NULL DEFAULT 0, losses INTEGER NOT NULL DEFAULT 0, best INTEGER NOT NULL DEFAULT 0,
@@ -24,6 +25,29 @@ migrate(`CREATE TABLE IF NOT EXISTS shiritori_words (
   guild_id TEXT NOT NULL, word TEXT NOT NULL, uses INTEGER NOT NULL DEFAULT 0, last_at INTEGER NOT NULL DEFAULT 0,
   PRIMARY KEY (guild_id, word))`);
 /** サーバーで、人が使った言葉を、数える(ランキング用) */
+migrate(`CREATE TABLE IF NOT EXISTS shiritori_appeals (
+  id INTEGER PRIMARY KEY AUTOINCREMENT, guild_id TEXT NOT NULL, word TEXT NOT NULL, user_id TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending',
+  created_at INTEGER NOT NULL, decided_by TEXT, decided_at INTEGER, ch_id TEXT, msg_id TEXT)`);
+migrate('CREATE INDEX IF NOT EXISTS shiritori_appeals_g ON shiritori_appeals (guild_id, status)');
+const MAX_PENDING_PER_USER = 5;
+/** 運営が、登録した言葉(辞書にない言葉を、通す) */
+export const approvedWords = (g) => new Set(db.prepare("SELECT word FROM shiritori_appeals WHERE guild_id=? AND status='approved'").all(g).map((r) => r.word));
+export function createAppeal(g, word, uid) {
+  if (approvedWords(g).has(word)) return { error: 'approved' };
+  if (db.prepare("SELECT 1 FROM shiritori_appeals WHERE guild_id=? AND word=? AND status='pending'").get(g, word)) return { error: 'pending' };
+  if (db.prepare("SELECT COUNT(*) c FROM shiritori_appeals WHERE guild_id=? AND user_id=? AND status='pending'").get(g, uid).c >= MAX_PENDING_PER_USER) return { error: 'limit' };
+  const r = db.prepare('INSERT INTO shiritori_appeals (guild_id, word, user_id, created_at) VALUES (?,?,?,?)').run(g, word, uid, Date.now());
+  return { id: Number(r.lastInsertRowid) };
+}
+export const getAppeal = (g, id) => db.prepare('SELECT * FROM shiritori_appeals WHERE guild_id=? AND id=?').get(g, id) ?? null;
+export const listAppeals = (g, statuses, limit = 50) => db.prepare(`SELECT * FROM shiritori_appeals WHERE guild_id=? AND status IN (${statuses.map(() => '?').join(',')}) ORDER BY id DESC LIMIT ?`).all(g, ...statuses, limit);
+/** 運営の決定: approved(登録する)/ rejected(却下)/ removed(登録を、取り消す)。pending の ものだけ決められる(取り消しは、approved から) */
+export function decideAppeal(g, id, decision, by) {
+  const a = getAppeal(g, id); if (!a) return null;
+  if (decision === 'removed' ? a.status !== 'approved' : a.status !== 'pending') return { error: 'done', appeal: a };
+  db.prepare('UPDATE shiritori_appeals SET status=?, decided_by=?, decided_at=? WHERE id=?').run(decision, by, Date.now(), id);
+  return { appeal: { ...a, status: decision, decided_by: by } };
+}
 const bumpWord = (g, word) => db.prepare(`INSERT INTO shiritori_words (guild_id,word,uses,last_at) VALUES (?,?,1,?)
   ON CONFLICT(guild_id,word) DO UPDATE SET uses=uses+1, last_at=excluded.last_at`).run(g, word, Date.now());
 export const topWords = (g, limit = 10) => db.prepare('SELECT word, uses FROM shiritori_words WHERE guild_id=? ORDER BY uses DESC, last_at DESC LIMIT ?').all(g, limit);
@@ -63,7 +87,9 @@ export function saveSettings(g, b) {
     level: b.level === undefined ? cur.level : (b.level in LEVELS ? b.level : DEFAULTS.level),
     timeSec: b.timeSec === undefined ? cur.timeSec : clampInt(b.timeSec, 10, 600, DEFAULTS.timeSec),
     messageMode: b.messageMode === undefined ? cur.messageMode : !!b.messageMode,
+    allowSpectate: b.allowSpectate === undefined ? cur.allowSpectate : !!b.allowSpectate,
     wordCheck: b.wordCheck === undefined ? cur.wordCheck : !!b.wordCheck,
+    appealChannelId: b.appealChannelId === undefined ? cur.appealChannelId : (/^\d{15,25}$/.test(String(b.appealChannelId ?? '')) ? String(b.appealChannelId) : null),
     channelId: b.channelId === undefined ? cur.channelId : (/^\d{15,25}$/.test(String(b.channelId ?? '')) ? String(b.channelId) : null),
   };
   setKV(g, 'shiritori_settings', out); return out;
@@ -88,17 +114,32 @@ export const panelMessage = () => ({
   embeds: [new EmbedBuilder().setColor(0x57f287).setTitle('🔤 しりとり — ルミと勝負!').setDescription('下の「しりとりを始める」を押すと、**あなただけのプライベートスレッド**ができて、BOT(ルミ)と、しりとりで勝負できます。\nひらがな・カタカナで、言葉を書いて(`/shiritori say` でも、OK)。「ん」で終わる・同じ言葉・時間切れは、負けです。')],
   components: [new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId('shiritori:new').setLabel('しりとりを始める').setEmoji('🔤').setStyle(ButtonStyle.Primary),
+    new ButtonBuilder().setCustomId('shiritori:watch').setLabel('観戦する').setEmoji('👀').setStyle(ButtonStyle.Secondary),
     new ButtonBuilder().setCustomId('shiritori:rank').setLabel('ランキング').setEmoji('🏆').setStyle(ButtonStyle.Secondary))],
 });
+const appealRow = (word) => [new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`shiritori:appeal:${word}`.slice(0, 100)).setLabel('異議申し立て').setEmoji('📣').setStyle(ButtonStyle.Secondary))];
 const againRow = () => [new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('shiritori:again').setLabel('もう一度').setEmoji('🔁').setStyle(ButtonStyle.Success))];
 const nextLine = (need, game) => `次は「**${need}**」から! ${game.mode === 'solo' ? '' : '(だれでも、答えられます) '}残り **${left(game)}秒**`;
 
+/* ---------- プライベートスレッドの記録(進行中/終了済みを、名前に出す。観戦の一覧に使う) ---------- */
+let CLIENT = null;
+const threadRecs = (g) => getKV(g, 'shiritori_threads', {}) ?? {};
+function recordThread(g, id, patch) {
+  const all = threadRecs(g); all[id] = { ...(all[id] ?? {}), ...patch };
+  const ids = Object.keys(all); if (ids.length > 60) for (const k of ids.filter((x) => all[x].status === 'end').sort((a, b) => (all[a].endedAt ?? 0) - (all[b].endedAt ?? 0)).slice(0, ids.length - 60)) delete all[k]; // 古い、終わったものから、消す
+  setKV(g, 'shiritori_threads', all); return all[id];
+}
+const threadName = (status, base, chain = 0) => `しりとり${status === 'on' ? '【進行中】' : '【終了済み】'}${base}${status === 'end' && chain ? `(${chain}語)` : ''}`.slice(0, 100);
+/** スレッドの名前を、変える(1つのスレッドで、10分に2回までの制限があるので、待たずに、失敗しても、気にしない) */
+function renameThread(id, name) { chanOf(CLIENT, id).then((th) => th?.setName?.(name, 'しりとりの状態').catch(() => {})).catch(() => {}); }
+
 /** ゲームを作る(first: bot = BOTが先 / me = 人が先)。thread = ボタンから作った、プライベートスレッドのゲーム */
-function startGame(g, ch, uid, { level, mode = 'solo', first = 'bot', thread = false, rng = Math.random } = {}) {
+function startGame(g, ch, uid, { level, mode = 'solo', first = 'bot', thread = false, base = '', renamed = true, rng = Math.random } = {}) {
   const st = getSettings(g), now = Date.now(), lv = level in LEVELS ? level : st.level;
   const nw = { starter: uid, mode, level: lv, timeSec: st.timeSec, words: [], need: null, until: now + st.timeSec * 1000, at: now, thread };
   if (first === 'bot') { const bw = firstBotWord(lv, rng); nw.words.push({ w: bw, by: 'bot' }); nw.need = tailOf(bw); }
   putGame(g, ch, nw);
+  if (thread) { const rec = recordThread(g, ch, { starter: uid, status: 'on', base: base || threadRecs(g)[ch]?.base || '', at: now }); if (renamed) renameThread(ch, threadName('on', rec.base)); }
   return nw;
 }
 const introText = (nw, uid, st) => [`🔤 **しりとり開始!** ${nw.mode === 'solo' ? `<@${uid}> さん と ${BOT}` : `みんな と ${BOT}`}の勝負です(強さ: ${LEVELS[nw.level]} ・ 1回の制限時間 ${nw.timeSec}秒)`,
@@ -110,6 +151,7 @@ function finish(g, ch, game, { winners = [], losers = [] }) {
   for (const u of winners) bump(g, u, 'wins', chain);
   for (const u of losers) bump(g, u, 'losses', chain);
   putGame(g, ch, null);
+  if (game.thread) { const rec = recordThread(g, ch, { status: 'end', chain, endedAt: Date.now() }); renameThread(ch, threadName('end', rec.base ?? '', chain)); }
 }
 /** 言葉の表示(漢字で書いたら、「林檎(りんご)」) */
 const fmtWord = (word, surface) => (surface && toHira(surface) !== word ? `${surface}(${word})` : word);
@@ -132,8 +174,8 @@ export async function play(g, ch, uid, text, { isMessage = false, now = Date.now
     finish(g, ch, game, { losers: game.mode === 'solo' ? [game.starter] : [] });
     return { text: `⏰ 時間切れ! **${BOT}の勝ち!** (${chainOf(game)}語続きました)`, ended: true, again: !!game.thread };
   }
-  const rw = await resolveWord(text, { check: getSettings(g).wordCheck }); // 辞書チェックと、漢字の読み取り
-  if (!rw.ok) return isMessage && !isKana(word) ? null : { text: `❌ ${rw.why}`, invalid: true }; // 漢字まじりのメッセージが、言葉でなかったら、ふつうの会話として、黙って、無視する
+  const rw = await resolveWord(text, { check: getSettings(g).wordCheck, extra: approvedWords(g) }); // 辞書チェックと、漢字の読み取り
+  if (!rw.ok) return isMessage && !isKana(word) ? null : { text: `❌ ${rw.why}`, invalid: true, appeal: rw.appeal }; // 漢字まじりのメッセージが、言葉でなかったら、ふつうの会話として、黙って、無視する
   const used = game.words.map((w) => w.w), r = checkWord(rw.reading, game.need, used);
   if (!r.ok) {
     if (!r.lose) return { text: `❌ ${r.why}`, invalid: true };
@@ -165,6 +207,7 @@ export const shiritoriCommand = {
     .addSubcommand((c) => c.setName('say').setDescription('言葉を、送ります(メッセージで送れるときは、そのまま書いても、OK)').addStringOption((o) => o.setName('word').setDescription('ひらがな・カタカナの言葉').setRequired(true).setMaxLength(40)))
     .addSubcommand((c) => c.setName('status').setDescription('いまの、しりとりの様子を見ます(自分だけに見えます)').addBooleanOption((o) => o.setName('public').setDescription('みんなに見せる(省略すると、自分だけ)')))
     .addSubcommand((c) => c.setName('stop').setDescription('しりとりを、やめます(始めた人・管理者)'))
+    .addSubcommand((c) => c.setName('watch').setDescription('ほかの人の、しりとりを、観戦します(進行中・終了済み)'))
     .addSubcommand((c) => c.setName('ranking').setDescription('ランキングを見ます(勝ち数・最長・勝率)').addStringOption((o) => o.setName('by').setDescription('並べ方(省略すると、勝ち数)').addChoices(...Object.entries(RANK_BY).map(([value, name]) => ({ name, value })))).addBooleanOption((o) => o.setName('public').setDescription('みんなに見せる(省略すると、自分だけ)')))
     .addSubcommand((c) => c.setName('words').setDescription('サーバーで、いちばん使われた言葉を見ます').addBooleanOption((o) => o.setName('public').setDescription('みんなに見せる(省略すると、自分だけ)')))
     .addSubcommand((c) => c.setName('panel').setDescription('【管理者向け】このチャンネルに、「しりとりを始める」のボタンを置きます'))
@@ -172,6 +215,7 @@ export const shiritoriCommand = {
   async execute(i, rng = Math.random) {
     const g = i.guildId, ch = i.channelId, sub = i.options.getSubcommand(), st = getSettings(g);
     const vis = () => (i.options.getBoolean?.('public') ? {} : EPH); // 始める・やめる以外は、既定で、自分だけに見える(みんなに見せるなら、public)
+    if (sub === 'watch') return watchList(i);
     if (sub === 'ranking') return i.reply({ embeds: [rankingEmbed(g, i.options.getString('by') ?? 'wins', i.user.id)], allowedMentions: NO_MENTION, ...vis() });
     if (sub === 'words') return i.reply({ embeds: [new EmbedBuilder().setColor(0xf1c40f).setTitle('📚 いちばん使われた言葉').setDescription(wordsText(topWords(g, 15))).setFooter({ text: 'このサーバーで、人が使った言葉(BOTの言葉は、数えません)' })], allowedMentions: NO_MENTION, ...vis() });
     if (sub === 'panel') {
@@ -204,7 +248,7 @@ export const shiritoriCommand = {
     await i.deferReply(solo ? EPH : {}); // 辞書の読み込みで、少し、かかることがある
     const r = await play(g, ch, i.user.id, i.options.getString('word', true), { rng });
     if (!r) return i.editReply({ content: 'このチャンネルでは、しりとりをしていません。' });
-    return i.editReply({ content: r.text, allowedMentions: NO_MENTION, ...(r.again ? { components: againRow() } : {}) }); // 自分だけ/みんなに見えるかは、deferReply で、決めてある // ひとりの勝負は、自分だけに見える(みんなで遊ぶときは、みんなが、動きを見られるように、全員に見える)
+    return i.editReply({ content: r.text, allowedMentions: NO_MENTION, ...(r.again ? { components: againRow() } : r.appeal ? { components: appealRow(r.appeal) } : {}) }); // 自分だけ/みんなに見えるかは、deferReply で、決めてある // ひとりの勝負は、自分だけに見える(みんなで遊ぶときは、みんなが、動きを見られるように、全員に見える)
   },
 };
 
@@ -234,10 +278,10 @@ async function newThreadGame(i) {
     if (!ch?.threads || ch.isThread?.()) return i.reply({ content: 'ここでは、スレッドを作れません。', ...EPH });
     await i.deferReply(EPH);
     try {
-      const name = `しりとり: ${i.member?.displayName ?? i.user.username}`.replace(/[\r\n]/g, ' ').slice(0, 100);
-      const th = await ch.threads.create({ name, type: ChannelType.PrivateThread, invitable: false, autoArchiveDuration: 60, reason: 'しりとり' });
+      const base = String(i.member?.displayName ?? i.user.username).replace(/[\r\n]/g, ' ').slice(0, 40), name = threadName('on', base);
+      const th = await ch.threads.create({ name, type: ChannelType.PrivateThread, invitable: true, autoArchiveDuration: 60, reason: 'しりとり' }); // invitable: 観戦に来た人を、BOTが追加できるように
       await th.members.add(i.user.id);
-      const nw = startGame(g, th.id, i.user.id, { level: st.level, mode: 'solo', first: 'bot', thread: true });
+      const nw = startGame(g, th.id, i.user.id, { level: st.level, mode: 'solo', first: 'bot', thread: true, base, renamed: false }); // 作ったときの名前が、「進行中」
       await th.send({ content: introText(nw, i.user.id, st), allowedMentions: { users: [i.user.id] } });
       return i.editReply({ content: `🔤 あなただけのスレッドを作りました: <#${th.id}>` });
     } catch (e) {
@@ -246,11 +290,74 @@ async function newThreadGame(i) {
     }
 }
 
+/* ---------- 異議申し立て(辞書で弾かれた言葉を、運営が、登録するか決める) ---------- */
+const reviewRow = (id) => [new ActionRowBuilder().addComponents(
+  new ButtonBuilder().setCustomId(`shiritori:apok:${id}`).setLabel('登録する').setEmoji('✅').setStyle(ButtonStyle.Success),
+  new ButtonBuilder().setCustomId(`shiritori:apno:${id}`).setLabel('却下').setEmoji('❌').setStyle(ButtonStyle.Danger))];
+const reviewText = (a, tail = '') => `📣 **異議申し立て** 「**${a.word}**」 — <@${a.user_id}>\n辞書に見つからなかった言葉です。登録すると、このサーバーでは、今後、通ります。${tail}`;
+async function appealButton(i, word) {
+  const g = i.guildId, st = getSettings(g);
+  if (!isKana(word)) return i.reply({ content: 'この言葉は、申し立てできません。', ...EPH });
+  const r = createAppeal(g, word, i.user.id);
+  if (r.error === 'approved') return i.reply({ content: `「${word}」は、もう、登録されています。もう一度、送ってみてください。`, ...EPH });
+  if (r.error === 'pending') return i.reply({ content: `「${word}」は、もう、申し立てられています。運営の確認を、待ってください。`, ...EPH });
+  if (r.error === 'limit') return i.reply({ content: `確認待ちの申し立てが、${MAX_PENDING_PER_USER}件あります。決まってから、また、申し立ててください。`, ...EPH });
+  if (st.appealChannelId) { // 確認用のチャンネルがあれば、ボタンつきで、知らせる
+    const ch = await chanOf(i.client, st.appealChannelId);
+    if (ch?.send) { const m = await ch.send({ content: reviewText({ word, user_id: i.user.id }), components: reviewRow(r.id), allowedMentions: NO_MENTION }).catch(() => null); if (m) db.prepare('UPDATE shiritori_appeals SET ch_id=?, msg_id=? WHERE id=?').run(ch.id, m.id, r.id); }
+  }
+  return i.reply({ content: `📣 「${word}」を、申し立てました。運営が、確認して、登録するか決めます。`, ...EPH });
+}
+/** 確認用のメッセージの、ボタンを、消して、結果を書く(ダッシュボードで決めたときも) */
+async function closeReview(client, a, text) {
+  if (!a.ch_id || !a.msg_id) return;
+  const ch = await chanOf(client, a.ch_id); await ch?.messages?.edit?.(a.msg_id, { content: text, components: [], allowedMentions: NO_MENTION }).catch(() => {});
+}
+const decidedText = (a, by) => `${a.status === 'approved' ? '✅ **登録しました**' : '❌ **却下しました**'} 「**${a.word}**」 — <@${a.user_id}> の申し立て(決めた人: <@${by}>)`;
+async function decideButton(i, id, decision) {
+  if (!hasAccessSync(i.guild, i.member, i.user.id)) return i.reply({ content: '決められるのは、運営(管理者)だけです。', ...EPH });
+  const r = decideAppeal(i.guildId, id, decision, i.user.id);
+  if (!r) return i.reply({ content: 'その申し立ては、見つかりません。', ...EPH });
+  if (r.error) return i.reply({ content: 'この申し立ては、もう、決まっています。', ...EPH });
+  return i.update({ content: decidedText(r.appeal, i.user.id), components: [], allowedMentions: NO_MENTION });
+}
+
+/** 観戦の一覧: 進行中 → 終了済み(新しい順)の、プライベートスレッド。選ぶと、その人が、スレッドに追加される */
+async function watchList(i) {
+  const g = i.guildId, st = getSettings(g);
+  if (!st.allowSpectate) return i.reply({ content: 'このサーバーでは、観戦は、オフです。', ...EPH });
+  const recs = Object.entries(threadRecs(g)).map(([id, r]) => ({ id, ...r })).filter((r) => r.starter !== i.user.id);
+  const on = recs.filter((r) => r.status === 'on').sort((a, b) => (b.at ?? 0) - (a.at ?? 0)), end = recs.filter((r) => r.status === 'end').sort((a, b) => (b.endedAt ?? 0) - (a.endedAt ?? 0));
+  const list = [...on, ...end].slice(0, 25);
+  if (!list.length) return i.reply({ content: '観戦できる、しりとりは、まだ、ありません。', ...EPH });
+  const opts = list.map((r) => { const gm = getGame(g, r.id); return { label: `${r.status === 'on' ? '【進行中】' : '【終了済み】'}${r.base || '?'}${r.status === 'on' ? `(${gm ? chainOf(gm) : 0}語)` : `(${r.chain ?? 0}語)`}`.slice(0, 100), value: r.id }; });
+  return i.reply({ content: `👀 どのしりとりを、見ますか?(選ぶと、そのスレッドに、入れます。**進行中 ${on.length}件 ・ 終了済み ${end.length}件**)`, ...EPH,
+    components: [new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId('shiritori:watchsel').setPlaceholder('スレッドを選ぶ').addOptions(opts))] });
+}
+async function watchJoin(i) {
+  const g = i.guildId, id = i.values?.[0], rec = threadRecs(g)[id];
+  if (!getSettings(g).allowSpectate || !rec) return i.update({ content: 'そのしりとりは、もう、見られません。', components: [] });
+  const th = await chanOf(i.client, id);
+  if (!th?.members) return i.update({ content: 'そのスレッドが、見つかりません。(消されたかもしれません)', components: [] });
+  try {
+    if (th.archived) await th.setArchived(false).catch(() => {}); // 終わって、しまわれていたら、開く
+    await th.members.add(i.user.id);
+    return i.update({ content: `👀 スレッドに、入りました: <#${id}>\n-# 見るだけにしてください。言葉は、始めた人の分だけが、数えられます`, components: [] });
+  } catch (e) {
+    console.warn('[shiritori] 観戦に追加できませんでした:', e.message);
+    return i.update({ content: 'スレッドに、入れませんでした。(BOTの権限が、足りないかもしれません)', components: [] });
+  }
+}
+
 /** ボタン: しりとりを始める(プライベートスレッドを作る)/ ランキング / もう一度 */
 export const shiritoriButton = {
   id: 'shiritori',
   async execute(i) {
     const action = i.customId.split(':')[1], g = i.guildId, st = getSettings(g);
+    if (action === 'appeal') return appealButton(i, i.customId.split(':').slice(2).join(':'));
+    if (action === 'apok' || action === 'apno') return decideButton(i, Number(i.customId.split(':')[2]), action === 'apok' ? 'approved' : 'rejected');
+    if (action === 'watch') return watchList(i);
+    if (action === 'watchsel') return watchJoin(i);
     if (action === 'statsme') return i.update({ content: '', embeds: [statsEmbed(g, i.user)], components: [], allowedMentions: NO_MENTION });
     if (action === 'statsmenu') { // 選んだ人の戦績
       const id = i.values?.[0], u = i.users?.get?.(id) ?? await i.client.users.fetch(id).catch(() => null);
@@ -285,6 +392,7 @@ export default {
   ].join('\n'),
 
   register({ client, router }) {
+    CLIENT = client; // スレッドの名前を変えるため
     registerButtonOverride('shiritori start', (i) => newThreadGame(i));
     registerButtonOverride('shiritori stats', (i) => i.reply({ content: 'だれの戦績を見ますか?', ...EPH, components: [ // 他の人の戦績も、見られる
       new ActionRowBuilder().addComponents(new UserSelectMenuBuilder().setCustomId('shiritori:statsmenu').setPlaceholder('見たい人を選ぶ').setMinValues(1).setMaxValues(1)),
@@ -302,6 +410,21 @@ export default {
       const g = req.guild.id, by = req.query.by in RANK_BY ? req.query.by : 'wins';
       const players = await Promise.all(rankingRows(g, by, 20).map(async (r) => ({ ...r, name: await nameOf(g, r.user_id) })));
       res.json({ by, ranks: RANK_BY, players, words: topWords(g, 20) });
+    });
+    // 異議申し立て(ダッシュボード): 運営が、登録するか決める
+    const withNames = async (g, rows) => Promise.all(rows.map(async (r) => ({ ...r, name: await nameOf(g, r.user_id), by: r.decided_by ? await nameOf(g, r.decided_by) : null })));
+    router.get('/appeals', async (req, res) => {
+      const g = req.guild.id;
+      res.json({ pending: await withNames(g, listAppeals(g, ['pending'], 100)), approved: await withNames(g, listAppeals(g, ['approved'], 200)), rejected: await withNames(g, listAppeals(g, ['rejected'], 20)), channelId: getSettings(g).appealChannelId });
+    });
+    router.post('/appeals/:id', async (req, res) => {
+      const g = req.guild.id, decision = ['approved', 'rejected', 'removed'].includes(req.body?.decision) ? req.body.decision : null;
+      if (!decision) return res.status(400).json({ error: '決め方が不正です' });
+      const r = decideAppeal(g, Number(req.params.id), decision, req.actor?.id ?? req.session?.user?.id);
+      if (!r) return res.status(404).json({ error: '申し立てが見つかりません' });
+      if (r.error) return res.status(409).json({ error: 'もう、決まっています' });
+      if (decision !== 'removed') await closeReview(client, r.appeal, decidedText(r.appeal, r.appeal.decided_by));
+      res.json({ ok: true });
     });
     router.get('/panel', (req, res) => { const p = panelOf(req.guild.id); res.json(p ? { channel_id: p.ch, link: `https://discord.com/channels/${req.guild.id}/${p.ch}/${p.msg}` } : null); });
     router.post('/panel', async (req, res) => {
@@ -321,7 +444,7 @@ export default {
         if (!st.enabled || !st.messageMode || !getGame(g, msg.channelId)) return;
         const r = await play(g, msg.channelId, msg.author.id, msg.content, { isMessage: true });
         if (!r) return;
-        await msg.reply({ content: r.text, allowedMentions: { parse: [], repliedUser: false }, ...(r.again ? { components: againRow() } : {}) });
+        await msg.reply({ content: r.text, allowedMentions: { parse: [], repliedUser: false }, ...(r.again ? { components: againRow() } : r.appeal ? { components: appealRow(r.appeal) } : {}) });
       } catch (e) { console.warn('[shiritori] メッセージの処理に失敗:', e.message); }
     });
 

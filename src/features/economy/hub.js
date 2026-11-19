@@ -53,7 +53,7 @@ const LABELS = {
   // 管理者向け
   'balance-edit': ['✏️', '残高を編集'], 'cooldown-reset': ['⏱️', '待ち時間を解除'], release: ['🔓', '釈放'], 'blackjack-end': ['🛑', 'ブラックジャックを終了'],
   // しりとり
-  'shiritori start': ['🔤', 'しりとりを始める'], 'shiritori say': ['✍️', '言葉を送る'], 'shiritori status': ['📋', 'しりとりの様子'], 'shiritori stop': ['🛑', 'しりとりをやめる'], 'shiritori ranking': ['🏆', 'しりとりランキング'], 'shiritori words': ['📚', 'よく使われた言葉'], 'shiritori stats': ['📊', 'しりとりの戦績'],
+  'shiritori start': ['🔤', 'しりとりを始める'], 'shiritori say': ['✍️', '言葉を送る'], 'shiritori watch': ['👀', '観戦する'], 'shiritori status': ['📋', 'しりとりの様子'], 'shiritori stop': ['🛑', 'しりとりをやめる'], 'shiritori ranking': ['🏆', 'しりとりランキング'], 'shiritori words': ['📚', 'よく使われた言葉'], 'shiritori stats': ['📊', 'しりとりの戦績'],
   // 活動ロール・大喜利
   rank: ['📊', 'ランク'], top: ['🏆', 'ランキング'], roles: ['🎖️', 'ロール一覧'], odai: ['💡', 'お題を出す'], kaitou: ['✍️', 'お題に回答'], kekka: ['📣', '結果を発表'], ranking: ['🌱', '大喜利ランキング'], best: ['🌿', '一番の草'], kusaemoji: ['🌱', '草の絵文字'], up: ['⬇️', 'お題を下に出す'],
 };

@@ -11,7 +11,9 @@ Dash.registerTab({
           <div class="grid2" style="margin-top:12px">
             <div class="field"><label class="f" for="lv">BOTの強さ(始めるときに、選ばなかったとき)</label><select id="lv">${Object.entries(st.levels).map(([k, v]) => `<option value="${k}" ${st.level === k ? 'selected' : ''}>${esc(v)}</option>`).join('')}</select><p class="hint">やさしい: 返しやすい言葉・辞書の一部だけ / ふつう / むずかしい: 返しにくい文字(る・ぬ・ぷ・ぎ など)で終わる言葉を選びます</p></div>
             <div class="field"><label class="f" for="ts">1回の制限時間(秒)</label><input id="ts" type="number" min="10" max="600" value="${st.timeSec}"><p class="hint">人が、この時間内に答えないと、BOTの勝ちです</p></div>
+            <div class="field"><label class="f" for="ap">異議申し立ての、確認チャンネル</label><select id="ap"><option value="">使わない(ダッシュボードだけで、確認する)</option>${chans.map((c) => `<option value="${c.id}" ${st.appealChannelId === c.id ? 'selected' : ''}>#${esc(c.name)}</option>`).join('')}</select><p class="hint">辞書で弾かれた言葉の「異議申し立て」が、ボタンつき(登録する/却下)で、ここに届きます。運営が、押して決めます</p></div>
             <div class="field"><label class="f" for="ch">遊べるチャンネル</label><select id="ch"><option value="">どこでもよい</option>${chans.map((c) => `<option value="${c.id}" ${st.channelId === c.id ? 'selected' : ''}>#${esc(c.name)}</option>`).join('')}</select><p class="hint">決めると、そのチャンネル(のスレッド)でだけ、始められます</p></div>
+            <div class="field"><label class="sw" style="margin-top:22px"><input type="checkbox" id="as" ${st.allowSpectate ? 'checked' : ''}><i></i><span><b>観戦を、許す</b><small>「観戦する」で、ほかの人の、プライベートスレッド(進行中・終了済み)に、入って見られます。スレッドの名前に、【進行中】【終了済み】が、出ます</small></span></label></div>
             <div class="field"><label class="sw" style="margin-top:22px"><input type="checkbox" id="wc" ${st.wordCheck ? 'checked' : ''}><i></i><span><b>辞書で、言葉をチェックする</b><small>名詞として辞書にない言葉は、「見つかりません」と断ります(負けには、なりません)。オフなら、どんな、かなも通ります</small></span></label></div>
             <div class="field"><label class="sw" style="margin-top:22px"><input type="checkbox" id="mm" ${st.messageMode ? 'checked' : ''}><i></i><span><b>メッセージで、言葉を送れる</b><small>始めたチャンネルで、ひらがな・カタカナの発言を、言葉として、受け取ります</small></span></label></div>
           </div>
@@ -31,7 +33,20 @@ Dash.registerTab({
       const q = (x) => el.querySelector(x);
       q('#pin').onclick = async () => { const ch = q('#pc').value; if (!ch) return toast('チャンネルを選んでください'); try { await api('/panel', { method: 'POST', body: { channel_id: ch } }); toast('ボタンを置きました'); location.reload(); } catch (e) { toast(e.message); } };
       q('#prm')?.addEventListener('click', async () => { await api('/panel', { method: 'DELETE' }); toast('外しました'); location.reload(); });
-      q('#save').onclick = async () => { await api('/settings', { method: 'PUT', body: { enabled: q('#en').checked, level: q('#lv').value, timeSec: q('#ts').value, channelId: q('#ch').value || null, messageMode: q('#mm').checked, wordCheck: q('#wc').checked } }); toast('保存しました'); };
+      q('#save').onclick = async () => { await api('/settings', { method: 'PUT', body: { enabled: q('#en').checked, level: q('#lv').value, timeSec: q('#ts').value, channelId: q('#ch').value || null, messageMode: q('#mm').checked, wordCheck: q('#wc').checked, allowSpectate: q('#as').checked, appealChannelId: q('#ap').value || null } }); toast('保存しました'); };
+    },
+  }, {
+    id: 'appeals', title: '異議申し立て', icon: 'inbox',
+    async render(el, { api, esc, toast, pageHeader }) {
+      const draw = async () => {
+        const r = await api('/appeals'), when = (t) => new Date(t).toLocaleString('ja-JP');
+        el.innerHTML = `${pageHeader('異議申し立て', '辞書で弾かれた言葉の、「異議申し立て」です。<b>登録</b>すると、このサーバーのしりとりで、その言葉が、通るようになります。')}
+          <div class="card"><h2>確認待ち(${r.pending.length})</h2>${r.pending.length ? `<table><tr><th>言葉</th><th>申し立てた人</th><th>日時</th><th></th></tr>${r.pending.map((a) => `<tr><td><b>${esc(a.word)}</b></td><td>${esc(a.name)}</td><td class="mut small">${when(a.created_at)}</td><td><div class="acts" style="margin:0"><button class="btn" data-id="${a.id}" data-d="approved" type="button">登録する</button><button class="btn danger" data-id="${a.id}" data-d="rejected" type="button">却下</button></div></td></tr>`).join('')}</table>` : '<p class="mut">確認待ちは、ありません。</p>'}</div>
+          <div class="card"><h2>登録した言葉(${r.approved.length})</h2>${r.approved.length ? `<table><tr><th>言葉</th><th>決めた人</th><th></th></tr>${r.approved.map((a) => `<tr><td><b>${esc(a.word)}</b></td><td>${esc(a.by ?? '')}</td><td><button class="btn ghost" data-id="${a.id}" data-d="removed" type="button">登録を取り消す</button></td></tr>`).join('')}</table>` : '<p class="mut">まだ、ありません。</p>'}</div>
+          ${r.rejected.length ? `<div class="card"><h2>最近、却下したもの</h2><p class="mut">${r.rejected.map((a) => esc(a.word)).join('・')}</p></div>` : ''}`;
+        el.querySelectorAll('[data-d]').forEach((b) => (b.onclick = async () => { try { await api(`/appeals/${b.dataset.id}`, { method: 'POST', body: { decision: b.dataset.d } }); toast('決めました'); draw(); } catch (e) { toast(e.message); } }));
+      };
+      await draw();
     },
   }, {
     id: 'ranking', title: 'ランキング', icon: 'trophy',
