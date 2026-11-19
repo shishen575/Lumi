@@ -69,8 +69,8 @@ const cakeSteps = (rng, V) => {
 /* ---------- ☕ バリスタ ---------- */
 const DRINKS = [['ラテ', 1, 3], ['カプチーノ', 1, 2], ['フラットホワイト', 1, 2], ['カフェオレ', 1, 4]];
 const cafeSteps = (rng, V) => {
-  const dr = shuffle(rng, DRINKS), [name, e, m] = dr[0], total = ri(rng, 2, 6) * 40 * 1; // 全量: 40 の倍数
-  const unit = e + m, per = total / unit * m;
+  const dr = shuffle(rng, DRINKS), [name, e, m] = dr[0], unit = e + m, total = unit * 10 * ri(rng, 1, 5); // 全量は、割合の合計(unit)の倍数にする(割り切れる。端数も、四捨五入も、出さない)
+  const per = total / unit * m;
   const cand = [...new Set([...dr.slice(1).map((d) => `${d[1]}:${d[2]}`), `${m}:${e}`, `${e}:${m + 2}`, `${e + 1}:${m}`, `${e}:${m + 1}`])].filter((x) => x !== `${e}:${m}`);
   const steps = [textStep(rng, 'drink', `📋 注文: **${name}**(エスプレッソ ${e} : ミルク ${m})。どのレシピ?`, `${e}:${m}`, cand)];
   steps.push(numStep(rng, 'ratio', `🥛 **${name}**を **${total}ml** 作る(エスプレッソ ${e} : ミルク ${m})。ミルクは何ml?`, per, () => per + delta(rng, [-40, -20, -10, 10, 20, 40]), (v) => `${v}ml`));
