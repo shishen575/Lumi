@@ -36,7 +36,7 @@ registerHelpExtras((g) => {
 /** ボタンの名前(コマンド名ではなく、わかりやすい言葉)。キーは「コマンド」または「コマンド サブコマンド」 */
 const LABELS = {
   // お金
-  balance: ['🪙', '残高'], deposit: ['🏦', '預ける'], withdraw: ['💵', '引き出す'], richest: ['🏆', 'お金持ちランキング'], pay: ['💸', '送金'], cooldowns: ['⏱️', '待ち時間'],
+  balance: ['🪙', '残高'], deposit: ['🏦', '預ける'], withdraw: ['💵', '引き出す'], richest: ['🏆', 'お金持ちランキング'], 'richest =cash': ['💰', 'お金持ち(現金)'], 'richest =assets': ['🏆', '総資産ランキング'], pay: ['💸', '送金'], cooldowns: ['⏱️', '待ち時間'],
   // 犯罪・バイト
   crime: ['🚨', '犯罪'], heist: ['🏦', '大型犯罪'], arrest: ['👮', '逮捕'], wanted: ['📋', '手配書'], bail: ['🔓', '保釈'], work: ['💼', 'バイト'], beg: ['🙏', '乞食'], job: ['🎖️', '職業・階級'],
   // お店・闇市・不動産
@@ -80,6 +80,10 @@ export function buttonsOf(cat) {
   for (const name of cat.commands.filter((n) => !HUB_EXCLUDE.has(n))) {
     const json = commandCatalog().find((c) => c.name === name); if (!json) continue;
     const subs = (json.options ?? []).filter((o) => o.type === 1);
+    if (name === 'richest') { // 「お金持ちランキング」は、現金 / 総資産の、2つのボタンにする(選択画面なしで、すぐ、みんなに見える)
+      for (const k of ['cash', 'assets']) out.push({ name, sub: `=${k}`, ...labelOf(name, `=${k}`, json.description), desc: k === 'assets' ? '現金 + 株 + ペット + 不動産の、総資産ランキング' : '手持ち + 銀行(現金)のランキング' });
+      continue;
+    }
     if (!subs.length) { if (stepsOf(name, null)) out.push({ name, sub: '', ...labelOf(name, '', json.description), desc: json.description }); continue; }
     for (const sc of subs) if (stepsOf(name, sc.name)) out.push({ name, sub: sc.name, ...labelOf(name, sc.name, sc.description), desc: sc.description });
   }
@@ -143,6 +147,10 @@ export const hubComponent = {
     if (i.customId === 'hub:cancel') return closePrompt(i);
     const cancel = () => new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('hub:cancel').setLabel('キャンセル').setEmoji('❌').setStyle(ButtonStyle.Secondary));
     const [, kind, name, sub = '', kS = '', acc = ''] = i.customId.split(':'), say = (content, extra = {}) => i.reply({ content, ...EPH, ...extra });
+    if (name === 'richest' && /^=(cash|assets)$/.test(sub)) { // 総資産 / 現金のランキング: 聞かずに、すぐ出す
+      const rc = findCommand(name); if (!rc) return say('/richest は、もう使えません。');
+      i.__cmd = name; return rc.execute(asCommand(i, { kind: sub.slice(1) }));
+    }
     const cmd = findCommand(name), st = stepsOf(name, sub); if (!cmd || !st) return say(`/${name} は、もう使えません。`);
     const answers = (kind === 'b' ? '' : kind === 's' ? acc : kS).split('.').filter((x) => x !== '');
     const stepIdx = kind === 'b' ? 0 : kind === 's' ? Number(kS) + 1 : st.steps.length;   // いま答えて、次に聞くのは、何番目か
