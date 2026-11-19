@@ -313,7 +313,9 @@ async function voteButton(i, vote) {
 }
 
 /* ---------- コマンド ---------- */
-const canStop = (i, game) => isOperator(i.user.id) || i.user.id === game.starter || i.memberPermissions?.has(PermissionFlagsBits.ManageGuild);
+/** 運営(OPERATOR_IDS)・オーナー・管理者・ダッシュボードで決めた管理ロールの人 */
+const isStaff = (i) => hasAccessSync(i.guild, i.member, i.user.id) || !!i.memberPermissions?.has(PermissionFlagsBits.Administrator);
+const canStop = (i, game) => isStaff(i) || i.user.id === game.starter || i.memberPermissions?.has(PermissionFlagsBits.ManageGuild);
 export const shiritoriCommand = {
   data: new SlashCommandBuilder().setName('shiritori').setDescription('しりとりで、BOTと勝負します').setDMPermission(false)
     .addSubcommand((c) => c.setName('start').setDescription('しりとりを、始めます(チャンネルごとに1つ)')
@@ -337,7 +339,7 @@ export const shiritoriCommand = {
     if (sub === 'ranking') return i.reply({ embeds: [rankingEmbed(g, i.options.getString('by') ?? 'wins', i.user.id)], allowedMentions: NO_MENTION, ...vis() });
     if (sub === 'words') return i.reply({ embeds: [new EmbedBuilder().setColor(0xf1c40f).setTitle('📚 いちばん使われた言葉').setDescription(wordsText(topWords(g, 15))).setFooter({ text: 'このサーバーで、人が使った言葉(BOTの言葉は、数えません)' })], allowedMentions: NO_MENTION, ...vis() });
     if (sub === 'import') {
-      if (!(isOperator(i.user.id) || i.guild?.ownerId === i.user.id || i.memberPermissions?.has(PermissionFlagsBits.Administrator))) return i.reply({ content: '取り込めるのは、サーバーのオーナー・管理者だけです。', ...EPH });
+      if (!isStaff(i)) return i.reply({ content: '取り込めるのは、運営・サーバーのオーナー・管理者だけです。', ...EPH });
       if (!i.client.options.intents.has('MessageContent')) return i.reply({ content: 'BOTがメッセージの本文を読めないため、取り込めません。(BOTの運営者が、MESSAGE CONTENT INTENT を有効にする必要があります)', ...EPH });
       const target = i.options.getChannel('channel') ?? i.channel, ch = await chanOf(i.client, target?.id);
       if (!ch?.messages || ch.guildId !== g) return i.reply({ content: 'そのチャンネルは、読めません。', ...EPH });
@@ -348,7 +350,7 @@ export const shiritoriCommand = {
       } catch (e) { console.warn('[shiritori] 取り込みに失敗:', e.message); return i.editReply({ content: `取り込めませんでした: ${e.message}(BOTに、そのチャンネルを読む権限が、あるか、確認してください)` }); }
     }
     if (sub === 'panel') {
-      if (!(isOperator(i.user.id) || i.guild?.ownerId === i.user.id || i.memberPermissions?.has(PermissionFlagsBits.Administrator))) return i.reply({ content: 'ボタンを置けるのは、サーバーのオーナー・管理者だけです。', ...EPH });
+      if (!isStaff(i)) return i.reply({ content: 'ボタンを置けるのは、運営・サーバーのオーナー・管理者だけです。', ...EPH });
       try { await installPanel(i.client, g, ch); } catch (e) { return i.reply({ content: `置けませんでした: ${e.message}`, ...EPH }); }
       return i.reply({ content: '✅ このチャンネルに、「しりとりを始める」のボタンを置きました。', ...EPH });
     }
