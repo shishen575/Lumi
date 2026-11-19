@@ -49,6 +49,10 @@ export const registerReplyDecorator = (fn) => replyDecorators.push(fn);
 let byNameRef = new Map(), catalogRef = [], categoriesRef = [];
 /** 機能ごとの、コマンドの分類(メニューパネルで使う): [{ id, title, emoji, commands: [名前] }]。機能が categories を持っていなければ、機能ごとに1つ */
 export const commandCategories = () => categoriesRef;
+/** カテゴリーパネルの、ボタンの動きを、機能が置き換える(キー: 「コマンド サブコマンド」)。例: しりとりの「始める」は、プライベートスレッドを作る */
+const buttonOverrides = new Map();
+export const registerButtonOverride = (key, fn) => buttonOverrides.set(key, fn);
+export const buttonOverride = (key) => buttonOverrides.get(key) ?? null;
 /** 登録されている全コマンドの、名前・説明・項目(カスタムパネルで、コマンドを選ぶのに使う) */
 export const commandCatalog = () => catalogRef;
 export const findCommand = (name) => byNameRef.get(name);

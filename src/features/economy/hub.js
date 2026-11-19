@@ -1,7 +1,7 @@
 import { chanOf } from '../../core/channels.js';
 import { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, UserSelectMenuBuilder, ModalBuilder, TextInputBuilder, TextInputStyle, MessageFlags } from 'discord.js';
 import { getKV, setKV } from '../../core/db.js';
-import { commandCatalog, commandCategories, findCommand, registerHiddenCommands, registerHelpExtras, resyncGuildCommands } from '../../core/commands.js';
+import { buttonOverride, commandCatalog, commandCategories, findCommand, registerHiddenCommands, registerHelpExtras, resyncGuildCommands } from '../../core/commands.js';
 import { asCommand, closePrompt } from './panels.js';
 import { schemaOf, parseValue } from './custompanels.js';
 
@@ -151,6 +151,8 @@ export const hubComponent = {
     if (i.customId === 'hub:cancel') return closePrompt(i);
     const cancel = () => new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('hub:cancel').setLabel('キャンセル').setEmoji('❌').setStyle(ButtonStyle.Secondary));
     const [, kind, name, sub = '', kS = '', acc = ''] = i.customId.split(':'), say = (content, extra = {}) => i.reply({ content, ...EPH, ...extra });
+    const ov = kind === 'b' ? buttonOverride(`${name} ${sub}`.trim()) : null; // 機能が、ボタンの動きを置き換えているとき(しりとりの「始める」など)
+    if (ov) { i.__cmd = name; return ov(i); }
     if (name === 'richest' && /^=(cash|assets)$/.test(sub)) { // 総資産 / 現金のランキング: 聞かずに、すぐ出す
       const rc = findCommand(name); if (!rc) return say('/richest は、もう使えません。');
       i.__cmd = name; return rc.execute(asCommand(i, { kind: sub.slice(1) }));

@@ -2,6 +2,7 @@ import { SlashCommandBuilder, MessageFlags, EmbedBuilder, Events, PermissionFlag
 import { getKV, setKV, migrate, db } from '../../core/db.js';
 import { isOperator, canEditAccess } from '../../core/access.js';
 import { chanOf } from '../../core/channels.js';
+import { registerButtonOverride } from '../../core/commands.js';
 import { checkWord, botPick, toHira, isKana, tailOf, headOf, dictSize } from './game.js';
 
 /**
@@ -207,20 +208,11 @@ export async function removePanel(client, g) {
 }
 const activeOf = (g, uid) => Object.entries(loadAll(g)).find(([, gm]) => gm.thread && gm.starter === uid);
 
-/** ボタン: しりとりを始める(プライベートスレッドを作る)/ ランキング / もう一度 */
-export const shiritoriButton = {
-  id: 'shiritori',
-  async execute(i) {
-    const action = i.customId.split(':')[1], g = i.guildId, st = getSettings(g);
-    if (action === 'rank') return i.reply({ embeds: [rankingEmbed(g, 'wins', i.user.id)], allowedMentions: NO_MENTION, ...EPH });
-    if (!st.enabled) return i.reply({ content: 'このサーバーでは、しりとりはオフです。', ...EPH });
-    if (action === 'again') { // 同じスレッドで、もう一度(始めた人だけ)
-      const old = getGame(g, i.channelId);
-      if (old) return i.reply({ content: 'まだ、しりとりの途中です。', ...EPH });
-      const nw = startGame(g, i.channelId, i.user.id, { level: st.level, mode: 'solo', first: 'bot', thread: true });
-      return i.reply({ content: introText(nw, i.user.id, st), allowedMentions: NO_MENTION });
-    }
-    // new: プライベートスレッドを作って、その人だけで、始める
+/** プライベートスレッドを作って、その人だけで、しりとりを始める(ボタン・カテゴリーパネルの「始める」から) */
+async function newThreadGame(i) {
+  const g = i.guildId, st = getSettings(g);
+  if (!st.enabled) return i.reply({ content: 'このサーバーでは、しりとりはオフです。', ...EPH });
+  if (st.channelId && i.channelId !== st.channelId && i.channel?.parentId !== st.channelId) return i.reply({ content: `しりとりは、<#${st.channelId}> で遊んでください。`, ...EPH });
     const had = activeOf(g, i.user.id);
     if (had) return i.reply({ content: `もう、しりとりをしています: <#${had[0]}>`, ...EPH });
     const ch = i.channel;
@@ -237,6 +229,22 @@ export const shiritoriButton = {
       console.warn('[shiritori] スレッドを作れませんでした:', e.message);
       return i.editReply({ content: 'スレッドを作れませんでした。BOTに、**プライベートスレッドの作成**と、**スレッドでの発言**の権限が、あるか、確認してください。' });
     }
+}
+
+/** ボタン: しりとりを始める(プライベートスレッドを作る)/ ランキング / もう一度 */
+export const shiritoriButton = {
+  id: 'shiritori',
+  async execute(i) {
+    const action = i.customId.split(':')[1], g = i.guildId, st = getSettings(g);
+    if (action === 'rank') return i.reply({ embeds: [rankingEmbed(g, 'wins', i.user.id)], allowedMentions: NO_MENTION, ...EPH });
+    if (!st.enabled) return i.reply({ content: 'このサーバーでは、しりとりはオフです。', ...EPH });
+    if (action === 'again') { // 同じスレッドで、もう一度(始めた人だけ)
+      const old = getGame(g, i.channelId);
+      if (old) return i.reply({ content: 'まだ、しりとりの途中です。', ...EPH });
+      const nw = startGame(g, i.channelId, i.user.id, { level: st.level, mode: 'solo', first: 'bot', thread: true });
+      return i.reply({ content: introText(nw, i.user.id, st), allowedMentions: NO_MENTION });
+    }
+    return newThreadGame(i);
   },
 };
 
@@ -255,6 +263,7 @@ export default {
   ].join('\n'),
 
   register({ client, router }) {
+    registerButtonOverride('shiritori start', (i) => newThreadGame(i)); // カテゴリーパネルの「しりとりを始める」も、プライベートスレッドで始める
     router.get('/settings', (req, res) => res.json({ ...getSettings(req.guild.id), levels: LEVELS, words: dictSize(), intent: client.options.intents.has('MessageContent') }));
     router.put('/settings', (req, res) => {
       if (!canEditAccess(req.access)) return res.status(403).json({ error: '変えられるのは、サーバーのオーナー・管理者・運営だけです' });
