@@ -1215,6 +1215,7 @@ export const arrestCommand = {
     const fineAmt = Math.round(baseBounty * wc.bountyFine * Math.max(0, 1 + fxTg.arrestFine)), took = fineAmt > 0 ? fine(g, target.id, fineAmt, s, 'arrest') : 0; // 罰金は、懸賞金(基本)に対する割合。報酬の割合とは、別
     const p = pay(g, me, bounty, s);
     jail(g, target.id, jailMs); clearHeat(g, target.id);
+    setCooldown(g, me, 'arrest', wc.arrestCdWin); // 成功したときの待ち時間(既定 0 = すぐ、次を逮捕できる)。失敗したときは、上で決めた待ち時間のまま
     await i.reply({ embeds: [card(i, s, GOLD, '👮 逮捕成功!', `${starText(stars)} <@${target.id}> を逮捕しました!\n🚔 留置場に ${dur(jailMs)} 入ります。\n\n懸賞金 **+ ${money(s, p.paid)}**${shortNote(s, p)}${took ? `\n-# <@${target.id}> が、罰金 ${money(s, took)} を支払いました(懸賞金は、ここから払われます)` : ''}`)], allowedMentions: NO_MENTIONS });
   },
 };

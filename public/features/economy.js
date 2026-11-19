@@ -117,7 +117,7 @@ Dash.registerTab({
           <div class="card"><h2>仕組み</h2><ul style="margin:0;padding-left:1.2em">
             <li>手配度が <b>${meta.heatPerStar}</b> 増えるごとに、星が1つ(最大5つ)。星1つにつき、犯罪の成功率が <b>${meta.penaltyPerStar}%</b> 下がります</li>
             <li>犯罪・大型犯罪に失敗して<b>捕まる</b>と、手配は解除されます</li>
-            <li>逮捕の成功率は <b>${meta.arrestChance}%</b>。逮捕された人は、星の数ぶん(1つ5分、最大30分)留置場に入り、手配が解除されます。逮捕した人の待ち時間は ${meta.arrestCdMin}分です</li></ul></div>
+            <li>逮捕の成功率は <b>${meta.arrestChance}%</b>。逮捕された人は、星の数ぶん(1つ5分、最大30分)留置場に入り、手配が解除されます。逮捕した人の待ち時間は、成功したとき ${meta.arrestCdWinMin}分・失敗したとき ${meta.arrestCdMin}分です</li></ul></div>
           <div class="card flush"><div class="card-h"><h2>成功したときに、上がる手配度</h2></div><div style="padding:6px 18px 12px"><table><tr><th>犯罪</th><th>手配度</th></tr>${meta.heat.map((h) => `<tr><td>${esc(h.name)}</td><td><b>+${h.heat}</b></td></tr>`).join('')}</table></div></div>
           <div class="acts"><button class="btn" id="save" type="button">設定を保存</button></div>`;
         const q = (x) => el.querySelector(x);

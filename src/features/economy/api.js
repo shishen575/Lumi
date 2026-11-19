@@ -31,7 +31,7 @@ export function mountApi(router, client = null) {
     res.json({
       jobs: Object.entries(JOBS).map(([key, j]) => ({ key, name: j.name, emoji: j.emoji })), defaults: DEFAULT_RANKS, maxRanks: MAX_RANKS,
       heat: [...Object.entries(CRIMES).map(([k, c]) => ({ name: `${c.emoji} ${c.name}`, heat: wc.heatCrime(k) })), ...Object.values(HEISTS).map((T) => ({ name: `${T.emoji} ${T.name}`, heat: wc.heatHeist(T.id) }))],
-      heatPerStar: wc.heatPerStar, penaltyPerStar: Math.round(wc.penalty * 100), arrestChance: Math.round(wc.arrestChance * 100), arrestCdMin: wc.arrestCd / 60000,
+      heatPerStar: wc.heatPerStar, penaltyPerStar: Math.round(wc.penalty * 100), arrestChance: Math.round(wc.arrestChance * 100), arrestCdMin: wc.arrestCd / 60000, arrestCdWinMin: wc.arrestCdWin / 60000,
       bonusBase: Math.round(jobOf(s, 'police').bonus.chance * 100), bonusCap: Math.round(POLICE_BONUS_CAP * 100),
     });
   });
