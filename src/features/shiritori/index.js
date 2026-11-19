@@ -326,6 +326,8 @@ export const shiritoriCommand = {
     .addSubcommand((c) => c.setName('watch').setDescription('ほかの人の、しりとりを、観戦します(進行中・終了済み)'))
     .addSubcommand((c) => c.setName('ranking').setDescription('ランキングを見ます(勝ち数・最長・勝率)').addStringOption((o) => o.setName('by').setDescription('並べ方(省略すると、勝ち数)').addChoices(...Object.entries(RANK_BY).map(([value, name]) => ({ name, value })))).addBooleanOption((o) => o.setName('public').setDescription('みんなに見せる(省略すると、自分だけ)')))
     .addSubcommand((c) => c.setName('words').setDescription('サーバーで、いちばん使われた言葉を見ます').addBooleanOption((o) => o.setName('public').setDescription('みんなに見せる(省略すると、自分だけ)')))
+    .addSubcommand((c) => c.setName('import').setDescription('【管理者向け】チャンネル(スレッド)の、過去の発言から、しりとりの言葉を、ランキングに数えます')
+      .addChannelOption((o) => o.setName('channel').setDescription('取り込むチャンネル・スレッド(省略すると、ここ)').addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement, ChannelType.PublicThread, ChannelType.PrivateThread, ChannelType.AnnouncementThread)))
     .addSubcommand((c) => c.setName('panel').setDescription('【管理者向け】このチャンネルに、「しりとりを始める」のボタンを置きます'))
     .addSubcommand((c) => c.setName('stats').setDescription('戦績と、ランキングを見ます').addUserOption((o) => o.setName('user').setDescription('見たい人(省略すると、自分)')).addBooleanOption((o) => o.setName('public').setDescription('みんなに見せる(省略すると、自分だけ)'))),
   async execute(i, rng = Math.random) {
@@ -334,6 +336,17 @@ export const shiritoriCommand = {
     if (sub === 'watch') return watchList(i);
     if (sub === 'ranking') return i.reply({ embeds: [rankingEmbed(g, i.options.getString('by') ?? 'wins', i.user.id)], allowedMentions: NO_MENTION, ...vis() });
     if (sub === 'words') return i.reply({ embeds: [new EmbedBuilder().setColor(0xf1c40f).setTitle('📚 いちばん使われた言葉').setDescription(wordsText(topWords(g, 15))).setFooter({ text: 'このサーバーで、人が使った言葉(BOTの言葉は、数えません)' })], allowedMentions: NO_MENTION, ...vis() });
+    if (sub === 'import') {
+      if (!(isOperator(i.user.id) || i.guild?.ownerId === i.user.id || i.memberPermissions?.has(PermissionFlagsBits.Administrator))) return i.reply({ content: '取り込めるのは、サーバーのオーナー・管理者だけです。', ...EPH });
+      if (!i.client.options.intents.has('MessageContent')) return i.reply({ content: 'BOTがメッセージの本文を読めないため、取り込めません。(BOTの運営者が、MESSAGE CONTENT INTENT を有効にする必要があります)', ...EPH });
+      const target = i.options.getChannel('channel') ?? i.channel, ch = await chanOf(i.client, target?.id);
+      if (!ch?.messages || ch.guildId !== g) return i.reply({ content: 'そのチャンネルは、読めません。', ...EPH });
+      await i.deferReply(EPH);
+      try {
+        const r = await importHistory(i.client, g, ch);
+        return i.editReply({ content: r.scanned ? `✅ <#${ch.id}> の ${r.scanned}件の発言から、**${r.words}語**を数えました(${r.players}人)。\n-# つながっている、ひらがな・カタカナの発言だけを拾います。前に取り込んだ所までは、二重に数えません。` : `<#${ch.id}> に、新しく取り込める発言は、ありませんでした。(取り込みずみか、BOTが読めないチャンネルかもしれません)` });
+      } catch (e) { console.warn('[shiritori] 取り込みに失敗:', e.message); return i.editReply({ content: `取り込めませんでした: ${e.message}(BOTに、そのチャンネルを読む権限が、あるか、確認してください)` }); }
+    }
     if (sub === 'panel') {
       if (!(isOperator(i.user.id) || i.guild?.ownerId === i.user.id || i.memberPermissions?.has(PermissionFlagsBits.Administrator))) return i.reply({ content: 'ボタンを置けるのは、サーバーのオーナー・管理者だけです。', ...EPH });
       try { await installPanel(i.client, g, ch); } catch (e) { return i.reply({ content: `置けませんでした: ${e.message}`, ...EPH }); }
