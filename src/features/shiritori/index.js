@@ -144,16 +144,17 @@ export const shiritoriCommand = {
       .addStringOption((o) => o.setName('mode').setDescription('遊び方').addChoices({ name: '自分ひとりで、ルミと勝負', value: 'solo' }, { name: 'みんなで、ルミと勝負', value: 'team' }))
       .addStringOption((o) => o.setName('first').setDescription('どちらが先か').addChoices({ name: 'ルミが先(既定)', value: 'bot' }, { name: '自分が先', value: 'me' })))
     .addSubcommand((c) => c.setName('say').setDescription('言葉を、送ります(メッセージで送れるときは、そのまま書いても、OK)').addStringOption((o) => o.setName('word').setDescription('ひらがな・カタカナの言葉').setRequired(true).setMaxLength(40)))
-    .addSubcommand((c) => c.setName('status').setDescription('いまの、しりとりの様子を見ます'))
+    .addSubcommand((c) => c.setName('status').setDescription('いまの、しりとりの様子を見ます(自分だけに見えます)').addBooleanOption((o) => o.setName('public').setDescription('みんなに見せる(省略すると、自分だけ)')))
     .addSubcommand((c) => c.setName('stop').setDescription('しりとりを、やめます(始めた人・管理者)'))
-    .addSubcommand((c) => c.setName('ranking').setDescription('ランキングを見ます(勝ち数・最長・勝率)').addStringOption((o) => o.setName('by').setDescription('並べ方(省略すると、勝ち数)').addChoices(...Object.entries(RANK_BY).map(([value, name]) => ({ name, value })))))
-    .addSubcommand((c) => c.setName('words').setDescription('サーバーで、いちばん使われた言葉を見ます'))
+    .addSubcommand((c) => c.setName('ranking').setDescription('ランキングを見ます(勝ち数・最長・勝率)').addStringOption((o) => o.setName('by').setDescription('並べ方(省略すると、勝ち数)').addChoices(...Object.entries(RANK_BY).map(([value, name]) => ({ name, value })))).addBooleanOption((o) => o.setName('public').setDescription('みんなに見せる(省略すると、自分だけ)')))
+    .addSubcommand((c) => c.setName('words').setDescription('サーバーで、いちばん使われた言葉を見ます').addBooleanOption((o) => o.setName('public').setDescription('みんなに見せる(省略すると、自分だけ)')))
     .addSubcommand((c) => c.setName('panel').setDescription('【管理者向け】このチャンネルに、「しりとりを始める」のボタンを置きます'))
-    .addSubcommand((c) => c.setName('stats').setDescription('戦績と、ランキングを見ます').addUserOption((o) => o.setName('user').setDescription('見たい人(省略すると、自分)'))),
+    .addSubcommand((c) => c.setName('stats').setDescription('戦績と、ランキングを見ます').addUserOption((o) => o.setName('user').setDescription('見たい人(省略すると、自分)')).addBooleanOption((o) => o.setName('public').setDescription('みんなに見せる(省略すると、自分だけ)'))),
   async execute(i, rng = Math.random) {
     const g = i.guildId, ch = i.channelId, sub = i.options.getSubcommand(), st = getSettings(g);
-    if (sub === 'ranking') return i.reply({ embeds: [rankingEmbed(g, i.options.getString('by') ?? 'wins', i.user.id)], allowedMentions: NO_MENTION });
-    if (sub === 'words') return i.reply({ embeds: [new EmbedBuilder().setColor(0xf1c40f).setTitle('📚 いちばん使われた言葉').setDescription(wordsText(topWords(g, 15))).setFooter({ text: 'このサーバーで、人が使った言葉(BOTの言葉は、数えません)' })], allowedMentions: NO_MENTION });
+    const vis = () => (i.options.getBoolean?.('public') ? {} : EPH); // 始める・やめる以外は、既定で、自分だけに見える(みんなに見せるなら、public)
+    if (sub === 'ranking') return i.reply({ embeds: [rankingEmbed(g, i.options.getString('by') ?? 'wins', i.user.id)], allowedMentions: NO_MENTION, ...vis() });
+    if (sub === 'words') return i.reply({ embeds: [new EmbedBuilder().setColor(0xf1c40f).setTitle('📚 いちばん使われた言葉').setDescription(wordsText(topWords(g, 15))).setFooter({ text: 'このサーバーで、人が使った言葉(BOTの言葉は、数えません)' })], allowedMentions: NO_MENTION, ...vis() });
     if (sub === 'panel') {
       if (!(isOperator(i.user.id) || i.guild?.ownerId === i.user.id || i.memberPermissions?.has(PermissionFlagsBits.Administrator))) return i.reply({ content: 'ボタンを置けるのは、サーバーのオーナー・管理者だけです。', ...EPH });
       try { await installPanel(i.client, g, ch); } catch (e) { return i.reply({ content: `置けませんでした: ${e.message}`, ...EPH }); }
@@ -165,7 +166,7 @@ export const shiritoriCommand = {
       const e = new EmbedBuilder().setColor(0x57f287).setTitle('🔤 しりとりの戦績').setAuthor({ name: u.username, iconURL: u.displayAvatarURL?.() })
         .setDescription(`**${me.wins}勝 ${me.losses}敗** ・ 最長 **${me.best}語**`)
         .addFields({ name: '🏆 勝ち数ランキング', value: top.length ? top.map((r, n) => `${n + 1}. <@${r.user_id}> — ${r.wins}勝 ${r.losses}敗(最長 ${r.best}語)`).join('\n') : 'まだ、記録がありません' });
-      return i.reply({ embeds: [e], allowedMentions: NO_MENTION });
+      return i.reply({ embeds: [e], allowedMentions: NO_MENTION, ...vis() });
     }
     if (!st.enabled) return i.reply({ content: 'このサーバーでは、しりとりはオフです。管理者が、ダッシュボードでオンにできます。', ...EPH });
     if (st.channelId && ch !== st.channelId && i.channel?.parentId !== st.channelId) return i.reply({ content: `しりとりは、<#${st.channelId}> で遊んでください。`, ...EPH });
@@ -179,7 +180,7 @@ export const shiritoriCommand = {
     if (sub === 'status') {
       const e = new EmbedBuilder().setColor(0x57f287).setTitle('🔤 しりとり').setDescription(`${game.mode === 'solo' ? `<@${game.starter}> さん と ${BOT}` : `みんな と ${BOT}`} ・ 強さ ${LEVELS[game.level]}\n${chainOf(game)}語 続いています\n${game.need ? nextLine(game.need, game) : 'あなたから、どうぞ!'}`)
         .addFields({ name: '最近の言葉', value: game.words.slice(-10).map((w) => `${w.by === 'bot' ? '🤖' : '🙂'} ${w.w}`).join(' → ') || 'まだ、ありません' });
-      return i.reply({ embeds: [e], allowedMentions: NO_MENTION });
+      return i.reply({ embeds: [e], allowedMentions: NO_MENTION, ...vis() });
     }
     if (sub === 'stop') {
       if (!canStop(i, game)) return i.reply({ content: 'やめられるのは、始めた人と、管理者だけです。', ...EPH });
@@ -187,9 +188,10 @@ export const shiritoriCommand = {
       return i.reply({ content: `🛑 しりとりを、やめました。(${chainOf(game)}語 続きました。勝ち負けは、つきません)`, allowedMentions: NO_MENTION });
     }
     // say
+    const solo = game.mode === 'solo'; // 終わると、ゲームの状態が消えるので、先に、覚えておく
     const r = play(g, ch, i.user.id, i.options.getString('word', true), { rng });
     if (!r) return i.reply({ content: 'このチャンネルでは、しりとりをしていません。', ...EPH });
-    return i.reply({ content: r.text, allowedMentions: NO_MENTION, ...(r.again ? { components: againRow() } : {}), ...(r.invalid ? EPH : {}) });
+    return i.reply({ content: r.text, allowedMentions: NO_MENTION, ...(r.again ? { components: againRow() } : {}), ...(r.invalid || solo ? EPH : {}) }); // ひとりの勝負は、自分だけに見える(みんなで遊ぶときは、みんなが、動きを見られるように、全員に見える)
   },
 };
 
