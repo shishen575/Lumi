@@ -99,7 +99,7 @@ const hubButton = (b) => { const x = new ButtonBuilder().setCustomId(`hub:b:${b.
 export function catMessage(cat) {
   const bs = buttonsOf(cat).slice(0, 25), rows = [];
   for (let n = 0; n < bs.length; n += 5) rows.push(new ActionRowBuilder().addComponents(bs.slice(n, n + 5).map((b) => hubButton(b))));
-  return { embeds: [new EmbedBuilder().setColor(0x6d5dfc).setTitle(`${cat.emoji ?? '📁'} ${cat.title}`).setDescription(`ボタンを押すと、必要なこと(選択肢・ユーザー・数字など)を聞かれて、コマンドが動きます。\n\n${bs.map((b) => `${b.emoji ?? '▫️'} **${b.label}** — ${b.desc}`).join('\n').slice(0, 3800)}`)], components: rows };
+  return { embeds: [new EmbedBuilder().setColor(0x6d5dfc).setTitle(`${cat.emoji ?? '📁'} ${cat.title}`).setDescription('ボタンを押してください。必要なことは、そのあと聞きます。')], components: rows };
 }
 
 export async function installCatPanel(client, g, id, channelId, retire, sticky = true) {
