@@ -12,6 +12,7 @@ Dash.registerTab({
             <div class="field"><label class="f" for="lv">BOTの強さ(始めるときに、選ばなかったとき)</label><select id="lv">${Object.entries(st.levels).map(([k, v]) => `<option value="${k}" ${st.level === k ? 'selected' : ''}>${esc(v)}</option>`).join('')}</select><p class="hint">やさしい: 返しやすい言葉・辞書の一部だけ / ふつう / むずかしい: 返しにくい文字(る・ぬ・ぷ・ぎ など)で終わる言葉を選びます</p></div>
             <div class="field"><label class="f" for="ts">1回の制限時間(秒)</label><input id="ts" type="number" min="10" max="600" value="${st.timeSec}"><p class="hint">人が、この時間内に答えないと、BOTの勝ちです</p></div>
             <div class="field"><label class="f" for="ch">遊べるチャンネル</label><select id="ch"><option value="">どこでもよい</option>${chans.map((c) => `<option value="${c.id}" ${st.channelId === c.id ? 'selected' : ''}>#${esc(c.name)}</option>`).join('')}</select><p class="hint">決めると、そのチャンネル(のスレッド)でだけ、始められます</p></div>
+            <div class="field"><label class="sw" style="margin-top:22px"><input type="checkbox" id="wc" ${st.wordCheck ? 'checked' : ''}><i></i><span><b>辞書で、言葉をチェックする</b><small>名詞として辞書にない言葉は、「見つかりません」と断ります(負けには、なりません)。オフなら、どんな、かなも通ります</small></span></label></div>
             <div class="field"><label class="sw" style="margin-top:22px"><input type="checkbox" id="mm" ${st.messageMode ? 'checked' : ''}><i></i><span><b>メッセージで、言葉を送れる</b><small>始めたチャンネルで、ひらがな・カタカナの発言を、言葉として、受け取ります</small></span></label></div>
           </div>
           ${warn}
@@ -23,14 +24,14 @@ Dash.registerTab({
         <div class="card"><h2>遊び方</h2><ul style="margin:0;padding-left:1.2em">
           <li><code>/shiritori start</code> で、始めます。「ひとりで」か「みんなで」、BOTの強さ、どちらが先かを、選べます(チャンネルごとに、1つ)</li>
           <li>言葉は、<code>/shiritori say</code> で送ります(メッセージで送れる設定なら、そのまま書いても、OK)</li>
-          <li>ひらがな・カタカナの、2文字以上。「ー」は、その前の文字の母音(らーめーん → ん)。小さい「ゃゅょっ」は、大きい字として、数えます。濁点は、区別します</li>
+          <li>ひらがな・カタカナ・<b>漢字</b>(林檎 → りんご)。2文字以上(読みで)。漢字まじりの発言は、プライベートスレッドの、ひとりの勝負でだけ、メッセージから受け取ります(ふつうの会話と、区別がつかないため。<code>/shiritori say</code> なら、いつでも)。「ー」は、その前の文字の母音(らーめーん → ん)。小さい「ゃゅょっ」は、大きい字として、数えます。濁点は、区別します</li>
           <li>「ん」で終わる・同じ言葉を使う・時間切れは、負け。BOTが言葉に詰まったら、人の勝ち</li>
-          <li>BOTの辞書は、約${st.words}語です。人の言葉が、実在するかは、調べません(ふつうの名詞で、遊んでください)</li>
+          <li>ルミの辞書は、約${st.words}語です。人の言葉は、「名詞として辞書に載っているか」を、形態素解析(IPA辞書)で、チェックします(オフにもできます)。載っていない言葉は、断られますが、負けにはなりません</li>
           <li><code>/shiritori stats</code> で、戦績(勝ち負け・最長)と、ランキングを見られます</li></ul></div>`;
       const q = (x) => el.querySelector(x);
       q('#pin').onclick = async () => { const ch = q('#pc').value; if (!ch) return toast('チャンネルを選んでください'); try { await api('/panel', { method: 'POST', body: { channel_id: ch } }); toast('ボタンを置きました'); location.reload(); } catch (e) { toast(e.message); } };
       q('#prm')?.addEventListener('click', async () => { await api('/panel', { method: 'DELETE' }); toast('外しました'); location.reload(); });
-      q('#save').onclick = async () => { await api('/settings', { method: 'PUT', body: { enabled: q('#en').checked, level: q('#lv').value, timeSec: q('#ts').value, channelId: q('#ch').value || null, messageMode: q('#mm').checked } }); toast('保存しました'); };
+      q('#save').onclick = async () => { await api('/settings', { method: 'PUT', body: { enabled: q('#en').checked, level: q('#lv').value, timeSec: q('#ts').value, channelId: q('#ch').value || null, messageMode: q('#mm').checked, wordCheck: q('#wc').checked } }); toast('保存しました'); };
     },
   }, {
     id: 'ranking', title: 'ランキング', icon: 'trophy',

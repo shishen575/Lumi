@@ -3,6 +3,7 @@ import { getKV, setKV, migrate, db } from '../../core/db.js';
 import { isOperator, canEditAccess } from '../../core/access.js';
 import { chanOf } from '../../core/channels.js';
 import { registerButtonOverride } from '../../core/commands.js';
+import { resolveWord } from './dict.js';
 import { checkWord, botPick, toHira, isKana, tailOf, headOf, dictSize } from './game.js';
 
 /**
@@ -14,7 +15,7 @@ const EPH = { flags: MessageFlags.Ephemeral };
 const NO_MENTION = { parse: [] };
 const BOT = '🤖 ルミ';
 const LEVELS = { easy: 'やさしい', normal: 'ふつう', hard: 'むずかしい' };
-export const DEFAULTS = { enabled: true, level: 'normal', timeSec: 60, messageMode: true, channelId: null };
+export const DEFAULTS = { enabled: true, level: 'normal', timeSec: 60, messageMode: true, channelId: null, wordCheck: true };
 
 migrate(`CREATE TABLE IF NOT EXISTS shiritori_stats (
   guild_id TEXT NOT NULL, user_id TEXT NOT NULL, wins INTEGER NOT NULL DEFAULT 0, losses INTEGER NOT NULL DEFAULT 0, best INTEGER NOT NULL DEFAULT 0,
@@ -62,6 +63,7 @@ export function saveSettings(g, b) {
     level: b.level === undefined ? cur.level : (b.level in LEVELS ? b.level : DEFAULTS.level),
     timeSec: b.timeSec === undefined ? cur.timeSec : clampInt(b.timeSec, 10, 600, DEFAULTS.timeSec),
     messageMode: b.messageMode === undefined ? cur.messageMode : !!b.messageMode,
+    wordCheck: b.wordCheck === undefined ? cur.wordCheck : !!b.wordCheck,
     channelId: b.channelId === undefined ? cur.channelId : (/^\d{15,25}$/.test(String(b.channelId ?? '')) ? String(b.channelId) : null),
   };
   setKV(g, 'shiritori_settings', out); return out;
@@ -109,38 +111,47 @@ function finish(g, ch, game, { winners = [], losers = [] }) {
   for (const u of losers) bump(g, u, 'losses', chain);
   putGame(g, ch, null);
 }
+/** 言葉の表示(漢字で書いたら、「林檎(りんご)」) */
+const fmtWord = (word, surface) => (surface && toHira(surface) !== word ? `${surface}(${word})` : word);
 const participants = (game) => [...new Set(game.words.filter((w) => w.by !== 'bot').map((w) => w.by))];
 
 /**
  * 人の言葉を、1つ処理する。戻り値: null(無視) / { text, ended, invalid }
  * (メッセージのとき、関係のない発言を、無視できるように、isMessage を渡す)
  */
-export function play(g, ch, uid, text, { isMessage = false, now = Date.now(), rng = Math.random } = {}) {
+export async function play(g, ch, uid, text, { isMessage = false, now = Date.now(), rng = Math.random } = {}) {
   const game = getGame(g, ch); if (!game) return null;
   if (game.mode === 'solo' && uid !== game.starter) return isMessage ? null : { text: 'これは、別の人のしりとりです。(みんなで遊ぶ方は、`/shiritori start mode:みんなで`)', invalid: true };
   const word = toHira(text);
-  if (isMessage && (!isKana(word) || [...word].length < 2 || [...word].length > 30)) return null; // ふつうの会話は、無視する
+  if (isMessage) { // メッセージ: ふつうの会話と、区別する。かな(2〜30文字)は、いつも。漢字まじりは、ひとりのプライベートスレッドでだけ(ふつうの会話と、区別がつかないため)
+    const kanaWord = isKana(word) && [...word].length >= 2 && [...word].length <= 30;
+    const kanjiWord = game.thread && /^[\u3041-\u3096\u30A1-\u30FAー\u4E00-\u9FFF々〆ヶ]{1,12}$/.test(String(text).normalize('NFKC').trim()) && /[\u4E00-\u9FFF々〆ヶ]/.test(String(text));
+    if (!kanaWord && !kanjiWord) return null;
+  }
   if (now > game.until) { // 時間切れ(人の負け)
     finish(g, ch, game, { losers: game.mode === 'solo' ? [game.starter] : [] });
     return { text: `⏰ 時間切れ! **${BOT}の勝ち!** (${chainOf(game)}語続きました)`, ended: true, again: !!game.thread };
   }
-  const used = game.words.map((w) => w.w), r = checkWord(text, game.need, used);
+  const rw = await resolveWord(text, { check: getSettings(g).wordCheck }); // 辞書チェックと、漢字の読み取り
+  if (!rw.ok) return isMessage && !isKana(word) ? null : { text: `❌ ${rw.why}`, invalid: true }; // 漢字まじりのメッセージが、言葉でなかったら、ふつうの会話として、黙って、無視する
+  const used = game.words.map((w) => w.w), r = checkWord(rw.reading, game.need, used);
   if (!r.ok) {
     if (!r.lose) return { text: `❌ ${r.why}`, invalid: true };
     finish(g, ch, game, { losers: game.mode === 'solo' ? [game.starter] : [uid] });
     return { text: `💥 ${r.why} **${BOT}の勝ち!** (${chainOf(game)}語続きました)`, ended: true, again: !!game.thread };
   }
-  game.words.push({ w: r.word, by: uid }); bumpWord(g, r.word); // 使われた言葉を、数える
+  const shown = fmtWord(r.word, rw.surface);
+  game.words.push({ w: r.word, by: uid, ...(shown !== r.word ? { disp: rw.surface } : {}) }); bumpWord(g, r.word); // 使われた言葉を、数える
   const bw = botPick(r.tail, game.words.map((w) => w.w), game.level, rng);
   if (!bw) { // BOTが、返せない: 人の勝ち
     const win = game.mode === 'solo' ? [game.starter] : participants(game);
     finish(g, ch, game, { winners: win });
-    return { text: `✅ 「${r.word}」\n🏳️ ${BOT}: 「**${r.tail}**」から始まる言葉が、思いつきません…参りました! **あなたたちの勝ち!** (${chainOf(game)}語続きました)`, ended: true, again: !!game.thread };
+    return { text: `✅ 「${shown}」\n🏳️ ${BOT}: 「**${r.tail}**」から始まる言葉が、思いつきません…参りました! **あなたたちの勝ち!** (${chainOf(game)}語続きました)`, ended: true, again: !!game.thread };
   }
   game.words.push({ w: bw, by: 'bot' }); game.need = tailOf(bw); game.until = now + game.timeSec * 1000;
   if (game.words.length > 2000) game.words = game.words.slice(-1000);
   putGame(g, ch, game);
-  return { text: `✅ 「${r.word}」 → ${BOT}: **${bw}**\n${nextLine(game.need, game)}・${chainOf(game)}語目` };
+  return { text: `✅ 「${shown}」 → ${BOT}: **${bw}**\n${nextLine(game.need, game)}・${chainOf(game)}語目` };
 }
 
 /* ---------- コマンド ---------- */
@@ -180,7 +191,7 @@ export const shiritoriCommand = {
     if (!game) return i.reply({ content: 'このチャンネルでは、しりとりをしていません。`/shiritori start` で、始められます。', ...EPH });
     if (sub === 'status') {
       const e = new EmbedBuilder().setColor(0x57f287).setTitle('🔤 しりとり').setDescription(`${game.mode === 'solo' ? `<@${game.starter}> さん と ${BOT}` : `みんな と ${BOT}`} ・ 強さ ${LEVELS[game.level]}\n${chainOf(game)}語 続いています\n${game.need ? nextLine(game.need, game) : 'あなたから、どうぞ!'}`)
-        .addFields({ name: '最近の言葉', value: game.words.slice(-10).map((w) => `${w.by === 'bot' ? '🤖' : '🙂'} ${w.w}`).join(' → ') || 'まだ、ありません' });
+        .addFields({ name: '最近の言葉', value: game.words.slice(-10).map((w) => `${w.by === 'bot' ? '🤖' : '🙂'} ${w.disp ?? w.w}`).join(' → ') || 'まだ、ありません' });
       return i.reply({ embeds: [e], allowedMentions: NO_MENTION, ...vis() });
     }
     if (sub === 'stop') {
@@ -190,9 +201,10 @@ export const shiritoriCommand = {
     }
     // say
     const solo = game.mode === 'solo'; // 終わると、ゲームの状態が消えるので、先に、覚えておく
-    const r = play(g, ch, i.user.id, i.options.getString('word', true), { rng });
-    if (!r) return i.reply({ content: 'このチャンネルでは、しりとりをしていません。', ...EPH });
-    return i.reply({ content: r.text, allowedMentions: NO_MENTION, ...(r.again ? { components: againRow() } : {}), ...(r.invalid || solo ? EPH : {}) }); // ひとりの勝負は、自分だけに見える(みんなで遊ぶときは、みんなが、動きを見られるように、全員に見える)
+    await i.deferReply(solo ? EPH : {}); // 辞書の読み込みで、少し、かかることがある
+    const r = await play(g, ch, i.user.id, i.options.getString('word', true), { rng });
+    if (!r) return i.editReply({ content: 'このチャンネルでは、しりとりをしていません。' });
+    return i.editReply({ content: r.text, allowedMentions: NO_MENTION, ...(r.again ? { components: againRow() } : {}) }); // 自分だけ/みんなに見えるかは、deferReply で、決めてある // ひとりの勝負は、自分だけに見える(みんなで遊ぶときは、みんなが、動きを見られるように、全員に見える)
   },
 };
 
@@ -265,7 +277,8 @@ export default {
   components: [shiritoriButton],
   help: [
     '`/shiritori start` で、BOTと、しりとりができます(ひとりで / みんなで。強さは、3段階)。',
-    '言葉は、`/shiritori say` で送ります。メッセージで送れるサーバー(管理者が設定)では、そのまま、ひらがなで書いても、OKです。',
+    '言葉は、`/shiritori say` で送ります。メッセージで送れるサーバー(管理者が設定)では、そのまま、ひらがなで書いても、OKです。漢字も使えます(林檎 → りんご。読みで、続けます)。',
+    '辞書にない言葉(名詞でないもの・存在しない言葉)は、「見つかりません」と断ります(負けには、なりません)。',
     '「ん」で終わる・同じ言葉・時間切れは負け。BOTが言葉に詰まったら、あなたの勝ち。',
     '`/shiritori ranking` で、ランキング(勝ち数・最長・勝率)、`/shiritori words` で、サーバーでいちばん使われた言葉、`/shiritori stats` で、自分の戦績を見られます。',
     '管理者が、チャンネルに「しりとりを始める」のボタンを置くと(`/shiritori panel`)、押した人だけの、プライベートスレッドで、遊べます。',
@@ -306,7 +319,7 @@ export default {
         if (!msg.guildId || msg.author.bot || msg.webhookId || !msg.content) return;
         const g = msg.guildId, st = getSettings(g);
         if (!st.enabled || !st.messageMode || !getGame(g, msg.channelId)) return;
-        const r = play(g, msg.channelId, msg.author.id, msg.content, { isMessage: true });
+        const r = await play(g, msg.channelId, msg.author.id, msg.content, { isMessage: true });
         if (!r) return;
         await msg.reply({ content: r.text, allowedMentions: { parse: [], repliedUser: false }, ...(r.again ? { components: againRow() } : {}) });
       } catch (e) { console.warn('[shiritori] メッセージの処理に失敗:', e.message); }
