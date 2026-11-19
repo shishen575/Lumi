@@ -210,6 +210,10 @@ export const workCommand = {
     const key = i.options.getString('job', true); const j = jobOf(s, key);
     const jl = jailLeft(i.guildId, i.user.id); if (jl) return refuse(i, `🚔 留置場にいる間は、バイトはできません。(あと ${dur(jl)})`);
     const cd = cooldownLeft(i.guildId, i.user.id, `work:${key}`); if (cd) return refuse(i, `${j.emoji} ${j.name}のシフトは、あと ${dur(cd)} 後です。`);
+    if (s.workSplit) { // バイトを、チャンネルで分けているとき: ギミックつき / ギミックなし、それぞれの、決めたチャンネルでだけ、できる(決めていない方は、どこでも)
+      const want = j.game ? s.workChannelGimmick : s.workChannelPlain;
+      if (want && i.channelId !== want && i.channel?.parentId !== want) return refuse(i, `${j.game ? '🎮 ギミックつき' : '💼 ギミックなし'}のバイトは、<#${want}> でしてください。`);
+    }
     if (budgetEmpty(s, i.guildId)) return refuse(i, BUDGET_EMPTY);
     if (j.game) return startRamen(i, s, key, j, rng); // ラーメン屋・配達員・レジ・ケーキ屋・バリスタは、ミニゲーム(給料は、出来栄えで決まる)
     // 警察のバイト: 指名手配中の人が多いほど、ボーナス(犯人逮捕の特別手当)が出やすい

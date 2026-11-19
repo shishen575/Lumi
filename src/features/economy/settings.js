@@ -19,6 +19,10 @@ export const DEFAULTS = {
   wantedDecayMin: 30,      // 手配度が1下がるまでの時間(分)
   bountyPerStar: 1000,     // 星1つぶんの懸賞金
   policeBonusPerWanted: 5, // 指名手配中の人が1人いるごとに、警察のバイトのボーナス確率が上がる量(%)
+  workSplit: false,        // バイトを、チャンネルで分ける(ギミックつき / ギミックなし)。false = 分けない
+  workChannelPlain: null,  // 分けるとき: ギミックなしのバイト(コンビニ・警察・ファーストフード)をするチャンネル
+  workChannelGimmick: null, // 分けるとき: ギミックつきのバイト(ラーメン・配達員・レジ・ケーキ屋・バリスタ)をするチャンネル
+  workStickSec: 30,        // ギミックつきのバイトのパネルが、チャンネルが静かになってから、一番下に降りてくるまでの待ち時間(秒)
   arrestPick: 'either',    // /arrest で、逮捕する人の決め方: either = 選ばなくても、一覧から選んでもよい / auto = 選ばない(いつも、いちばん手配度の高い人) / list = 手配中の一覧から選ぶ(選ばないとできない)
   arrestMinShifts: 5,      // /arrest を使うのに必要な、警察のバイトの出勤回数
   balance: {},             // ゲームバランスの上書き({ キー: 数値 })。ダッシュボードの「ゲームバランス」で変える。なければ初期値
@@ -103,6 +107,10 @@ export function saveSettings(guildId, s) {
     wantedDecayMin: s.wantedDecayMin === undefined ? cur.wantedDecayMin : clamp(s.wantedDecayMin, 1, 1440, DEFAULTS.wantedDecayMin),
     bountyPerStar: s.bountyPerStar === undefined ? cur.bountyPerStar : clamp(s.bountyPerStar, 0, 1_000_000, DEFAULTS.bountyPerStar),
     policeBonusPerWanted: s.policeBonusPerWanted === undefined ? cur.policeBonusPerWanted : clamp(s.policeBonusPerWanted, 0, 50, DEFAULTS.policeBonusPerWanted),
+    workSplit: s.workSplit === undefined ? cur.workSplit : !!s.workSplit,
+    workChannelPlain: s.workChannelPlain === undefined ? cur.workChannelPlain : (/^\d{15,25}$/.test(String(s.workChannelPlain ?? '')) ? String(s.workChannelPlain) : null),
+    workChannelGimmick: s.workChannelGimmick === undefined ? cur.workChannelGimmick : (/^\d{15,25}$/.test(String(s.workChannelGimmick ?? '')) ? String(s.workChannelGimmick) : null),
+    workStickSec: s.workStickSec === undefined ? cur.workStickSec : clamp(s.workStickSec, 5, 600, DEFAULTS.workStickSec),
     arrestPick: s.arrestPick === undefined ? cur.arrestPick : (['either', 'auto', 'list'].includes(s.arrestPick) ? s.arrestPick : DEFAULTS.arrestPick),
     arrestMinShifts: s.arrestMinShifts === undefined ? cur.arrestMinShifts : clamp(s.arrestMinShifts, 0, 1000, DEFAULTS.arrestMinShifts),
   };

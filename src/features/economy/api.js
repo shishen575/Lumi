@@ -9,7 +9,7 @@ import { POLICE_BONUS_CAP } from './wanted.js';
 import { SCHEMA, jobOf, wantedCfg, marketCfg } from './balance.js';
 import { FX_LABELS, SLOTS, MAX_SHOP_ITEMS, DEFAULT_SHOP, SHOP_MAX_STACK, shopById, shopItems } from './shop.js';
 import { COMPANIES, MAX_CUSTOM_STOCKS, companiesOf, sanitizeCustomStocks, VOL_LABELS, VOL_LEVELS, DEFAULT_NAMES, DEFAULT_LEVELS, companyOf, DEFAULT_EVENTS, MAX_EVENTS } from './stocks.js';
-import { PANELS, panelState, installPanel, removePanel, retiredOf } from './panels.js';
+import { PANELS, panelState, installPanel, removePanel, retiredOf, refreshPanel } from './panels.js';
 import { customPanels, saveCustomPanel, removeCustomPanel, removeCustomButton, retiredOfCustom, MAX_CUSTOM, MAX_BUTTONS } from './custompanels.js';
 import { commandCatalog } from '../../core/commands.js';
 import { marketNow, unitPrice } from './stockmarket.js';
@@ -62,7 +62,10 @@ export function mountApi(router, client = null) {
       const held = stockHoldersAll(g).filter((r) => gone.some((c) => c.id === r.company));
       if (held.length) return res.status(400).json({ error: `「${gone.filter((c) => held.some((r) => r.company === c.id)).map((c) => c.name).join('・')}」の株を持っている人がいるので、消せません。全員が売ったあとで、消してください。` });
     }
+    const before = getSettings(req.guild.id);
     saveSettings(req.guild.id, b);
+    const after = getSettings(req.guild.id);
+    if (client && (before.workSplit !== after.workSplit || before.workChannelPlain !== after.workChannelPlain || before.workChannelGimmick !== after.workChannelGimmick)) for (const k of ['work', 'workg']) refreshPanel(client, req.guild.id, k).catch(() => {}); // バイトの分け方を変えたら、置いてあるパネルも、書き直す
     res.json(view(req));
   });
 

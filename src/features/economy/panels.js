@@ -24,13 +24,14 @@ import { arrestCommand, wantedCommand, bailCommand, crimeCommand, heistCommand, 
 export const PANELS = {
   crime: { title: '犯罪パネル', commands: ['crime', 'heist', 'arrest', 'wanted', 'bail'], added: { arrest: 3, wanted: 3, bail: 6 } },
   work: { title: 'バイトパネル', commands: ['work', 'beg'] },
+  workg: { title: 'バイトパネル(ギミックつき)', commands: ['work'], added: { work: 7 } }, // 「バイトをチャンネルで分ける」ときの、ギミックつきの方(ラーメン・配達員・レジ・ケーキ屋・バリスタ)
   // お店パネルは、お店・不動産・闇市をまとめたもの(v2 から)
   shop: { title: 'お店パネル(お店・不動産・闇市)', commands: ['shop', 'use', 'estate', 'market'], added: { estate: 2, market: 2 } },
   pet: { title: 'ペットパネル', commands: ['pet'] },
   stock: { title: '株パネル', commands: ['stock', 'news', 'scandal'], added: { news: 4, scandal: 5 } },
   lottery: { title: '宝くじパネル', commands: ['lottery'] }, // くじは、サーバーで複数作れるので、くじを選んでから、買う・調べる
 };
-export const PANEL_VERSION = 6;
+export const PANEL_VERSION = 7;
 // そのパネルが置かれた版(v)で、パネルに載っていたコマンドだけ(あとから載せたコマンドは、置き直すまで、廃止の対象にしない)
 const commandsOf = (kind, st) => PANELS[kind].commands.filter((n) => (PANELS[kind].added?.[n] ?? 0) <= (st?.v ?? 1));
 /** そのパネルで、廃止しているコマンド: retire(名前の配列)があれば、それだけ。なければ(古い設定)、hide が true のとき、パネルに載っている全部のコマンド */
@@ -99,12 +100,13 @@ export function panelMessage(kind, g) {
         new ActionRowBuilder().addComponents(btn('panel:crime:arrest', '逮捕する', '👮', ButtonStyle.Primary), btn('panel:crime:wanted', '手配書', '📋'), btn('panel:crime:bail', '保釈', '🔓', ButtonStyle.Success))],
     };
   }
-  if (kind === 'work') {
-    const jobs = Object.keys(JOBS).map((k) => ({ k, j: jobOf(s, k) })), beg = begOf(s);
+  if (kind === 'work' || kind === 'workg') { // work = ギミックなし(分けないときは、全部) / workg = ギミックつき
+    const gim = kind === 'workg', jobs = Object.keys(JOBS).map((k) => ({ k, j: jobOf(s, k) })).filter(({ j }) => (gim ? !!j.game : !s.workSplit || !j.game)), beg = begOf(s);
+    const where = (id) => (s.workSplit && id ? `\n-# このバイトは、<#${id}> でできます` : '');
     return {
-      embeds: [new EmbedBuilder().setColor(0x3498db).setTitle('💼 バイトパネル').setDescription('ボタンを押すと、そのバイトをして、給料をもらいます。')
-        .addFields({ name: 'バイト', value: jobs.map(({ j }) => `${j.emoji} **${j.name}** — 給料 ${range(j.pay)}`).join('\n') }, { name: '乞食', value: `🙏 道ばたで、お金をめぐんでもらいます(待ち時間 ${Math.round(beg.cd / 60000)}分)` })],
-      components: rows([...jobs.map(({ k, j }) => btn(`panel:work:j:${k}`, j.name, j.emoji, ButtonStyle.Primary)), btn('panel:work:beg', '乞食', '🙏')]),
+      embeds: [new EmbedBuilder().setColor(0x3498db).setTitle(gim ? '🎮 バイトパネル(ギミックつき)' : '💼 バイトパネル').setDescription(`ボタンを押すと、そのバイトをして、給料をもらいます。${gim ? '注文に、ボタンで答えるミニゲームです。' : ''}${where(gim ? s.workChannelGimmick : s.workChannelPlain)}`)
+        .addFields({ name: 'バイト', value: jobs.map(({ j }) => `${j.emoji} **${j.name}** — 給料 ${range(j.pay)}`).join('\n') || 'なし' }, ...(gim ? [] : [{ name: '乞食', value: `🙏 道ばたで、お金をめぐんでもらいます(待ち時間 ${Math.round(beg.cd / 60000)}分)` }]))],
+      components: rows([...jobs.map(({ k, j }) => btn(`panel:work:j:${k}`, j.name, j.emoji, ButtonStyle.Primary)), ...(gim ? [] : [btn('panel:work:beg', '乞食', '🙏')])]),
     };
   }
   const sel = (id, placeholder, options) => new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId(id).setPlaceholder(placeholder).addOptions(options.slice(0, 25)));
@@ -174,6 +176,12 @@ export async function installPanel(client, g, kind, channelId, retire, sticky = 
   await resyncGuildCommands(g);
   return panelState(g)[kind];
 }
+/** 置いてあるパネルの、メッセージの中身だけを、いまの設定で書き直す(バイトの分け方を変えたときなど)。失敗しても、何もしない */
+export async function refreshPanel(client, g, kind) {
+  const st = panelState(g)[kind]; if (!st) return false;
+  const ch = await chanOf(client, st.ch); if (!ch?.isTextBased?.() || ch.guildId !== g) return false;
+  try { await ch.messages.edit(st.msg, panelMessage(kind, g)); return true; } catch { return false; }
+}
 /** パネルが、チャンネルの一番下になければ、前のものを消して、一番下に出し直す(すでに一番下なら、何もしない) */
 export async function repostPanel(client, g, kind) {
   const st = panelState(g)[kind]; if (!st || st.sticky === false) return false;
@@ -185,7 +193,7 @@ export async function repostPanel(client, g, kind) {
   return true;
 }
 /** 「一番下に出す」の対象。パネルは、値段表・株価グラフより下(prio が大きい)に出す */
-export const panelStickItems = (client) => Object.keys(PANELS).map((kind, n) => ({ kind: `panel:${kind}`, prio: 100 + n,
+export const panelStickItems = (client) => Object.keys(PANELS).map((kind, n) => ({ kind: `panel:${kind}`, prio: 100 + n, delay: kind === 'workg' ? (g) => getSettings(g).workStickSec * 1000 : undefined, // ギミックつきのバイトのパネルは、30秒(設定)静かになってから、下に降りる
   state: (g) => { const st = panelState(g)[kind]; return st && st.sticky !== false ? { ch: st.ch, msg: st.msg } : null; }, run: (g) => repostPanel(client, g, kind) }));
 /** パネルを外す。メッセージを消して、廃止していたコマンドを、元に戻す */
 export async function removePanel(client, g, kind) {

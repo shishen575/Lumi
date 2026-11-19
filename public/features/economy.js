@@ -45,6 +45,25 @@ Dash.registerTab({
         };
       } },
 
+    /* ===== バイトのチャンネル分け ===== */
+    { id: 'workch', title: 'バイトのチャンネル', icon: 'list',
+      async render(el, { api, channels: getChannels, esc, toast, pageHeader }) {
+        const [st, chans] = await Promise.all([api('/settings'), getChannels()]);
+        const opts = (sel) => `<option value="">どこでもよい(決めない)</option>${chans.map((c) => `<option value="${c.id}" ${sel === c.id ? 'selected' : ''}>#${esc(c.name)}</option>`).join('')}`;
+        el.innerHTML = `${pageHeader('バイトのチャンネル', 'バイトを、<b>ギミックつき</b>(ミニゲーム)と<b>ギミックなし</b>で、チャンネルを分けられます。')}
+          <div class="card"><div class="field"><label class="f" for="ws">チャンネルの分け方</label><select id="ws"><option value="0" ${st.workSplit ? '' : 'selected'}>分けない(どのチャンネルでも、全部のバイトができる)</option><option value="1" ${st.workSplit ? 'selected' : ''}>分ける(ギミックつき / ギミックなしで、チャンネルを決める)</option></select></div>
+            <div id="sp" ${st.workSplit ? '' : 'hidden'}>
+              <div class="field"><label class="f" for="wg">🎮 ギミックつきのバイトの、チャンネル</label><select id="wg">${opts(st.workChannelGimmick)}</select><p class="hint">ラーメン屋・配達員・スーパーのレジ・ケーキ屋・バリスタ。決めたチャンネル(のスレッド)でだけ、できます。「どこでもよい」なら、制限しません。</p></div>
+              <div class="field"><label class="f" for="wp2">💼 ギミックなしのバイトの、チャンネル</label><select id="wp2">${opts(st.workChannelPlain)}</select><p class="hint">コンビニ・警察・ファーストフード。乞食は、どこでもできます。</p></div>
+              <div class="field"><label class="f" for="wt">ギミックつきのパネルが、下に降りるまでの待ち時間(秒)</label><input id="wt" type="number" min="5" max="600" value="${st.workStickSec ?? 30}"><p class="hint">「パネル」で、<b>バイトパネル(ギミックつき)</b>を、そのチャンネルに置いてください(「いつも一番下に出す」をオン)。チャンネルが、この秒数、静かになったら、パネルが、一番下に降りてきます(ミニゲームの途中で、何度も降りてこないように)。</p></div>
+            </div>
+            <div class="acts"><button class="btn" id="save" type="button">保存</button></div></div>
+          <div class="card"><h2>仕組み</h2><ul style="margin:0;padding-left:1.2em"><li>「分ける」にすると、<b>バイトパネル</b>には、ギミックなしのバイトだけが載り、ギミックつきは、<b>バイトパネル(ギミックつき)</b>に載ります(「パネル」で置いてください)</li><li>決めたチャンネル以外で、そのバイトをしようとすると、正しいチャンネルを、案内します</li></ul></div>`;
+        const q = (x) => el.querySelector(x);
+        q('#ws').onchange = () => { q('#sp').hidden = q('#ws').value !== '1'; };
+        q('#save').onclick = async () => { await api('/settings', { method: 'PUT', body: { workSplit: q('#ws').value === '1', workChannelGimmick: q('#wg').value || null, workChannelPlain: q('#wp2').value || null, workStickSec: q('#wt').value } }); toast('保存しました'); };
+      } },
+
     /* ===== 職業の昇進 ===== */
     { id: 'jobs', title: '職業の昇進', icon: 'list',
       async render(el, { api, esc, toast, pageHeader }) {

@@ -45,6 +45,7 @@ export function stickChannels(client, itemsOrFn) {
     if (own && (settling.get(chKey) ?? 0) > Date.now()) return;
     const here = itemsFor(g).filter((it) => { const st = it.state(g); return st?.ch === msg.channelId && st.msg !== msg.id; });
     if (!here.length) return;
+    const quiet = Math.max(8000, ...here.map((it) => it.delay?.(g) ?? 0)); // 静かになってから、出し直すまでの待ち(既定8秒。ギミックつきのバイトのパネルは、設定の秒数)
     const now = Date.now(), cur = pending.get(chKey) ?? { first: now };
     clearTimeout(cur.t);
     cur.t = setTimeout(async () => {
@@ -55,7 +56,7 @@ export function stickChannels(client, itemsOrFn) {
       settling.set(chKey, Infinity);
       try { for (const it of list) await it.run(g).catch((e) => console.warn(`[sticky:${it.kind}] 出し直せませんでした:`, e.message)); }
       finally { settling.set(chKey, Date.now() + 6000); }
-    }, Math.min(8000, Math.max(1000, 30000 - (now - cur.first))));
+    }, Math.min(quiet, Math.max(1000, Math.max(30000, quiet * 3) - (now - cur.first))));
     cur.t.unref?.(); pending.set(chKey, cur);
   };
 }
