@@ -8,7 +8,9 @@ import { db, migrate } from '../../core/db.js';
  * 時間がかかったり、止まっていたりしたら、「分からない」として、扱う(遊びは、止めない)
  */
 migrate(`CREATE TABLE IF NOT EXISTS shiritori_lookup (word TEXT PRIMARY KEY, ok INTEGER NOT NULL, reading TEXT, src TEXT, at INTEGER NOT NULL)`);
-const NEG_TTL = 24 * 3600_000, TIMEOUT = 3500, UA = 'lumi-bot-shiritori';
+const NEG_TTL = 24 * 3600_000, TIMEOUT = 3500;
+/** 連絡先として、BOTの公開サイトのアドレスを入れる(Wikimedia は、連絡先つきの User-Agent を、求めている)。個人の情報は、入れない */
+const userAgent = () => `lumi-bot-shiritori/1.0${process.env.BASE_URL ? ` (${process.env.BASE_URL})` : ''}`;
 let fetchImpl = (...a) => fetch(...a);
 export const setFetch = (f) => { fetchImpl = f; }; // テスト用
 
@@ -22,15 +24,18 @@ async function polite(host) { const now = Date.now(), at = Math.max(now, nextAt.
 async function getJson(host, url) {
   await polite(host);
   const ctl = new AbortController(), t = setTimeout(() => ctl.abort(), TIMEOUT);
-  try { const res = await fetchImpl(url, { headers: { 'User-Agent': UA, Accept: 'application/json' }, signal: ctl.signal }); return res.ok ? await res.json() : null; }
+  try { const res = await fetchImpl(url, { headers: { 'User-Agent': userAgent(), Accept: 'application/json' }, signal: ctl.signal }); return res.ok ? await res.json() : null; }
   catch { return null; } finally { clearTimeout(t); }
 }
 
 /** Jisho: text(書いたまま)と hira(ひらがな)に合う、名詞の項目を探す。{ reading, surface } か null */
 export function matchJisho(json, text, hira) {
   for (const e of json?.data ?? []) {
-    const noun = (e.senses ?? []).some((s) => (s.parts_of_speech ?? []).some((p) => /noun|wikipedia definition|place|^pronoun/i.test(p)));
-    if (!noun) continue;
+    // 名詞の項目か: 名詞の意味が1つでもある(「勉強」: Noun + Suru verb)/ 「Wikipedia」の項目だけ。動詞・形容詞の項目に、Wikipedia の意味が、1つ混じっているだけのもの(走る)は、除く
+    const senses = (e.senses ?? []).map((s) => s.parts_of_speech ?? []);
+    const nounish = senses.some((p) => p.some((x) => /^(noun|proper noun|place|pronoun)\b/i.test(x)));
+    const wikiOnly = senses.length > 0 && senses.every((p) => p.length > 0 && p.every((x) => /^wikipedia definition$/i.test(x)));
+    if (!nounish && !wikiOnly) continue;
     for (const j of e.japanese ?? []) {
       const reading = toHira(j.reading ?? (isKana(toHira(j.word ?? '')) ? j.word : '')), word = j.word ?? j.reading;
       if (!reading || !isKana(reading)) continue;

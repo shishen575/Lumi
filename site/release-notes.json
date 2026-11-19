@@ -11,6 +11,10 @@
       {
         "tag": "追加",
         "text": "ポケモン(技・特性・道具・地名)と、ミク(曲名・ボカロP)の言葉を、無料の API(PokeAPI・VocaDB・日本語版Wikipedia)から、まとめて取るスクリプトを用意しました(`npm run fetch:pokemon` / `npm run fetch:miku`。手順は `docs/shiritori-data.md`)。取った JSON を入れると、辞書に自動で入ります。"
+      },
+      {
+        "tag": "追加",
+        "text": "ポケモンの技・特性・道具・地名などの日本語名 2,679語を、PokeAPI から取って、辞書に入れました(これで、ポケモン関連の言葉は、約3,900語になりました)。"
       }
     ]
   },

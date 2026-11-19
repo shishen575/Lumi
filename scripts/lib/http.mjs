@@ -4,7 +4,7 @@ export async function getJson(url, { retries = 3, timeoutMs = 20000, fetchImpl =
   for (let n = 0; ; n++) {
     try {
       const ctl = new AbortController(), t = setTimeout(() => ctl.abort(), timeoutMs);
-      const res = await fetchImpl(url, { headers: { 'User-Agent': 'lumi-bot-dictionary-builder', Accept: 'application/json' }, signal: ctl.signal }).finally(() => clearTimeout(t));
+      const res = await fetchImpl(url, { headers: { 'User-Agent': `lumi-bot-dictionary-builder/1.0${process.env.BASE_URL ? ` (${process.env.BASE_URL})` : ''}`, Accept: 'application/json' }, signal: ctl.signal }).finally(() => clearTimeout(t));
       if (res.status === 429 || res.status >= 500) throw new Error(`HTTP ${res.status}`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       return await res.json();
