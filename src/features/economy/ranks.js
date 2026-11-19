@@ -6,6 +6,10 @@ export const DEFAULT_RANKS = {
   convenience: [{ name: '新人', shifts: 0, pct: 100 }, { name: '一人前', shifts: 10, pct: 120 }, { name: '副店長', shifts: 30, pct: 150 }, { name: '店長', shifts: 80, pct: 200 }],
   police: [{ name: '巡査', shifts: 0, pct: 100 }, { name: '巡査部長', shifts: 10, pct: 120 }, { name: '警部', shifts: 30, pct: 150 }, { name: '警視', shifts: 80, pct: 200 }],
   ramen: [{ name: '見習い', shifts: 0, pct: 100 }, { name: '一人前', shifts: 10, pct: 120 }, { name: '湯切り名人', shifts: 30, pct: 150 }, { name: '店主', shifts: 80, pct: 200 }],
+  delivery: [{ name: '見習い配達員', shifts: 0, pct: 100 }, { name: '一人前', shifts: 10, pct: 120 }, { name: 'ベテラン', shifts: 30, pct: 150 }, { name: '配送センター長', shifts: 80, pct: 200 }],
+  register: [{ name: '新人レジ', shifts: 0, pct: 100 }, { name: '一人前', shifts: 10, pct: 120 }, { name: 'レジ名人', shifts: 30, pct: 150 }, { name: 'チーフ', shifts: 80, pct: 200 }],
+  cake: [{ name: '見習い', shifts: 0, pct: 100 }, { name: '一人前', shifts: 10, pct: 120 }, { name: 'パティシエ', shifts: 30, pct: 150 }, { name: 'シェフ', shifts: 80, pct: 200 }],
+  cafe: [{ name: '見習い', shifts: 0, pct: 100 }, { name: '一人前', shifts: 10, pct: 120 }, { name: 'バリスタ', shifts: 30, pct: 150 }, { name: 'ヘッドバリスタ', shifts: 80, pct: 200 }],
   fastfood: [{ name: 'クルー', shifts: 0, pct: 100 }, { name: 'トレーナー', shifts: 10, pct: 120 }, { name: '社員', shifts: 30, pct: 150 }, { name: '店長', shifts: 80, pct: 200 }],
 };
 

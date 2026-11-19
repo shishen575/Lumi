@@ -2,12 +2,13 @@ import { getSettings, money } from './settings.js';
 import { CRIMES, JOBS } from './jobs.js';
 import { POLICE_BONUS_CAP } from './wanted.js';
 import { RAMEN, GRADES } from './ramen.js';
+import { SHIFT_GAMES } from './shiftjobs.js';
 import { SLOTS, shopItems, itemText } from './shop.js';
 import { petsOpen, bonusLabel } from './pets.js';
 import { VOL_LABELS, companyOf, companiesOf } from './stocks.js';
 import { lotteriesOf } from './lottery.js';
 import { estateOf } from './estate.js';
-import { estateCfg, stockCfg, petCfg, toolCfg, timeoutCfg, ramenCfg, crimeOf, jobOf, heistOf, itemOf, marketCfg, wantedCfg, bailPerMin } from './balance.js';
+import { estateCfg, stockCfg, petCfg, toolCfg, timeoutCfg, ramenCfg, shiftCfg, crimeOf, jobOf, heistOf, itemOf, marketCfg, wantedCfg, bailPerMin } from './balance.js';
 import { HEISTS } from './heist.js';
 import { ITEMS, toolFor, priceOf, marketRate } from './market.js';
 
@@ -82,6 +83,9 @@ export function jobHelp({ guildId }) {
     '**ラーメンごとの、ギミック**',
     ...Object.values(RAMEN).map((r) => `${r.emoji} **${r.name}** — ${r.gimmick}: ${r.gimmickText}`),
   ].join('\n') }); }
+  { const sc = shiftCfg(s); // ギミックつきのバイト(お仕事ごとに、1つの欄)
+    sections.push({ name: '🎮 ギミックつきのバイト', value: `\`/work\` で、**配達員・スーパーのレジ・ケーキ屋・バリスタ**を選ぶと、ラーメン屋と同じ、ミニゲームです。注文に、ボタンで答えます。制限時間は **${sc.timeMs / 1000}秒**。出来栄えで、給料が変わります(満点は +${sc.perfectBonus}%)。お仕事ごとの「ギミック」は、下のとおりです。` });
+    for (const G of Object.values(SHIFT_GAMES)) sections.push({ name: `${G.emoji} ${G.title.replace('のバイト', '')}`, value: Object.values(G.variants).map((v) => `${v.emoji} **${v.name}** — ${v.gimmick}: ${v.gimmickText}`).join('\n') }); }
   if (s.promotionEnabled) {
     sections.push({ name: '📈 昇進', value: ['出勤を重ねると昇進して、給料(ボーナスも)の倍率が上がります。', '',
       ...Object.entries(JOBS).map(([k, j]) => `${j.emoji} **${j.name}**: ${s.jobRanks[k].map((r) => `${r.name}${r.shifts ? `(${r.shifts}回〜)` : ''} ×${r.pct / 100}`).join(' → ')}`)].join('\n') });

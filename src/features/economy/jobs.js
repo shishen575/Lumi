@@ -32,6 +32,12 @@ export const JOBS = {
 
   // ラーメン屋: ミニゲーム(game: 'ramen')。pay は、「大成功」のときの基本の給料。出来栄えで増減する
   ramen: { name: 'ラーメン屋', emoji: '🍜', pay: [250, 900], cd: 20 * M, game: 'ramen', text: ['注文どおりの一杯を、仕上げた。'] },
+
+  // ギミックつきのバイト(ミニゲーム): 配達員・スーパーのレジ・ケーキ屋・バリスタ。pay は「大成功」のときの基本の給料(出来栄えで増減する)
+  delivery: { name: '配達員', emoji: '🚚', pay: [250, 900], cd: 20 * M, game: 'delivery', text: ['荷物を、無事に届けた。'] },
+  register: { name: 'スーパーのレジ', emoji: '🛒', pay: [250, 900], cd: 20 * M, game: 'register', text: ['お会計を、さばき切った。'] },
+  cake: { name: 'ケーキ屋', emoji: '🍰', pay: [250, 900], cd: 20 * M, game: 'cake', text: ['ケーキを、仕上げた。'] },
+  cafe: { name: 'バリスタ', emoji: '☕', pay: [250, 900], cd: 20 * M, game: 'cafe', text: ['ドリンクを、淹れた。'] },
 };
 
 export const BEG = {

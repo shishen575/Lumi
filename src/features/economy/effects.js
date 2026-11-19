@@ -7,7 +7,7 @@ export const FX = {
   workPay: { label: 'バイトの給料', kind: 'pct' },
   begAmount: { label: '乞食の金額', kind: 'pct' },
   heistTime: { label: '大型犯罪の制限時間', kind: 'pct' },
-  ramenTime: { label: 'ラーメン屋の制限時間', kind: 'pct' },
+  ramenTime: { label: 'ミニゲームのバイトの制限時間', kind: 'pct' },
   heistMistakes: { label: '大型犯罪の、間違えてよい回数', kind: 'count' },
   fineMult: { label: '失敗したときの罰金', kind: 'pct' },
   toolKeep: { label: '使った道具を持ち帰る確率', kind: 'pp' },

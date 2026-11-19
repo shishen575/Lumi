@@ -11,6 +11,7 @@ import {
 } from './games.js';
 import { rankFor, scalePay } from './ranks.js';
 import { RAMEN, makeOrder, gradeRamen, GRADES } from './ramen.js';
+import { SHIFT_GAMES, isShiftGame, makeShift, variantOf, gradeShift, SHIFT_GRADES } from './shiftjobs.js';
 import { POLICE_BONUS_CAP } from './wanted.js';
 import { userFx } from './userfx.js';
 import { marketNow, unitPrice, sparkline } from './stockmarket.js';
@@ -21,7 +22,7 @@ import { settleGuild, announce, drawEmbed } from './lotteryengine.js';
 import { MAX_PETS, petsOpen, speciesOf, bonusLabel, levelOf, nextXp, MAX_LEVEL, hungerNow, hungerBar, petFx } from './pets.js';
 import { SLOTS, MAX_SHOP_ITEMS, SHOP_MAX_STACK, shopItems, shopById, itemText } from './shop.js';
 import { describeFx } from './effects.js';
-import { estateCfg, stockCfg, petCfg, toolCfg, timeoutCfg, ramenCfg, crimeOf, jobOf, begOf, heistOf, itemOf, marketCfg, wantedCfg, bailPerMin } from './balance.js';
+import { estateCfg, stockCfg, petCfg, toolCfg, timeoutCfg, ramenCfg, shiftCfg, crimeOf, jobOf, begOf, heistOf, itemOf, marketCfg, wantedCfg, bailPerMin } from './balance.js';
 import { starsOf, stars as starText, bountyOf, chanceDelta } from './wanted.js';
 import { ITEMS, itemById, toolFor, priceOf, marketRate } from './market.js';
 import { CRIMES, JOBS, resolveCrime, resolveWork, resolveBeg } from './jobs.js';
@@ -210,7 +211,7 @@ export const workCommand = {
     const jl = jailLeft(i.guildId, i.user.id); if (jl) return refuse(i, `🚔 留置場にいる間は、バイトはできません。(あと ${dur(jl)})`);
     const cd = cooldownLeft(i.guildId, i.user.id, `work:${key}`); if (cd) return refuse(i, `${j.emoji} ${j.name}のシフトは、あと ${dur(cd)} 後です。`);
     if (budgetEmpty(s, i.guildId)) return refuse(i, BUDGET_EMPTY);
-    if (j.game === 'ramen') return startRamen(i, s, key, j, rng); // ラーメン屋は、ミニゲーム(給料は、出来栄えで決まる)
+    if (j.game) return startRamen(i, s, key, j, rng); // ラーメン屋・配達員・レジ・ケーキ屋・バリスタは、ミニゲーム(給料は、出来栄えで決まる)
     // 警察のバイト: 指名手配中の人が多いほど、ボーナス(犯人逮捕の特別手当)が出やすい
     const wantedCount = key === 'police' && s.wantedEnabled ? topWanted(i.guildId, s.wantedDecayMin, 5, 1000).length : 0;
     const policeBase = jobOf(s, 'police').bonus.chance;
@@ -404,22 +405,24 @@ export const blackjackButton = {
 };
 
 /* ================= ラーメン屋のバイト(ミニゲーム) ================= */
-const STEP_LABEL = { soup: 'スープ', noodle: '麺の茹で時間', topping: 'トッピング', fire: '火加減', spice: '辛さ' };
-const stepLabel = (s) => (s.bonus ? '替え玉' : STEP_LABEL[s.kind] ?? s.kind);
+const STEP_LABEL = { soup: 'スープ', noodle: '麺の茹で時間', topping: 'トッピング', fire: '火加減', spice: '辛さ', address: '宛名', load: '積み込み', change: 'お釣り', wrap: '包み方', stairs: '階段', ice: '氷・保冷剤', sum: '合計', coupon: 'クーポン', tax: '税込み', points: 'ポイント', flavor: 'スポンジ', candles: 'ろうそく', berries: 'いちご', plate: 'プレート', cut: '切り分け', drink: 'レシピ', ratio: 'ミルク', steam: 'スチーム', syrup: 'シロップ' };
+const stepLabel = (s) => (s.bonus ? (s.kind === 'noodle' ? '替え玉' : 'おまけ') : STEP_LABEL[s.kind] ?? s.kind);
+/** そのバイトの、注文の種類(ラーメンの種類・お仕事の種類)と、タイトル */
+const gameInfo = (order) => (order.game ? { T: variantOf(order.game, order.type), title: `${SHIFT_GAMES[order.game].emoji} ${SHIFT_GAMES[order.game].title}`, label: (v) => `${v.emoji} ${v.name}` } : { T: RAMEN[order.type], title: '🍜 ラーメン屋のバイト', label: (v) => `${v.emoji} ${v.name}` });
 const rmColor = { gold: GOLD, green: GREEN, gray: GRAY, red: RED };
 function rmBody(st, deadline, uid, note = '') {
-  const T = RAMEN[st.order.type], step = st.order.steps[st.idx], total = st.order.steps.length;
+  const { T, title } = gameInfo(st.order), step = st.order.steps[st.idx], total = st.order.steps.length;
   const done = st.results.map((ok, n) => `${ok ? '✅' : '❌'} ${stepLabel(st.order.steps[n])}`).join('  ');
-  const e = new EmbedBuilder().setColor(BLUE).setTitle(`🍜 ラーメン屋のバイト — ${T.emoji} ${T.name}`).setAuthor({ name: st.name, iconURL: st.avatar })
+  const e = new EmbedBuilder().setColor(BLUE).setTitle(`${title} — ${T.emoji} ${T.name}`).setAuthor({ name: st.name, iconURL: st.avatar })
     .setDescription(`**${T.gimmick}**: ${T.gimmickText}\n制限時間: <t:${Math.floor(deadline / 1000)}:R> まで ・ 工程 **${st.idx + 1} / ${total}**${done ? `\n${done}` : ''}${note ? `\n${note}` : ''}\n\n${step.prompt}`);
   const row = new ActionRowBuilder().addComponents(step.options.map((label, k) => new ButtonBuilder().setCustomId(`eco:rm:${uid}:${st.idx}:${k}`).setLabel(label).setStyle(ButtonStyle.Secondary)));
   return { embeds: [e], components: [row] };
 }
 async function startRamen(i, s, key, j, rng) {
-  const g = i.guildId, u = i.user.id, rc = ramenCfg(s), fx = userFx(s, g, u);
+  const g = i.guildId, u = i.user.id, shift = isShiftGame(key), rc = shift ? shiftCfg(s) : ramenCfg(s), fx = userFx(s, g, u);
   const old = getRamen(g, u);
-  if (old) { if (Date.now() <= old.deadline + 30_000) return refuse(i, '進行中のラーメンがあります。先に、そちらを仕上げてください。'); claimRamen(g, u); } // 放置されたものは、給料なしで片付ける
-  const st = { order: makeOrder(rng), idx: 0, results: [], base: Math.round((j.pay[0] + Math.floor(rng() * (j.pay[1] - j.pay[0] + 1))) * (1 + fx.workPay)), name: i.member?.displayName ?? i.user.username, avatar: i.user.displayAvatarURL?.() };
+  if (old) { if (Date.now() <= old.deadline + 30_000) return refuse(i, '進行中のバイトがあります。先に、そちらを仕上げてください。'); claimRamen(g, u); } // 放置されたものは、給料なしで片付ける
+  const st = { job: key, order: shift ? makeShift(key, rng) : makeOrder(rng), idx: 0, results: [], base: Math.round((j.pay[0] + Math.floor(rng() * (j.pay[1] - j.pay[0] + 1))) * (1 + fx.workPay)), name: i.member?.displayName ?? i.user.username, avatar: i.user.displayAvatarURL?.() };
   const deadline = (i.createdTimestamp ?? Date.now()) + Math.round(rc.timeMs * (1 + fx.ramenTime)); // コマンドを打った時刻から数える(BOTの処理の遅れで、短くならない)
   setCooldown(g, u, `work:${key}`, j.cd);
   saveRamen(g, u, st, deadline); // 先に保存してから返信する
@@ -430,11 +433,11 @@ export const ramenButton = {
   id: 'eco:rm',
   async execute(i) {
     const [, , uid, idxS, kS] = i.customId.split(':');
-    if (i.user.id !== uid) return i.reply({ content: 'これは、あなたの注文ではありません。`/work job:ラーメン屋` で、自分のお店を始められます。', ...EPH });
+    if (i.user.id !== uid) return i.reply({ content: 'これは、あなたの注文ではありません。`/work` で、自分のバイトを始められます。', ...EPH });
     const g = i.guildId, s = getSettings(g);
     const game = getRamen(g, uid);
     if (!game) return safeUpdate(i, { content: 'このバイトは、すでに終了しています。', embeds: [], components: [] });
-    const st = game.state, now = i.createdTimestamp ?? Date.now();
+    const st = game.state, jobKey = st.job ?? 'ramen', now = i.createdTimestamp ?? Date.now();
     const expired = now > game.deadline + CLICK_GRACE; // 制限時間を過ぎてから押された → いまの出来で、仕上げる
     let note = '';
     if (!expired) {
@@ -447,15 +450,15 @@ export const ramenButton = {
     if (expired || st.idx >= st.order.steps.length) {
       const claimed = claimRamen(g, uid); // 取れたときだけ精算する(二重に給料が出ない)
       if (!claimed) return safeUpdate(i, { content: 'このバイトは、すでに終了しています。', embeds: [], components: [] });
-      const rc = ramenCfg(s), j = jobOf(s, 'ramen'), T = RAMEN[st.order.type];
-      const res = gradeRamen(st.order, st.results, st.base, Math.max(0, game.deadline - now), rc), grade = GRADES[res.grade];
-      const before = s.promotionEnabled ? rankFor(s.jobRanks.ramen, shiftsOf(g, uid, 'ramen')) : null, pct = before?.rank.pct ?? 100;
+      const j = jobOf(s, jobKey), { T } = gameInfo(st.order), shift = isShiftGame(jobKey);
+      const res = shift ? gradeShift(st.order, st.results, st.base, Math.max(0, game.deadline - now), shiftCfg(s)) : gradeRamen(st.order, st.results, st.base, Math.max(0, game.deadline - now), ramenCfg(s)), grade = (shift ? SHIFT_GRADES : GRADES)[res.grade];
+      const before = s.promotionEnabled ? rankFor(s.jobRanks[jobKey], shiftsOf(g, uid, jobKey)) : null, pct = before?.rank.pct ?? 100;
       const amount = scalePay(res.amount, pct), p = pay(g, uid, amount, s);
       let extra = '';
       if (p.paid > 0) {
-        const n = addShift(g, uid, 'ramen');
+        const n = addShift(g, uid, jobKey);
         if (s.promotionEnabled) {
-          const after = rankFor(s.jobRanks.ramen, n);
+          const after = rankFor(s.jobRanks[jobKey], n);
           extra = after.index > before.index ? `\n\n🎉 **昇進!** 「${after.rank.name}」になりました!(給料 ×${after.rank.pct / 100})` : `\n-# ${j.emoji} ${after.rank.name} ・ 出勤 ${n}回${after.next ? `(「${after.next.name}」まで あと ${after.left}回)` : '(最高の階級です)'}`;
         }
       }
@@ -1162,12 +1165,25 @@ export const wantedCommand = {
 };
 export const arrestCommand = {
   data: guildOnly(new SlashCommandBuilder().setName('arrest').setDescription('指名手配中の人を、逮捕します(警察のバイトを重ねた人だけ)')
-    .addUserOption((o) => o.setName('user').setDescription('逮捕する人(省略すると、いちばん手配度の高い人)'))),
+    .addStringOption((o) => o.setName('wanted').setDescription('指名手配中の人から選ぶ(候補が出ます)').setAutocomplete(true))
+    .addUserOption((o) => o.setName('user').setDescription('逮捕する人を、直接えらぶ(省略すると、いちばん手配度の高い人)'))),
+  /** 指名手配中の人の候補(星・懸賞金つき。手配度の高い順)。「選ばない」なら、いちばん手配度の高い人 */
+  async autocomplete(i) {
+    const s = getSettings(i.guildId), wc = wantedCfg(s), q = String(i.options.getFocused() ?? '').normalize('NFKC').toLowerCase();
+    if (!s.enabled || !s.wantedEnabled) return i.respond([]);
+    const rows = topWanted(i.guildId, s.wantedDecayMin, wc.heatPerStar, 25).filter((r) => r.user_id !== i.user.id && !jailLeft(i.guildId, r.user_id));
+    const named = await Promise.all(rows.map(async (r) => { const m = i.guild?.members?.cache?.get(r.user_id) ?? await i.guild?.members?.fetch?.(r.user_id).catch(() => null); return { r, name: m?.displayName ?? i.client?.users?.cache?.get(r.user_id)?.username ?? '手配中の人' }; }));
+    const out = named.filter((x) => !q || x.name.normalize('NFKC').toLowerCase().includes(q)).slice(0, 25)
+      .map(({ r, name }) => ({ name: `${'⭐'.repeat(Math.max(1, starsOf(r.heat, wc.heatPerStar)))} ${name}(懸賞金 ${bountyOf(r.heat, s.bountyPerStar, wc.heatPerStar).toLocaleString()})`.slice(0, 100), value: r.user_id }));
+    return i.respond(out);
+  },
   async execute(i, rng = rnd) {
     const s = await open(i); if (!s) return;
     if (!s.wantedEnabled) return wantedOff(i);
     const g = i.guildId, me = i.user.id;
     let target = i.options.getUser('user');
+    const picked = i.options.getString?.('wanted'); // 手配中の人の一覧から選んだ(ユーザーID)
+    if (!target && /^\d{15,25}$/.test(String(picked ?? ''))) target = await i.client?.users?.fetch?.(picked).catch(() => null) ?? { id: picked, bot: false, username: '手配中の人' };
     if (!target) { // 名前を入れなかった: いま手配中の人のうち、手配度がいちばん高い人(自分と、留置場にいる人は除く)
       const top = topWanted(g, s.wantedDecayMin, wantedCfg(s).heatPerStar, 25).filter((r) => r.user_id !== me && !jailLeft(g, r.user_id))[0];
       if (!top) return refuse(i, '逮捕できる、手配中の人が、いません。(/wanted で、手配書を見られます)');

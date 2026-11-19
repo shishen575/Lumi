@@ -89,6 +89,7 @@ function jobEmbed(s, g, u, id) {
   const j = jobOf(s, id);
   const e = new EmbedBuilder().setColor(0x3498db).setTitle(`${j.emoji} ${j.name}`).setDescription('`/work` で、バイトをして、給料をもらいます')
     .addFields({ name: '給料', value: `${money(s, j.pay[0])} 〜 ${money(s, j.pay[1])}`, inline: true }, { name: '待ち時間', value: dur(j.cd), inline: true });
+  if (j.game) e.addFields({ name: '🎮 ミニゲーム', value: j.game === 'ramen' ? 'お客さんの注文に、ボタンで答えて作ります。ラーメンごとに、ギミックがあります。' : 'お仕事の注文に、ボタンで答えます。お仕事ごとに、ギミック(早さ・繊細・問題が増える・おまけ)があります。(出来栄えで、給料が変わります)' });
   if (j.bonus) e.addFields({ name: 'ボーナス', value: `${Math.round(j.bonus.chance * 100)}%で、+ ${money(s, j.bonus.amount[0])} 〜 ${money(s, j.bonus.amount[1])}(${j.bonus.text})` });
   return e;
 }
