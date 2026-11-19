@@ -219,11 +219,12 @@ export const panelComponent = {
       if (action === 'h') return heistCommand.execute(asCommand(i, { target: arg }));
       if (action === 'wanted') return wantedCommand.execute(asCommand(i, {}));
       if (action === 'bail') return bailCommand.execute(asCommand(i, {}));
-      if (action === 'arrest') { // 名前を入れなくていい: いま手配中の人の一覧から選ぶ(「おまかせ」は、いちばん手配度の高い人)
+      if (action === 'arrest') { // 逮捕する人の決め方は、ダッシュボードの設定(auto = 選ばない / list = 一覧から選ぶ / either = どちらでも)
+        if (s.arrestPick === 'auto') return arrestCommand.execute(asCommand(i, {}));
         const wc = wantedCfg(s), rows = topWanted(i.guildId, s.wantedDecayMin, wc.heatPerStar, 24).filter((r) => r.user_id !== i.user.id && !jailLeft(i.guildId, r.user_id));
         if (!rows.length) return say('いま、逮捕できる、手配中の人は、いません。(「📋 手配書」で、手配書を見られます)');
         const names = await Promise.all(rows.map(async (r) => (await i.guild?.members?.fetch?.(r.user_id).catch(() => null))?.displayName ?? (await i.client?.users?.fetch?.(r.user_id).catch(() => null))?.username ?? '手配中の人'));
-        return say('逮捕する人を、選んでください。', { components: [selectRow('panel:crime:arrestsel', '手配中の人', [{ label: '🎯 いちばん手配度の高い人(おまかせ)', value: 'top' }, ...rows.map((r, n) => ({ label: `${names[n]}(${'⭐'.repeat(starsOf(r.heat, wc.heatPerStar))} 懸賞金 ${bountyOf(r.heat, s.bountyPerStar, wc.heatPerStar).toLocaleString()})`.slice(0, 100), value: r.user_id }))])] });
+        return say('逮捕する人を、選んでください。', { components: [selectRow('panel:crime:arrestsel', '手配中の人', [...(s.arrestPick === 'list' ? [] : [{ label: '🎯 いちばん手配度の高い人(おまかせ)', value: 'top' }]), ...rows.map((r, n) => ({ label: `${names[n]}(${'⭐'.repeat(starsOf(r.heat, wc.heatPerStar))} 懸賞金 ${bountyOf(r.heat, s.bountyPerStar, wc.heatPerStar).toLocaleString()})`.slice(0, 100), value: r.user_id }))])] });
       }
       if (action === 'arrestsel') {
         if (v0 === 'top') return arrestCommand.execute(asCommand(i, {}));

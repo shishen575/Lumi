@@ -19,6 +19,7 @@ export const DEFAULTS = {
   wantedDecayMin: 30,      // 手配度が1下がるまでの時間(分)
   bountyPerStar: 1000,     // 星1つぶんの懸賞金
   policeBonusPerWanted: 5, // 指名手配中の人が1人いるごとに、警察のバイトのボーナス確率が上がる量(%)
+  arrestPick: 'either',    // /arrest で、逮捕する人の決め方: either = 選ばなくても、一覧から選んでもよい / auto = 選ばない(いつも、いちばん手配度の高い人) / list = 手配中の一覧から選ぶ(選ばないとできない)
   arrestMinShifts: 5,      // /arrest を使うのに必要な、警察のバイトの出勤回数
   balance: {},             // ゲームバランスの上書き({ キー: 数値 })。ダッシュボードの「ゲームバランス」で変える。なければ初期値
   stocksEnabled: false,    // 株。オンのとき、/stock が使える
@@ -102,6 +103,7 @@ export function saveSettings(guildId, s) {
     wantedDecayMin: s.wantedDecayMin === undefined ? cur.wantedDecayMin : clamp(s.wantedDecayMin, 1, 1440, DEFAULTS.wantedDecayMin),
     bountyPerStar: s.bountyPerStar === undefined ? cur.bountyPerStar : clamp(s.bountyPerStar, 0, 1_000_000, DEFAULTS.bountyPerStar),
     policeBonusPerWanted: s.policeBonusPerWanted === undefined ? cur.policeBonusPerWanted : clamp(s.policeBonusPerWanted, 0, 50, DEFAULTS.policeBonusPerWanted),
+    arrestPick: s.arrestPick === undefined ? cur.arrestPick : (['either', 'auto', 'list'].includes(s.arrestPick) ? s.arrestPick : DEFAULTS.arrestPick),
     arrestMinShifts: s.arrestMinShifts === undefined ? cur.arrestMinShifts : clamp(s.arrestMinShifts, 0, 1000, DEFAULTS.arrestMinShifts),
   };
   setKV(guildId, 'economy', next);

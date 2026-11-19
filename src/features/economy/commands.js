@@ -1170,7 +1170,7 @@ export const arrestCommand = {
   /** 指名手配中の人の候補(星・懸賞金つき。手配度の高い順)。「選ばない」なら、いちばん手配度の高い人 */
   async autocomplete(i) {
     const s = getSettings(i.guildId), wc = wantedCfg(s), q = String(i.options.getFocused() ?? '').normalize('NFKC').toLowerCase();
-    if (!s.enabled || !s.wantedEnabled) return i.respond([]);
+    if (!s.enabled || !s.wantedEnabled || s.arrestPick === 'auto') return i.respond([]); // 「選ばない」のサーバーでは、候補は出さない
     const rows = topWanted(i.guildId, s.wantedDecayMin, wc.heatPerStar, 25).filter((r) => r.user_id !== i.user.id && !jailLeft(i.guildId, r.user_id));
     const named = await Promise.all(rows.map(async (r) => { const m = i.guild?.members?.cache?.get(r.user_id) ?? await i.guild?.members?.fetch?.(r.user_id).catch(() => null); return { r, name: m?.displayName ?? i.client?.users?.cache?.get(r.user_id)?.username ?? '手配中の人' }; }));
     const out = named.filter((x) => !q || x.name.normalize('NFKC').toLowerCase().includes(q)).slice(0, 25)
@@ -1181,8 +1181,10 @@ export const arrestCommand = {
     const s = await open(i); if (!s) return;
     if (!s.wantedEnabled) return wantedOff(i);
     const g = i.guildId, me = i.user.id;
-    let target = i.options.getUser('user');
-    const picked = i.options.getString?.('wanted'); // 手配中の人の一覧から選んだ(ユーザーID)
+    const mode = s.arrestPick ?? 'either'; // ダッシュボードの設定: either = どちらでも / auto = 選ばない / list = 一覧から選ぶ
+    let target = mode === 'auto' ? null : i.options.getUser('user');
+    const picked = mode === 'auto' ? null : i.options.getString?.('wanted'); // 手配中の人の一覧から選んだ(ユーザーID)
+    if (mode === 'list' && !target && !picked) return refuse(i, 'このサーバーでは、逮捕する人を、**手配中の人の一覧から選ぶ**決まりです。`wanted` を入力すると、候補が出ます。(/wanted で、手配書を見られます)');
     if (!target && /^\d{15,25}$/.test(String(picked ?? ''))) target = await i.client?.users?.fetch?.(picked).catch(() => null) ?? { id: picked, bot: false, username: '手配中の人' };
     if (!target) { // 名前を入れなかった: いま手配中の人のうち、手配度がいちばん高い人(自分と、留置場にいる人は除く)
       const top = topWanted(g, s.wantedDecayMin, wantedCfg(s).heatPerStar, 25).filter((r) => r.user_id !== me && !jailLeft(g, r.user_id))[0];
