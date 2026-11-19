@@ -1,0 +1,49 @@
+// しりとり
+Dash.registerTab({
+  name: 'shiritori', title: 'しりとり',
+  pages: [{
+    id: 'settings', title: 'しりとり', icon: 'list',
+    async render(el, { api, channels: getChannels, esc, toast, pageHeader }) {
+      const [st, chans, panel] = await Promise.all([api('/settings'), getChannels(), api('/panel')]);
+      const warn = st.intent ? '' : '<p class="hint">⚠️ BOTがメッセージの本文を読めないため、「メッセージで送る」は、動きません。<code>/shiritori say</code> で、送ってください。(BOTの運営者が、MESSAGE CONTENT INTENT を有効にすると、使えます)</p>';
+      el.innerHTML = `${pageHeader('しりとり', '<code>/shiritori start</code> で、BOT(ルミ)と、しりとりで勝負します。ひとりでも、みんなでも遊べます。')}
+        <div class="card"><label class="sw"><input type="checkbox" id="en" ${st.enabled ? 'checked' : ''}><i></i><span><b>しりとりを使う</b><small>オフのときは、<code>/shiritori</code>(戦績以外)が使えません</small></span></label>
+          <div class="grid2" style="margin-top:12px">
+            <div class="field"><label class="f" for="lv">BOTの強さ(始めるときに、選ばなかったとき)</label><select id="lv">${Object.entries(st.levels).map(([k, v]) => `<option value="${k}" ${st.level === k ? 'selected' : ''}>${esc(v)}</option>`).join('')}</select><p class="hint">やさしい: 返しやすい言葉・辞書の一部だけ / ふつう / むずかしい: 返しにくい文字(る・ぬ・ぷ・ぎ など)で終わる言葉を選びます</p></div>
+            <div class="field"><label class="f" for="ts">1回の制限時間(秒)</label><input id="ts" type="number" min="10" max="600" value="${st.timeSec}"><p class="hint">人が、この時間内に答えないと、BOTの勝ちです</p></div>
+            <div class="field"><label class="f" for="ch">遊べるチャンネル</label><select id="ch"><option value="">どこでもよい</option>${chans.map((c) => `<option value="${c.id}" ${st.channelId === c.id ? 'selected' : ''}>#${esc(c.name)}</option>`).join('')}</select><p class="hint">決めると、そのチャンネル(のスレッド)でだけ、始められます</p></div>
+            <div class="field"><label class="sw" style="margin-top:22px"><input type="checkbox" id="mm" ${st.messageMode ? 'checked' : ''}><i></i><span><b>メッセージで、言葉を送れる</b><small>始めたチャンネルで、ひらがな・カタカナの発言を、言葉として、受け取ります</small></span></label></div>
+          </div>
+          ${warn}
+          <div class="acts"><button class="btn" id="save" type="button">保存</button></div></div>
+        <div class="card"><h2>「しりとりを始める」ボタン</h2>
+          <p class="hint">チャンネルに、ボタンを置きます。押した人に、<b>その人だけの、プライベートスレッド</b>ができて、ルミとの、しりとりが始まります(もう一度遊ぶボタンも、スレッドに出ます)。BOTに、<b>プライベートスレッドの作成</b>と<b>スレッドでの発言</b>の権限が、必要です。</p>
+          <div class="field"><label class="f" for="pc">ボタンを置くチャンネル</label><select id="pc"><option value="">チャンネルを選ぶ</option>${chans.filter((c) => !c.thread).map((c) => `<option value="${c.id}" ${panel?.channel_id === c.id ? 'selected' : ''}>#${esc(c.name)}</option>`).join('')}</select></div>
+          <div class="acts"><button class="btn" id="pin" type="button">${panel ? '置き直す' : 'ボタンを置く'}</button>${panel ? `<a class="btn ghost" href="${esc(panel.link)}" target="_blank" rel="noopener">メッセージを見る</a><button class="btn danger" id="prm" type="button">外す</button>` : ''}</div></div>
+        <div class="card"><h2>遊び方</h2><ul style="margin:0;padding-left:1.2em">
+          <li><code>/shiritori start</code> で、始めます。「ひとりで」か「みんなで」、BOTの強さ、どちらが先かを、選べます(チャンネルごとに、1つ)</li>
+          <li>言葉は、<code>/shiritori say</code> で送ります(メッセージで送れる設定なら、そのまま書いても、OK)</li>
+          <li>ひらがな・カタカナの、2文字以上。「ー」は、その前の文字の母音(らーめーん → ん)。小さい「ゃゅょっ」は、大きい字として、数えます。濁点は、区別します</li>
+          <li>「ん」で終わる・同じ言葉を使う・時間切れは、負け。BOTが言葉に詰まったら、人の勝ち</li>
+          <li>BOTの辞書は、約${st.words}語です。人の言葉が、実在するかは、調べません(ふつうの名詞で、遊んでください)</li>
+          <li><code>/shiritori stats</code> で、戦績(勝ち負け・最長)と、ランキングを見られます</li></ul></div>`;
+      const q = (x) => el.querySelector(x);
+      q('#pin').onclick = async () => { const ch = q('#pc').value; if (!ch) return toast('チャンネルを選んでください'); try { await api('/panel', { method: 'POST', body: { channel_id: ch } }); toast('ボタンを置きました'); location.reload(); } catch (e) { toast(e.message); } };
+      q('#prm')?.addEventListener('click', async () => { await api('/panel', { method: 'DELETE' }); toast('外しました'); location.reload(); });
+      q('#save').onclick = async () => { await api('/settings', { method: 'PUT', body: { enabled: q('#en').checked, level: q('#lv').value, timeSec: q('#ts').value, channelId: q('#ch').value || null, messageMode: q('#mm').checked } }); toast('保存しました'); };
+    },
+  }, {
+    id: 'ranking', title: 'ランキング', icon: 'trophy',
+    async render(el, { api, esc, pageHeader }) {
+      const draw = async (by) => {
+        const r = await api(`/ranking?by=${by}`);
+        el.innerHTML = `${pageHeader('しりとりランキング', 'このサーバーの、しりとりの戦績と、よく使われた言葉です。')}
+          <div class="card"><div class="field"><label class="f" for="by">並べ方</label><select id="by">${Object.entries(r.ranks).map(([k, v]) => `<option value="${k}" ${r.by === k ? 'selected' : ''}>${esc(v)}</option>`).join('')}</select></div>
+            <table><tr><th>#</th><th>名前</th><th>勝ち</th><th>負け</th><th>最長</th></tr>${r.players.map((p, n) => `<tr><td>${n + 1}</td><td>${esc(p.name)}</td><td>${p.wins}</td><td>${p.losses}</td><td>${p.best}語</td></tr>`).join('') || '<tr><td colspan="5" class="mut">まだ、記録がありません</td></tr>'}</table></div>
+          <div class="card"><h2>📚 いちばん使われた言葉</h2><table><tr><th>#</th><th>言葉</th><th>回数</th></tr>${r.words.map((w, n) => `<tr><td>${n + 1}</td><td>${esc(w.word)}</td><td>${w.uses}回</td></tr>`).join('') || '<tr><td colspan="3" class="mut">まだ、記録がありません</td></tr>'}</table></div>`;
+        el.querySelector('#by').onchange = (e) => draw(e.target.value);
+      };
+      await draw('wins');
+    },
+  }],
+});
