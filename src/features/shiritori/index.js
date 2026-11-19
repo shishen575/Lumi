@@ -139,7 +139,7 @@ function recordThread(g, id, patch) {
   const ids = Object.keys(all); if (ids.length > 60) for (const k of ids.filter((x) => all[x].status === 'end').sort((a, b) => (all[a].endedAt ?? 0) - (all[b].endedAt ?? 0)).slice(0, ids.length - 60)) delete all[k]; // 古い、終わったものから、消す
   setKV(g, 'shiritori_threads', all); return all[id];
 }
-const threadName = (status, base, chain = 0) => `しりとり${status === 'on' ? '【進行中】' : '【終了済み】'}${base}${status === 'end' && chain ? `(${chain}語)` : ''}`.slice(0, 100);
+const threadName = (status, base) => `しりとり-${base}${status === 'on' ? '【進行中】' : '【終了済み】'}`.slice(0, 100); // しりとり-名前【進行中】 → 終わると、しりとり-名前【終了済み】
 /** スレッドの名前を、変える(1つのスレッドで、10分に2回までの制限があるので、待たずに、失敗しても、気にしない) */
 function renameThread(id, name) { chanOf(CLIENT, id).then((th) => th?.setName?.(name, 'しりとりの状態').catch(() => {})).catch(() => {}); }
 
@@ -163,7 +163,7 @@ function finish(g, ch, game, { winners = [], losers = [] }) {
   for (const u of winners) bump(g, u, 'wins', chain);
   for (const u of losers) bump(g, u, 'losses', chain);
   putGame(g, ch, null);
-  if (game.thread) { const rec = recordThread(g, ch, { status: 'end', chain, endedAt: Date.now() }); renameThread(ch, threadName('end', rec.base ?? '', chain)); }
+  if (game.thread) { const rec = recordThread(g, ch, { status: 'end', chain, endedAt: Date.now() }); renameThread(ch, threadName('end', rec.base ?? '')); }
 }
 /** 言葉の表示(漢字で書いたら、「林檎(りんご)」) */
 const fmtWord = (word, surface) => (surface && toHira(surface) !== word ? `${surface}(${word})` : word);
