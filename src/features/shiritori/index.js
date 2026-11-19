@@ -291,6 +291,7 @@ async function settleDeliberation(client, g, ch, game, result, by = null) {
     await chan?.send?.({ content: `⚖️ 審議の結果、「**${word?.disp ?? word?.w}**」は、**有効**です。${by ? '(運営が、決めました)' : ''}`, allowedMentions: NO_MENTION }).catch(() => {});
   }
   if (d?.review) await chan?.messages?.edit?.(d.review, { components: [], allowedMentions: NO_MENTION }).catch(() => {});
+  if (word) notifyStaff(client, g, ch, `⚖️ 審議の結果: 「**${word.disp ?? word.w}**」は、**${result === 'ng' ? '無効' : '有効'}**${by ? `(運営 <@${by}> が、決めました)` : ''}`).catch(() => {});
 }
 async function openDeliberation(client, g, ch, game, by) {
   const st = getSettings(g), now = Date.now();
@@ -299,6 +300,7 @@ async function openDeliberation(client, g, ch, game, by) {
   const m = await chan?.send?.({ content: dlbText(game, st), components: dlbRow(), allowedMentions: NO_MENTION }).catch(() => null);
   if (m) game.dlb.review = m.id;
   putGame(g, ch, game);
+  const w = game.words.at(-1); notifyStaff(client, g, ch, `⚖️ **審議が始まりました** 「**${w.disp ?? w.w}**」(<@${w.by}> さんの言葉) — 申し立て: <@${by}> ・ ${m ? msgLink(g, ch, m.id) : `<#${ch}>`}\n-# 運営は、そのチャンネルの「有効/無効」ボタンで、その場で決められます`)
 }
 async function voteButton(i, vote) {
   const g = i.guildId, ch = i.channelId, game = getGame(g, ch), st = getSettings(g);
@@ -435,12 +437,28 @@ async function appealButton(i, word) {
   if (r.error === 'approved') return i.reply({ content: `「${word}」は、もう、登録されています。もう一度、送ってみてください。`, ...EPH });
   if (r.error === 'pending') return i.reply({ content: `「${word}」は、もう、申し立てられています。運営の確認を、待ってください。`, ...EPH });
   if (r.error === 'limit') return i.reply({ content: `確認待ちの申し立てが、${MAX_PENDING_PER_USER}件あります。決まってから、また、申し立ててください。`, ...EPH });
-  if (st.appealChannelId) { // 確認用のチャンネルがあれば、ボタンつきで、知らせる
-    const ch = await chanOf(i.client, st.appealChannelId);
-    if (ch?.send) { const m = await ch.send({ content: reviewText({ word, user_id: i.user.id }), components: reviewRow(r.id), allowedMentions: NO_MENTION }).catch(() => null); if (m) db.prepare('UPDATE shiritori_appeals SET ch_id=?, msg_id=? WHERE id=?').run(ch.id, m.id, r.id); }
-  }
+  await postAppeal(i.client, g, { id: r.id, word, user_id: i.user.id, msg_id: null }); // 確認用のチャンネルがあれば、ボタンつきで、流す
   return i.reply({ content: `📣 「${word}」を、申し立てました。運営が、確認して、登録するか決めます。`, ...EPH });
 }
+/** 申し立てを、確認チャンネルに、ボタンつきで流す(まだ流していないものだけ)。設定したチャンネルがなければ、何もしない */
+async function postAppeal(client, g, a) {
+  const st = getSettings(g); if (!st.appealChannelId || a.msg_id) return false;
+  const ch = await chanOf(client, st.appealChannelId); if (!ch?.send || ch.guildId !== g) return false;
+  const m = await ch.send({ content: reviewText(a), components: reviewRow(a.id), allowedMentions: NO_MENTION }).catch(() => null);
+  if (!m) return false;
+  db.prepare('UPDATE shiritori_appeals SET ch_id=?, msg_id=? WHERE id=?').run(ch.id, m.id, a.id); return true;
+}
+/** 確認待ちのうち、まだ流していない(チャンネルを決める前に出たもの・流せなかったもの)を、全部、流す */
+export async function flushAppeals(client, g) {
+  let n = 0; for (const a of listAppeals(g, ['pending'], 200).reverse()) if (!a.msg_id && await postAppeal(client, g, a)) n++;
+  return n;
+}
+/** 運営向けのお知らせ(審議など)。確認チャンネルが決まっていて、いまのチャンネルと違うときだけ */
+async function notifyStaff(client, g, fromCh, content) {
+  const st = getSettings(g); if (!st.appealChannelId || st.appealChannelId === fromCh) return;
+  const ch = await chanOf(client, st.appealChannelId); await ch?.send?.({ content, allowedMentions: NO_MENTION }).catch(() => {});
+}
+const msgLink = (g, ch, id) => `https://discord.com/channels/${g}/${ch}/${id}`;
 /** 確認用のメッセージの、ボタンを、消して、結果を書く(ダッシュボードで決めたときも) */
 async function closeReview(client, a, text) {
   if (!a.ch_id || !a.msg_id) return;
@@ -535,7 +553,12 @@ export default {
     router.get('/settings', (req, res) => res.json({ ...getSettings(req.guild.id), levels: LEVELS, words: dictSize(), intent: client.options.intents.has('MessageContent') }));
     router.put('/settings', (req, res) => {
       if (!canEditAccess(req.access)) return res.status(403).json({ error: '変えられるのは、サーバーのオーナー・管理者・運営だけです' });
-      res.json({ ...saveSettings(req.guild.id, req.body ?? {}), levels: LEVELS, words: dictSize() });
+      const before = getSettings(req.guild.id).appealChannelId, out = saveSettings(req.guild.id, req.body ?? {});
+      if (out.appealChannelId && out.appealChannelId !== before) { // 確認チャンネルを決めた・変えた: 確認待ちを、全部、そちらに流す
+        db.prepare("UPDATE shiritori_appeals SET ch_id=NULL, msg_id=NULL WHERE guild_id=? AND status='pending'").run(req.guild.id);
+        flushAppeals(client, req.guild.id).catch((e) => console.warn('[shiritori] 申し立てを流せませんでした:', e.message));
+      }
+      res.json({ ...out, levels: LEVELS, words: dictSize() });
     });
 
     // ランキング(ダッシュボード用): 名前つき
