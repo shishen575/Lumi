@@ -18,6 +18,8 @@ export const BUILTIN_CATEGORIES = new Set(['crime', 'work', 'shop', 'pet', 'stoc
 export const catPanels = (g) => getKV(g, KEY, {});
 const link = (g, st) => `https://discord.com/channels/${g}/${st.ch}/${st.msg}`;
 const catById = (id) => commandCategories().find((c) => c.id === id);
+/** パネルに載せない、サブコマンド(管理者向けのもの) */
+const HUB_EXCLUDE_SUB = new Set(['shiritori panel']);
 const cmdsOf = (cat) => cat.commands.filter((n) => !HUB_EXCLUDE.has(n));
 /** そのパネルで、廃止しているコマンド(名前の配列。カテゴリーのコマンドの中から) */
 export const catRetired = (id, st) => { const cat = catById(id); return cat && st?.msg ? (st.retire ?? []).filter((n) => cmdsOf(cat).includes(n)) : []; };
@@ -50,6 +52,8 @@ const LABELS = {
   'lottery info': ['🎟️', 'くじの情報'], 'lottery buy': ['🎟️', 'くじを買う'], 'lottery results': ['📜', '抽選結果'], chinchiro: ['🎲', 'チンチロ'], slot: ['🎰', 'スロット'], blackjack: ['🃏', 'ブラックジャック'],
   // 管理者向け
   'balance-edit': ['✏️', '残高を編集'], 'cooldown-reset': ['⏱️', '待ち時間を解除'], release: ['🔓', '釈放'], 'blackjack-end': ['🛑', 'ブラックジャックを終了'],
+  // しりとり
+  'shiritori start': ['🔤', 'しりとりを始める'], 'shiritori say': ['✍️', '言葉を送る'], 'shiritori status': ['📋', 'しりとりの様子'], 'shiritori stop': ['🛑', 'しりとりをやめる'], 'shiritori ranking': ['🏆', 'しりとりランキング'], 'shiritori words': ['📚', 'よく使われた言葉'], 'shiritori stats': ['📊', 'しりとりの戦績'],
   // 活動ロール・大喜利
   rank: ['📊', 'ランク'], top: ['🏆', 'ランキング'], roles: ['🎖️', 'ロール一覧'], odai: ['💡', 'お題を出す'], kaitou: ['✍️', 'お題に回答'], kekka: ['📣', '結果を発表'], ranking: ['🌱', '大喜利ランキング'], best: ['🌿', '一番の草'], kusaemoji: ['🌱', '草の絵文字'], up: ['⬇️', 'お題を下に出す'],
 };
@@ -85,7 +89,7 @@ export function buttonsOf(cat) {
       continue;
     }
     if (!subs.length) { if (stepsOf(name, null)) out.push({ name, sub: '', ...labelOf(name, '', json.description), desc: json.description }); continue; }
-    for (const sc of subs) if (stepsOf(name, sc.name)) out.push({ name, sub: sc.name, ...labelOf(name, sc.name, sc.description), desc: sc.description });
+    for (const sc of subs) if (!HUB_EXCLUDE_SUB.has(`${name} ${sc.name}`) && stepsOf(name, sc.name)) out.push({ name, sub: sc.name, ...labelOf(name, sc.name, sc.description), desc: sc.description });
   }
   return out;
 }

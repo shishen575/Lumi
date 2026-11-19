@@ -139,9 +139,9 @@ const canStop = (i, game) => isOperator(i.user.id) || i.user.id === game.starter
 export const shiritoriCommand = {
   data: new SlashCommandBuilder().setName('shiritori').setDescription('しりとりで、BOTと勝負します').setDMPermission(false)
     .addSubcommand((c) => c.setName('start').setDescription('しりとりを、始めます(チャンネルごとに1つ)')
-      .addStringOption((o) => o.setName('level').setDescription('BOTの強さ').addChoices(...Object.entries(LEVELS).map(([value, name]) => ({ name, value }))))
-      .addStringOption((o) => o.setName('mode').setDescription('遊び方').addChoices({ name: '自分ひとりで、BOTと勝負', value: 'solo' }, { name: 'みんなで、BOTと勝負', value: 'team' }))
-      .addStringOption((o) => o.setName('first').setDescription('最初の言葉').addChoices({ name: 'BOTから(既定)', value: 'bot' }, { name: '自分から', value: 'me' })))
+      .addStringOption((o) => o.setName('level').setDescription('ルミの強さ').addChoices(...Object.entries(LEVELS).map(([value, name]) => ({ name, value }))))
+      .addStringOption((o) => o.setName('mode').setDescription('遊び方').addChoices({ name: '自分ひとりで、ルミと勝負', value: 'solo' }, { name: 'みんなで、ルミと勝負', value: 'team' }))
+      .addStringOption((o) => o.setName('first').setDescription('どちらが先か').addChoices({ name: 'ルミが先(既定)', value: 'bot' }, { name: '自分が先', value: 'me' })))
     .addSubcommand((c) => c.setName('say').setDescription('言葉を、送ります(メッセージで送れるときは、そのまま書いても、OK)').addStringOption((o) => o.setName('word').setDescription('ひらがな・カタカナの言葉').setRequired(true).setMaxLength(40)))
     .addSubcommand((c) => c.setName('status').setDescription('いまの、しりとりの様子を見ます'))
     .addSubcommand((c) => c.setName('stop').setDescription('しりとりを、やめます(始めた人・管理者)'))
