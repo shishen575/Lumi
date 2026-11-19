@@ -9,6 +9,7 @@ import { POLICE_BONUS_CAP } from './wanted.js';
 import { SCHEMA, jobOf, wantedCfg, marketCfg } from './balance.js';
 import { FX_LABELS, SLOTS, MAX_SHOP_ITEMS, DEFAULT_SHOP, SHOP_MAX_STACK, shopById, shopItems } from './shop.js';
 import { COMPANIES, MAX_CUSTOM_STOCKS, companiesOf, sanitizeCustomStocks, VOL_LABELS, VOL_LEVELS, DEFAULT_NAMES, DEFAULT_LEVELS, companyOf, DEFAULT_EVENTS, MAX_EVENTS } from './stocks.js';
+import { assetRanking } from './assets.js';
 import { PANELS, panelState, installPanel, removePanel, retiredOf, refreshPanel } from './panels.js';
 import { customPanels, saveCustomPanel, removeCustomPanel, removeCustomButton, retiredOfCustom, MAX_CUSTOM, MAX_BUTTONS } from './custompanels.js';
 import { commandCatalog } from '../../core/commands.js';
@@ -98,6 +99,10 @@ export function mountApi(router, client = null) {
     res.json({ currencyEmoji: s.currencyEmoji, users: out });
   });
 
+  router.get('/assets', async (req, res) => { // 総資産ランキング(現金 + 株 + ペット + 不動産)
+    const rows = assetRanking(getSettings(req.guild.id), req.guild.id).slice(0, 10);
+    res.json(await Promise.all(rows.map(async (r) => ({ ...r, name: (req.guild.members.cache.get(r.user_id) ?? (await req.guild.members.fetch(r.user_id).catch(() => null)))?.displayName ?? r.user_id }))));
+  });
   router.get('/richest', async (req, res) => {
     const rows = richest(req.guild.id, 10);
     res.json(await Promise.all(rows.map(async (r) => {

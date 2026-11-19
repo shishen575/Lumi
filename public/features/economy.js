@@ -621,7 +621,7 @@ Dash.registerTab({
     { id: 'budget', title: '予算', icon: 'shield',
       async render(el, { api, esc, ic, toast, confirm, pageHeader }) {
         const draw = async () => {
-          const st = await api('/settings'); const rich = await api('/richest');
+          const st = await api('/settings'); const [rich, assets] = await Promise.all([api('/richest'), api('/assets')]);
           const em = esc(st.currencyEmoji);
           el.innerHTML = `${pageHeader('サーバーの予算', '報酬や配当を、サーバーの予算から支払うようにして、通貨が増えすぎるのを防ぎます。')}
             <div class="card"><h2>予算を使う</h2>
@@ -635,7 +635,8 @@ Dash.registerTab({
               <p class="sub">予算がオフでも、金額は変えられます(オンにしたときに使われます)。</p>
               <div class="field"><label class="f" for="ba">金額</label><input id="ba" type="number" min="0" placeholder="100000" style="max-width:220px"></div>
               <div class="acts"><button class="btn" id="b-set" type="button">この金額にする</button><button class="btn ghost" id="b-add" type="button">追加する</button><button class="btn ghost" id="b-sub" type="button">減らす</button></div></div>` : ''}
-            <div class="card flush"><div class="card-h"><h2>お金持ちランキング</h2></div>${rich.length ? `<ol class="lb">${rich.map((r, n) => `<li><span class="rk ${n < 3 ? 'top' : ''}">${n + 1}</span><span class="nm">${esc(r.name)}</span><span class="val">${em} ${r.total.toLocaleString()}</span></li>`).join('')}</ol>` : '<div class="empty"><h2>まだ、データがありません</h2></div>'}</div>`;
+            <div class="card flush"><div class="card-h"><h2>お金持ちランキング</h2></div>${rich.length ? `<ol class="lb">${rich.map((r, n) => `<li><span class="rk ${n < 3 ? 'top' : ''}">${n + 1}</span><span class="nm">${esc(r.name)}</span><span class="val">${em} ${r.total.toLocaleString()}</span></li>`).join('')}</ol>` : '<div class="empty"><h2>まだ、データがありません</h2></div>'}</div>
+            <div class="card flush"><div class="card-h"><h2>総資産ランキング</h2><span class="mut small">現金 + 株 + ペット + 不動産</span></div>${assets.length ? `<ol class="lb">${assets.map((r, n) => `<li><span class="rk ${n < 3 ? 'top' : ''}">${n + 1}</span><span class="nm">${esc(r.name)}<span class="mut small"> 現金 ${r.cash.toLocaleString()}${r.stocks ? ` ・ 株 ${r.stocks.toLocaleString()}` : ''}${r.pets ? ` ・ ペット ${r.pets.toLocaleString()}` : ''}${r.estate ? ` ・ 不動産 ${r.estate.toLocaleString()}` : ''}</span></span><span class="val">${em} ${r.total.toLocaleString()}</span></li>`).join('')}</ol>` : '<div class="empty"><h2>まだ、データがありません</h2></div>'}</div>`;
           const q = (x) => el.querySelector(x);
           if (q('#bes')) q('#bes').onclick = async () => { await api('/settings', { method: 'PUT', body: { budgetEnabled: q('#be').checked } }); toast('保存しました'); draw(); };
           const op = (mode) => async () => {

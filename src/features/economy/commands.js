@@ -10,6 +10,7 @@ import {
   bjDeal, bjHit, bjStand, bjDouble, handValue, cardText, bjScale,
 } from './games.js';
 import { rankFor, scalePay } from './ranks.js';
+import { assetRanking } from './assets.js';
 import { RAMEN, makeOrder, gradeRamen, GRADES } from './ramen.js';
 import { SHIFT_GAMES, isShiftGame, makeShift, variantOf, gradeShift, SHIFT_GRADES } from './shiftjobs.js';
 import { POLICE_BONUS_CAP } from './wanted.js';
@@ -121,33 +122,39 @@ export const depositCommand = moveCommand('deposit', '手持ちを、銀行に�
 export const withdrawCommand = moveCommand('withdraw', '銀行から、手持ちに引き出します', withdraw, '引き出し');
 
 const RICH_PER = 10;
-const richPage = (s, g, page) => {
-  const { rows, count } = richestPage(g, page * RICH_PER, RICH_PER), pages = Math.max(1, Math.ceil(count / RICH_PER)), M = ['🥇', '🥈', '🥉'];
-  const body = rows.length ? rows.map((r, n) => { const rank = page * RICH_PER + n; return `${M[rank] ?? `${rank + 1}.`} <@${r.user_id}>  ${money(s, r.total)}`; }).join('\n') : 'まだ、お金を持っている人がいません。';
+const richPage = (s, g, page, kind = 'cash') => {
+  const assets = kind === 'assets', all = assets ? assetRanking(s, g) : null; // 総資産: 現金 + 株 + ペット + 不動産
+  const { rows, count } = assets ? { rows: all.slice(page * RICH_PER, page * RICH_PER + RICH_PER), count: all.length } : richestPage(g, page * RICH_PER, RICH_PER), pages = Math.max(1, Math.ceil(count / RICH_PER)), M = ['🥇', '🥈', '🥉'];
+  const parts = (r) => [r.stocks ? `📈株 ${money(s, r.stocks)}` : '', r.pets ? `🐾ペット ${money(s, r.pets)}` : '', r.estate ? `🏢不動産 ${money(s, r.estate)}` : ''].filter(Boolean);
+  const body = rows.length ? rows.map((r, n) => { const rank = page * RICH_PER + n; return `${M[rank] ?? `${rank + 1}.`} <@${r.user_id}>  ${money(s, r.total)}${assets ? `\n-# 現金 ${money(s, r.cash)}${parts(r).length ? ' ・ ' + parts(r).join(' ・ ') : ''}` : ''}`; }).join('\n') : 'まだ、お金を持っている人がいません。';
+  const k = assets ? 'a' : 'c';
   // ボタンの識別番号(custom_id)は、1つのメッセージの中で、重複できない。動作の名前を、末尾に付けて、必ず別にする
   const row = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId('rich:0:first').setEmoji('⏮').setLabel('1位').setStyle(ButtonStyle.Secondary).setDisabled(page <= 0),
-    new ButtonBuilder().setCustomId(`rich:${Math.max(0, page - 1)}:prev`).setLabel('前').setStyle(ButtonStyle.Primary).setDisabled(page <= 0),
-    new ButtonBuilder().setCustomId(`rich:${Math.min(pages - 1, page + 1)}:next`).setLabel('次').setStyle(ButtonStyle.Primary).setDisabled(page >= pages - 1),
+    new ButtonBuilder().setCustomId(`rich:0:first:${k}`).setEmoji('⏮').setLabel('1位').setStyle(ButtonStyle.Secondary).setDisabled(page <= 0),
+    new ButtonBuilder().setCustomId(`rich:${Math.max(0, page - 1)}:prev:${k}`).setLabel('前').setStyle(ButtonStyle.Primary).setDisabled(page <= 0),
+    new ButtonBuilder().setCustomId(`rich:${Math.min(pages - 1, page + 1)}:next:${k}`).setLabel('次').setStyle(ButtonStyle.Primary).setDisabled(page >= pages - 1),
   );
-  return { content: `${s.currencyEmoji} **みんなのお金(お金持ちランキング)**\n-# 手持ち + 銀行 ・ ${count}人 ・ ${page + 1} / ${pages} ページ\n\n${body}`, components: pages > 1 ? [row] : [], allowedMentions: NO_MENTIONS };
+  return { content: `${s.currencyEmoji} **${assets ? '総資産ランキング' : 'みんなのお金(お金持ちランキング)'}**\n-# ${assets ? '現金(手持ち + 銀行)+ 株 + ペット + 不動産' : '手持ち + 銀行'} ・ ${count}人 ・ ${page + 1} / ${pages} ページ\n\n${body}`, components: pages > 1 ? [row] : [], allowedMentions: NO_MENTIONS };
 };
 export const richestCommand = {
-  data: guildOnly(new SlashCommandBuilder().setName('richest').setDescription('みんなのお金のランキング(手持ち + 銀行。全員に見えます)')
+  data: guildOnly(new SlashCommandBuilder().setName('richest').setDescription('みんなのお金のランキング(全員に見えます)')
+    .addStringOption((o) => o.setName('kind').setDescription('何で並べるか(省略すると、現金)').addChoices({ name: '現金(手持ち + 銀行)', value: 'cash' }, { name: '総資産(現金 + 株 + ペット + 不動産)', value: 'assets' }))
     .addIntegerOption((o) => o.setName('page').setDescription('ページ(省略すると1ページ目)').setMinValue(1))),
   async execute(i) {
     const s = await open(i); if (!s) return;
-    const { count } = richestPage(i.guildId, 0, 1); if (!count) return refuse(i, 'まだ、お金を持っている人がいません。');
+    const kind = i.options.getString('kind') === 'assets' ? 'assets' : 'cash';
+    const count = kind === 'assets' ? assetRanking(s, i.guildId).length : richestPage(i.guildId, 0, 1).count; if (!count) return refuse(i, 'まだ、お金を持っている人がいません。');
     const pages = Math.max(1, Math.ceil(count / RICH_PER));
-    await i.reply(richPage(s, i.guildId, Math.min(pages - 1, (i.options.getInteger('page') ?? 1) - 1)));
+    await i.reply(richPage(s, i.guildId, Math.min(pages - 1, (i.options.getInteger('page') ?? 1) - 1), kind));
   },
 };
 export const richestButton = {
   id: 'rich',
   async execute(i) {
     const s = getSettings(i.guildId); if (!s.enabled) return i.update({ content: 'このサーバーでは、通貨はオフです。', embeds: [], components: [] });
-    const { count } = richestPage(i.guildId, 0, 1), pages = Math.max(1, Math.ceil(count / RICH_PER));
-    await i.update(richPage(s, i.guildId, Math.min(pages - 1, Math.max(0, Number(i.customId.split(':')[1]) || 0)))); // だれが押しても、全員に見える(みんなで見るランキング)
+    const kind = i.customId.split(':')[3] === 'a' ? 'assets' : 'cash';
+    const count = kind === 'assets' ? assetRanking(s, i.guildId).length : richestPage(i.guildId, 0, 1).count, pages = Math.max(1, Math.ceil(count / RICH_PER));
+    await i.update(richPage(s, i.guildId, Math.min(pages - 1, Math.max(0, Number(i.customId.split(':')[1]) || 0)), kind)); // だれが押しても、全員に見える(みんなで見るランキング)
   },
 };
 
