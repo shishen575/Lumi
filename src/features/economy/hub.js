@@ -19,7 +19,7 @@ export const catPanels = (g) => getKV(g, KEY, {});
 const link = (g, st) => `https://discord.com/channels/${g}/${st.ch}/${st.msg}`;
 const catById = (id) => commandCategories().find((c) => c.id === id);
 /** パネルに載せない、サブコマンド(管理者向けのもの) */
-const HUB_EXCLUDE_SUB = new Set(['shiritori panel', 'shiritori import']);
+const HUB_EXCLUDE_SUB = new Set(['shiritori panel', 'shiritori import', 'shiritori pvp']);
 const cmdsOf = (cat) => cat.commands.filter((n) => !HUB_EXCLUDE.has(n));
 /** そのパネルで、廃止しているコマンド(名前の配列。カテゴリーのコマンドの中から) */
 export const catRetired = (id, st) => { const cat = catById(id); return cat && st?.msg ? (st.retire ?? []).filter((n) => cmdsOf(cat).includes(n)) : []; };

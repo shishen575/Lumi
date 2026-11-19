@@ -149,9 +149,9 @@ const threadName = (status, base) => `しりとり-${base}${status === 'on' ? '�
 function renameThread(id, name) { chanOf(CLIENT, id).then((th) => th?.setName?.(name, 'しりとりの状態').catch(() => {})).catch(() => {}); }
 
 /** ゲームを作る(first: bot = BOTが先 / me = 人が先)。thread = ボタンから作った、プライベートスレッドのゲーム */
-function startGame(g, ch, uid, { level, mode = 'solo', first = 'bot', thread = false, base = '', renamed = true, plain = false, rng = Math.random } = {}) {
+function startGame(g, ch, uid, { level, mode = 'solo', first = 'bot', thread = false, base = '', renamed = true, plain = false, auto = false, rng = Math.random } = {}) {
   const st = getSettings(g), now = Date.now(), lv = level in LEVELS ? level : st.level;
-  const nw = { starter: uid, mode, level: lv, timeSec: st.timeSec, words: [], need: null, until: now + (mode === 'pvp' ? st.pvpTimeSec : st.timeSec) * 1000, at: now, thread, plain };
+  const nw = { starter: uid, mode, level: lv, timeSec: st.timeSec, words: [], need: null, until: now + (mode === 'pvp' ? st.pvpTimeSec : st.timeSec) * 1000, at: now, thread, plain, auto };
   if (first === 'bot' && mode !== 'pvp') { const bw = firstBotWord(lv, rng, st.themeWords); nw.words.push({ w: bw, by: 'bot' }); nw.need = tailOf(bw); }
   putGame(g, ch, nw);
   if (thread) { const rec = recordThread(g, ch, { starter: uid, status: 'on', base: base || threadRecs(g)[ch]?.base || '', at: now }); if (renamed) renameThread(ch, threadName('on', rec.base)); }
@@ -228,8 +228,9 @@ async function playPvp(g, ch, game, uid, text, { isMessage, now, msgId }) {
   if (isMessage && !looksLikeWord(text, game.plain)) return null; // ふつうの会話は、無視する
   if (now > game.until) { // しばらく、動きがなかった: 終わらせて、(常設のチャンネルなら)この言葉から、新しく始める
     finish(g, ch, game, {});
-    if (!isPvpChannel(st, ch)) return { text: `⏰ しばらく動きがなかったので、しりとりを終わります。(${chainOf(game)}語続きました。勝ち負けは、つきません)`, ended: true };
-    const nw = startGame(g, ch, uid, { mode: 'pvp', plain: game.plain }); return playPvp(g, ch, nw, uid, text, { isMessage, now, msgId });
+    if (!game.auto && !isPvpChannel(st, ch)) return { text: `⏰ しばらく動きがなかったので、しりとりを終わります。(${chainOf(game)}語続きました。勝ち負けは、つきません)`, ended: true };
+    const nw = startGame(g, ch, uid, { mode: 'pvp', plain: game.plain, auto: true }); // 常設のチャンネル: この言葉から、新しく始める
+    return playPvp(g, ch, nw, uid, text, { isMessage, now, msgId });
   }
   const last = game.words.at(-1);
   if (last && last.by === uid) return { react: '🚫' }; // 続けて、2回は、できない
@@ -340,6 +341,9 @@ export const shiritoriCommand = {
     .addSubcommand((c) => c.setName('words').setDescription('サーバーで、いちばん使われた言葉を見ます').addBooleanOption((o) => o.setName('public').setDescription('みんなに見せる(省略すると、自分だけ)')))
     .addSubcommand((c) => c.setName('import').setDescription('【管理者向け】チャンネル(スレッド)の、過去の発言から、しりとりの言葉を、ランキングに数えます')
       .addChannelOption((o) => o.setName('channel').setDescription('取り込むチャンネル・スレッド(省略すると、ここ)').addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement, ChannelType.PublicThread, ChannelType.PrivateThread, ChannelType.AnnouncementThread)))
+    .addSubcommand((c) => c.setName('pvp').setDescription('【管理者向け】人どうしの、しりとりのチャンネル(常設)を、登録・解除・一覧します')
+      .addStringOption((o) => o.setName('action').setDescription('操作').setRequired(true).addChoices({ name: 'このチャンネルを、登録する', value: 'add' }, { name: 'このチャンネルを、解除する', value: 'remove' }, { name: '登録の一覧を見る', value: 'list' }))
+      .addChannelOption((o) => o.setName('channel').setDescription('対象のチャンネル・スレッド(省略すると、ここ)').addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement, ChannelType.PublicThread, ChannelType.PrivateThread, ChannelType.AnnouncementThread)))
     .addSubcommand((c) => c.setName('panel').setDescription('【管理者向け】このチャンネルに、「しりとりを始める」のボタンを置きます'))
     .addSubcommand((c) => c.setName('stats').setDescription('戦績と、ランキングを見ます').addUserOption((o) => o.setName('user').setDescription('見たい人(省略すると、自分)')).addBooleanOption((o) => o.setName('public').setDescription('みんなに見せる(省略すると、自分だけ)'))),
   async execute(i, rng = Math.random) {
@@ -348,6 +352,20 @@ export const shiritoriCommand = {
     if (sub === 'watch') return watchList(i);
     if (sub === 'ranking') return i.reply({ embeds: [rankingEmbed(g, i.options.getString('by') ?? 'wins', i.user.id)], allowedMentions: NO_MENTION, ...vis() });
     if (sub === 'words') return i.reply({ embeds: [new EmbedBuilder().setColor(0xf1c40f).setTitle('📚 いちばん使われた言葉').setDescription(wordsText(topWords(g, 15))).setFooter({ text: 'このサーバーで、人が使った言葉(BOTの言葉は、数えません)' })], allowedMentions: NO_MENTION, ...vis() });
+    if (sub === 'pvp') {
+      if (!isStaff(i)) return i.reply({ content: '登録できるのは、運営・サーバーのオーナー・管理者だけです。', ...EPH });
+      const action = i.options.getString('action', true), target = i.options.getChannel('channel') ?? i.channel, cur = st.pvpChannelIds;
+      if (action === 'list') return i.reply({ content: cur.length ? `🔤 人どうしの、しりとりのチャンネル(常設):\n${cur.map((id) => `・<#${id}>`).join('\n')}\n-# ここで、言葉らしい発言(ひらがな・カタカナ)をすると、自動で始まります` : 'まだ、登録されていません。`/shiritori pvp action:登録する` で、登録できます。', ...EPH });
+      if (action === 'add') {
+        if (cur.includes(target.id)) return i.reply({ content: `<#${target.id}> は、もう、登録されています。`, ...EPH });
+        if (cur.length >= 10) return i.reply({ content: '登録できるのは、10チャンネルまでです。', ...EPH });
+        saveSettings(g, { pvpChannelIds: [...cur, target.id] });
+        return i.reply({ content: `✅ <#${target.id}> を、人どうしの、しりとりのチャンネルに、登録しました。ここで、言葉らしい発言をすると、自動で始まります(ルミは審判。✅ / ❌ で知らせます)。${i.client.options.intents.has('MessageContent') ? '' : '\n⚠️ BOTがメッセージの本文を読めないため、まだ、動きません(MESSAGE CONTENT INTENT が必要です)。'}`, ...EPH });
+      }
+      if (!cur.includes(target.id)) return i.reply({ content: `<#${target.id}> は、登録されていません。`, ...EPH });
+      saveSettings(g, { pvpChannelIds: cur.filter((x) => x !== target.id) });
+      return i.reply({ content: `<#${target.id}> の登録を、解除しました。(いま、続いているしりとりは、そのまま、続きます)`, ...EPH });
+    }
     if (sub === 'import') {
       if (!isStaff(i)) return i.reply({ content: '取り込めるのは、運営・サーバーのオーナー・管理者だけです。', ...EPH });
       if (!i.client.options.intents.has('MessageContent')) return i.reply({ content: 'BOTがメッセージの本文を読めないため、取り込めません。(BOTの運営者が、MESSAGE CONTENT INTENT を有効にする必要があります)', ...EPH });
@@ -643,7 +661,7 @@ export default {
         if (!game) { // 人どうしの、常設のチャンネル(や、そのスレッド)で、言葉らしい発言があれば、自動で、始める
           const plain = !!msg.channel?.isThread?.();
           if (!isPvpChannel(st, msg.channelId, msg.channel?.parentId) || !looksLikeWord(msg.content, plain)) return;
-          game = startGame(g, msg.channelId, msg.author.id, { mode: 'pvp', plain });
+          game = startGame(g, msg.channelId, msg.author.id, { mode: 'pvp', plain, auto: true });
         }
         if (game.mode !== 'pvp' && !st.messageMode) return;
         const r = await play(g, msg.channelId, msg.author.id, msg.content, { isMessage: true, msgId: msg.id });
