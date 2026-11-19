@@ -407,13 +407,13 @@ Dash.registerTab({
     /* ===== パネル(ボタンつきのメッセージ。置くと、元のコマンドを廃止できる) ===== */
     { id: 'panels', title: 'パネル', icon: 'list',
       async render(el, { api, channels: getChannels, esc, toast, confirm, pageHeader }) {
-        const info = { crime: ['🚨', '犯罪・大型犯罪のボタンが並びます。押すと、その犯罪に挑戦します。'], work: ['💼', 'バイトと乞食のボタンが並びます。押すと、バイトをして、給料をもらいます。'], shop: ['🏪', 'お店・不動産・闇市を、まとめたパネルです。買うメニューと、「一覧」「使う」「家賃を受け取る」などのボタンが並びます。'], pet: ['🐾', 'ペットを飼うメニューと、「ようす」「餌」「遊ぶ」「名前」「手放す」のボタンが並びます。'], lottery: ['🎟️', 'くじを選ぶメニュー(買う)と、「くじの情報」「抽選結果」のボタンが並びます。くじが複数あっても、選んでから、枚数を決められます。'], stock: ['📈', '「株価・持ち株」「ニュース」「買う」「売る」「株主」のボタンが並びます。株数は、プルダウンか入力欄で決めます。「不祥事を起こす」は、「株」の設定で不祥事をオンにしているときだけ、出ます。'] };
+        const info = { crime: ['🚨', '犯罪・大型犯罪のボタンが並びます。押すと、その犯罪に挑戦します。'], work: ['💼', 'バイトと乞食のボタンが並びます。押すと、バイトをして、給料をもらいます。'], workg: ['🎮', 'ギミックつきのバイト(ミニゲーム)のボタンが並びます。「バイトのチャンネル」で「分ける」にしたときに使います。チャンネルが静かになってから、設定の秒数がたつと、一番下に降りてきます。'], shop: ['🏪', 'お店・不動産・闇市を、まとめたパネルです。買うメニューと、「一覧」「使う」「家賃を受け取る」などのボタンが並びます。'], pet: ['🐾', 'ペットを飼うメニューと、「ようす」「餌」「遊ぶ」「名前」「手放す」のボタンが並びます。'], lottery: ['🎟️', 'くじを選ぶメニュー(買う)と、「くじの情報」「抽選結果」のボタンが並びます。くじが複数あっても、選んでから、枚数を決められます。'], stock: ['📈', '「株価・持ち株」「ニュース」「買う」「売る」「株主」のボタンが並びます。株数は、プルダウンか入力欄で決めます。「不祥事を起こす」は、「株」の設定で不祥事をオンにしているときだけ、出ます。'] };
         const [list, chans, cats0] = await Promise.all([api('/panels'), getChannels(), api('/cat-panels')]);
         let cats = cats0;
         const draw = (rows) => {
           el.innerHTML = `${pageHeader('パネル', 'チャンネルに、ボタンつきのメッセージ(パネル)を置くと、コマンドを打たなくても、ボタンで、犯罪・バイト・お店が使えます。パネルを置いたサーバーでは、元のコマンドを廃止できます(そのサーバーのコマンド一覧から、消えます)。品や数字を変えたときは、「置き直す」で、パネルを更新してください。')}
-            ${rows.map((r) => `<div class="card" data-k="${r.kind}"><div class="card-h"><h2>${info[r.kind][0]} ${esc(r.title)}</h2>${r.installed ? '<span class="badge">設置ずみ</span>' : ''}</div>
-              <p class="hint" style="margin:0 0 10px">${info[r.kind][1]} 廃止できるコマンド: ${r.commands.map((c) => `<code>/${c}</code>`).join(' ')}</p>
+            ${rows.map((r) => `<div class="card" data-k="${r.kind}"><div class="card-h"><h2>${(info[r.kind] ?? ['🧩'])[0]} ${esc(r.title)}</h2>${r.installed ? '<span class="badge">設置ずみ</span>' : ''}</div>
+              <p class="hint" style="margin:0 0 10px">${(info[r.kind] ?? [, ""])[1]} 廃止できるコマンド: ${r.commands.map((c) => `<code>/${c}</code>`).join(' ')}</p>
               <div class="grid2"><div class="field"><label class="f">パネルを置くチャンネル</label><select class="p-ch"><option value="">選んでください</option>${chans.map((c) => `<option value="${c.id}" ${r.installed?.channel_id === c.id ? 'selected' : ''}>#${esc(c.name)}</option>`).join('')}</select></div></div>
               <div class="field" style="margin-top:8px"><label class="f">廃止するコマンド(チェックしたコマンドは、このサーバーで使えなくなり、パネルからだけ使えます)</label>${r.commands.map((cm) => `<label class="sw" style="margin:2px 0"><input type="checkbox" class="p-ret" data-c="${cm}" ${(r.installed ? (r.installed.retire ?? []).includes(cm) : true) ? 'checked' : ''}><i></i><span><b><code>/${cm}</code> を廃止する</b></span></label>`).join('')}<p class="hint" style="margin:4px 0 0">チェックを外したコマンドは、パネルを置いても、そのまま残ります。</p></div>
               <label class="sw"><input type="checkbox" class="p-sticky" ${!r.installed || r.installed.sticky ? 'checked' : ''}><i></i><span><b>いつも一番下に出す</b><small>チャンネルで誰かが話したり、ボタンの結果が出たりしたら、パネルを消して、一番下に出し直します(8秒静かになってから)</small></span></label>
