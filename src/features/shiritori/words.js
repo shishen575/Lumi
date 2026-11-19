@@ -73,5 +73,11 @@ const RAW = `
 ぺんぎん ぺらぺら ぺっと ぺんち ぺーじ ぺんだんと ぺこぺこ ぺーすとりー ぺんきや ぺんしる
 ぽすと ぽけっと ぽてと ぽんぷ ぽんかん ぽっぷこーん ぽんぽん ぽえむ ぽっくり ぽーず ぽりぶくろ ぽんず
 `;
+import { JA_SHIRITORI } from '@johnmorrisdotca/kotoba/shiritori-ja';
 const wordsOf = (text) => text.split(/\s+/).map((w) => w.trim()).filter(Boolean);
-export const WORDS = [...new Set(wordsOf(RAW))];
+/** JMdict(EDRDG・CC BY-SA 4.0)の、教科書に載る、よく使う名詞 約6,400語(読み・漢字・意味)。kotoba(MIT)経由 */
+const JM = JA_SHIRITORI.rows.split('\n').map((r) => r.split('\t')).filter((r) => r[0]);
+export const JM_RELEASE = JA_SHIRITORI.release;
+/** 読み → 漢字の書き方(ルミが言葉を出すとき、「ごぼう(牛蒡)」のように、添える) */
+export const SURFACE = new Map(JM.filter((r) => r[1] && r[1] !== r[0]).map((r) => [r[0], r[1]]));
+export const WORDS = [...new Set([...wordsOf(RAW), ...JM.map((r) => r[0])])];

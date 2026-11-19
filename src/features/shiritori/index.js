@@ -5,6 +5,7 @@ import { isOperator, canEditAccess } from '../../core/access.js';
 import { chanOf } from '../../core/channels.js';
 import { registerButtonOverride } from '../../core/commands.js';
 import { resolveWord } from './dict.js';
+import { SURFACE, JM_RELEASE } from './words.js';
 import { checkWord, botPick, toHira, isKana, tailOf, headOf, dictSize } from './game.js';
 
 /**
@@ -155,7 +156,7 @@ function startGame(g, ch, uid, { level, mode = 'solo', first = 'bot', thread = f
 const introText = (nw, uid, st) => nw.mode === 'pvp' ? [`🔤 **しりとり開始!(人どうしの勝負)** ${BOT}は、審判です。`,
   '順番に、言葉をつなぎます(**同じ人が、続けて2回は、できません**)。最初の言葉は、どうぞ!',
   `-# 言葉は、メッセージで書きます(ひらがな・カタカナ${nw.plain ? '・漢字' : ''})。✅ = OK、❌ = だめ。「ん」で終わる・同じ言葉は、その人の負け。${st.deliberation ? `⚖️ のリアクションで、「審議」を、始められます(最新の言葉だけ。${st.deliberationVotes}票で、決まります)。` : ''}`].join('\n') : [`🔤 **しりとり開始!** ${nw.mode === 'solo' ? `<@${uid}> さん と ${BOT}` : `みんな と ${BOT}`}の勝負です(強さ: ${LEVELS[nw.level]} ・ 1回の制限時間 ${nw.timeSec}秒)`,
-  nw.words.length ? `${BOT}: **${nw.words[0].w}**\n${nextLine(nw.need, nw)}` : 'あなたから、どうぞ!(好きな言葉で、始められます)',
+  nw.words.length ? `${BOT}: **${botShown(nw.words[0].w)}**\n${nextLine(nw.need, nw)}` : 'あなたから、どうぞ!(好きな言葉で、始められます)',
   `-# 言葉は、${st.messageMode ? 'そのまま、メッセージで書くか、' : ''}\`/shiritori say\` で送ります。「ん」で終わる・同じ言葉・時間切れは、負けです。ひらがな・カタカナだけ。`].join('\n');
 /** ゲームを終える(戦績をつけて、状態を消す)。winners: 勝った人のID(BOTが勝ったときは、空) / losers: 負けた人のID */
 function finish(g, ch, game, { winners = [], losers = [] }) {
@@ -166,6 +167,8 @@ function finish(g, ch, game, { winners = [], losers = [] }) {
   if (game.thread) { const rec = recordThread(g, ch, { status: 'end', chain, endedAt: Date.now() }); renameThread(ch, threadName('end', rec.base ?? '')); }
 }
 /** 言葉の表示(漢字で書いたら、「林檎(りんご)」) */
+/** ルミの言葉の表示(漢字の書き方が分かるものは、「ごぼう(牛蒡)」) */
+const botShown = (w) => (SURFACE.get(w) ? `${w}(${SURFACE.get(w)})` : w);
 const fmtWord = (word, surface) => (surface && toHira(surface) !== word ? `${surface}(${word})` : word);
 const participants = (game) => [...new Set(game.words.filter((w) => w.by !== 'bot').map((w) => w.by))];
 
@@ -203,10 +206,10 @@ export async function play(g, ch, uid, text, { isMessage = false, now = Date.now
     finish(g, ch, game, { winners: win });
     return { text: `✅ 「${shown}」\n🏳️ ${BOT}: 「**${r.tail}**」から始まる言葉が、思いつきません…参りました! **あなたたちの勝ち!** (${chainOf(game)}語続きました)`, ended: true, again: !!game.thread };
   }
-  game.words.push({ w: bw, by: 'bot' }); game.need = tailOf(bw); game.until = now + game.timeSec * 1000;
+  game.words.push({ w: bw, by: 'bot', ...(SURFACE.get(bw) ? { disp: SURFACE.get(bw) } : {}) }); game.need = tailOf(bw); game.until = now + game.timeSec * 1000;
   if (game.words.length > 2000) game.words = game.words.slice(-1000);
   putGame(g, ch, game);
-  return { text: `✅ 「${shown}」 → ${BOT}: **${bw}**\n${nextLine(game.need, game)}・${chainOf(game)}語目` };
+  return { text: `✅ 「${shown}」 → ${BOT}: **${botShown(bw)}**\n${nextLine(game.need, game)}・${chainOf(game)}語目` };
 }
 
 /* ---------- 人どうしの、しりとり(ルミは、審判) ---------- */

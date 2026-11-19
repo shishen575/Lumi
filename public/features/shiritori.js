@@ -37,8 +37,8 @@ Dash.registerTab({
           <li>言葉は、<code>/shiritori say</code> で送ります(メッセージで送れる設定なら、そのまま書いても、OK)</li>
           <li>ひらがな・カタカナ・<b>漢字</b>(林檎 → りんご)。2文字以上(読みで)。漢字まじりの発言は、プライベートスレッドの、ひとりの勝負でだけ、メッセージから受け取ります(ふつうの会話と、区別がつかないため。<code>/shiritori say</code> なら、いつでも)。「ー」は、その前の文字の母音(らーめーん → ん)。小さい「ゃゅょっ」は、大きい字として、数えます。濁点は、区別します</li>
           <li>「ん」で終わる・同じ言葉を使う・時間切れは、負け。BOTが言葉に詰まったら、人の勝ち</li><li><b>人どうしの勝負</b>: <code>/shiritori start mode:人どうし</code>(ルミは審判)。順番に、メッセージで言葉をつなぎます(同じ人は、続けて2回できません)。✅ = OK、❌ = だめ。「ん」・同じ言葉は、その人の負け。上の「人どうしの、しりとりのチャンネル(常設)」に入れると、言葉らしい発言で、自動で始まります。言葉は、ランキング(使われた言葉・使った言葉の数)に、数えます</li><li><b>審議</b>(任意): 最新の言葉に ⚖️ をつけると、投票で有効/無効を決めます</li>
-          <li>ルミの辞書は、約${st.words}語です。人の言葉は、「名詞として辞書に載っているか」を、形態素解析(IPA辞書)で、チェックします(オフにもできます)。載っていない言葉は、断られますが、負けにはなりません</li>
-          <li><code>/shiritori stats</code> で、戦績(勝ち負け・最長)と、ランキングを見られます</li></ul></div>`;
+          <li>ルミの辞書は、約${st.words}語です(JMdict の、教科書に載るような、よく使う名詞)。人の言葉の判定には、さらに、JMdict の、3〜5文字の言葉 約9万語と、形態素解析の辞書も、使います。人の言葉は、「名詞として辞書に載っているか」を、形態素解析(IPA辞書)で、チェックします(オフにもできます)。載っていない言葉は、断られますが、負けにはなりません</li>
+          <li><code>/shiritori stats</code> で、戦績(勝ち負け・最長)と、ランキングを見られます</li></ul><p class="hint" style="margin-top:10px">辞書: <a href="https://www.edrdg.org/jmdict/j_jmdict.html" target="_blank" rel="noopener">JMdict</a> © EDRDG(<a href="https://www.edrdg.org/edrdg/licence.html" target="_blank" rel="noopener">CC BY-SA 4.0</a>)を、<code>@johnmorrisdotca/kotoba</code>(MIT)経由で、使っています。形態素解析: kuromoji(Apache-2.0)+ IPA辞書</p></div>`;
       const q = (x) => el.querySelector(x);
       q('#pin').onclick = async () => { const ch = q('#pc').value; if (!ch) return toast('チャンネルを選んでください'); try { await api('/panel', { method: 'POST', body: { channel_id: ch } }); toast('ボタンを置きました'); location.reload(); } catch (e) { toast(e.message); } };
       q('#prm')?.addEventListener('click', async () => { await api('/panel', { method: 'DELETE' }); toast('外しました'); location.reload(); });

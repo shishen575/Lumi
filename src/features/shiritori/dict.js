@@ -3,6 +3,19 @@ import path from 'node:path';
 import { toHira, isKana } from './game.js';
 import { WORDS } from './words.js';
 
+/** JMdict(EDRDG・CC BY-SA 4.0)の、3〜5文字の、ことば約9万語(読み)。はじめて使うときに、読み込む */
+let knownP = null;
+function knownReadings() {
+  return (knownP ??= (async () => {
+    try {
+      const { unpack } = await import('@johnmorrisdotca/kotoba');
+      const set = new Set();
+      for (const n of [3, 4, 5]) { const mod = await import(`@johnmorrisdotca/kotoba/kana-${n}`); for (const w of unpack(Object.values(mod)[0], n).allowed) set.add(w); }
+      return set;
+    } catch (e) { console.warn('[shiritori] JMdictの語彙を読み込めませんでした:', e.message); return new Set(); }
+  })());
+}
+
 /**
  * 人の言葉の、辞書チェックと、漢字の読み取り(形態素解析 kuromoji + IPA辞書)。
  *  ・かな: ルミの辞書にある言葉、または、ひらがな/カタカナで、名詞として、辞書に載っている言葉
@@ -49,6 +62,7 @@ export async function resolveWord(raw, { check = true, extra = null } = {}) {
   if (!text) return { ok: false, why: '言葉が、空です。' };
   const kana = isKana(hira);
   if (kana && (!check || BUILTIN.has(hira) || extra?.has(hira))) return { ok: true, reading: hira, surface: text }; // extra: 運営が、登録した言葉
+  if (kana && (await knownReadings()).has(hira)) return { ok: true, reading: hira, surface: text }; // JMdictにある言葉(辞書の読み込みは、いらない)
   const tk = await tokenizer();
   if (!tk) { // 辞書が使えない: かなは、そのまま通す。漢字は、読めないので、断る
     return kana ? { ok: true, reading: hira, surface: text } : { ok: false, why: '漢字は、いま、読み取れません。ひらがな・カタカナで、書いてください。' };
