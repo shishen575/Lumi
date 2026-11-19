@@ -3,6 +3,7 @@ import path from 'node:path';
 import { toHira, isKana } from './game.js';
 import { WORDS } from './words.js';
 import { THEME_SET, THEME_BY_SURFACE } from './theme.js';
+import { remoteCheck } from './lookup.js';
 
 /** JMdict(EDRDG・CC BY-SA 4.0)の、3〜5文字の、ことば約9万語(読み)。はじめて使うときに、読み込む */
 let knownP = null;
@@ -58,7 +59,7 @@ const BUILTIN = new Set(WORDS.map(toHira));
  * 人の言葉を調べる。戻り値: { ok: true, reading, surface } / { ok: false, why }
  * check = false なら、辞書チェックは、しない(かなは、そのまま、漢字は、読みを取れたときだけ)
  */
-export async function resolveWord(raw, { check = true, extra = null } = {}) {
+export async function resolveWord(raw, { check = true, extra = null, remote = false } = {}) {
   const text = String(raw ?? '').normalize('NFKC').replace(/[\s・]/g, ''), hira = toHira(text);
   if (!text) return { ok: false, why: '言葉が、空です。' };
   const kana = isKana(hira);
@@ -67,14 +68,20 @@ export async function resolveWord(raw, { check = true, extra = null } = {}) {
   const themed = THEME_BY_SURFACE.get(text); if (themed) return { ok: true, reading: themed, surface: text }; // ポケモン・ミクの言葉(漢字の書き方も)
   const tk = await tokenizer();
   if (!tk) { // 辞書が使えない: かなは、そのまま通す。漢字は、読めないので、断る
-    return kana ? { ok: true, reading: hira, surface: text } : { ok: false, why: '漢字は、いま、読み取れません。ひらがな・カタカナで、書いてください。' };
+    if (kana) return { ok: true, reading: hira, surface: text };
+    const rr = remote ? await remoteCheck(text, { kana: false }) : null; // 漢字: 外の辞書(Jisho)で、読みを調べる
+    return rr?.ok && isKana(rr.reading) ? { ok: true, reading: rr.reading, surface: text } : { ok: false, why: '漢字は、いま、読み取れません。ひらがな・カタカナで、書いてください。' };
   }
   if (kana) { // かな: ひらがな・カタカナ、どちらかで、名詞として、載っているか
     for (const cand of [toKata(hira), hira]) { const r = nounReading(tk.tokenize(cand), false); if (r && isKana(r)) return { ok: true, reading: r, surface: text }; }
+    if (remote) { const rr = await remoteCheck(text, { kana: true }); if (rr.ok) return { ok: true, reading: hira, surface: text }; } // 外の辞書(Jisho・Wiktionary)に、聞く
     return { ok: false, appeal: hira, why: `「${text}」は、辞書に見つかりません。(名詞で、別の書き方(カタカナ・漢字)も、試してください。**本当にある言葉なら、「異議申し立て」を、押してください**)` };
   }
   if (!/[一-鿿々〆ヶ]/.test(text) || /[A-Za-z0-9]/.test(text)) return { ok: false, why: 'ひらがな・カタカナ・漢字だけで、書いてください。(英数字・記号は、使えません)' };
   const r = nounReading(tk.tokenize(text), false);
-  if (!r || !isKana(r)) return { ok: false, why: `「${text}」は、名詞として、読み取れませんでした。(ひらがな・カタカナで、書いてみてください)` };
+  if (!r || !isKana(r)) {
+    if (remote) { const rr = await remoteCheck(text, { kana: false }); if (rr.ok && isKana(rr.reading)) return { ok: true, reading: rr.reading, surface: text }; }
+    return { ok: false, why: `「${text}」は、名詞として、読み取れませんでした。(ひらがな・カタカナで、書いてみてください)` };
+  }
   return { ok: true, reading: r, surface: text };
 }

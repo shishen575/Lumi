@@ -8,7 +8,9 @@
     "node": ">=22.13"
   },
   "scripts": {
-    "start": "node src/index.js"
+    "start": "node src/index.js",
+    "fetch:pokemon": "node scripts/fetch-pokemon.mjs",
+    "fetch:miku": "node scripts/fetch-miku.mjs"
   },
   "dependencies": {
     "@johnmorrisdotca/kotoba": "^1.11.0",

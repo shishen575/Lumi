@@ -18,7 +18,7 @@ const EPH = { flags: MessageFlags.Ephemeral };
 const NO_MENTION = { parse: [] };
 const BOT = '🤖 ルミ';
 const LEVELS = { easy: 'やさしい', normal: 'ふつう', hard: 'むずかしい' };
-export const DEFAULTS = { enabled: true, themeWords: true, pvpChannelIds: [], pvpTimeSec: 600, deliberation: false, deliberationVotes: 3, deliberationSec: 300, allowSpectate: true, level: 'normal', timeSec: 60, messageMode: true, channelId: null, wordCheck: true, appealChannelId: null };
+export const DEFAULTS = { enabled: true, themeWords: true, remoteLookup: true, pvpChannelIds: [], pvpTimeSec: 600, deliberation: false, deliberationVotes: 3, deliberationSec: 300, allowSpectate: true, level: 'normal', timeSec: 60, messageMode: true, channelId: null, wordCheck: true, appealChannelId: null };
 
 migrate(`CREATE TABLE IF NOT EXISTS shiritori_stats (
   guild_id TEXT NOT NULL, user_id TEXT NOT NULL, wins INTEGER NOT NULL DEFAULT 0, losses INTEGER NOT NULL DEFAULT 0, best INTEGER NOT NULL DEFAULT 0,
@@ -100,6 +100,7 @@ export function saveSettings(g, b) {
     deliberation: b.deliberation === undefined ? cur.deliberation : !!b.deliberation,
     deliberationVotes: b.deliberationVotes === undefined ? cur.deliberationVotes : clampInt(b.deliberationVotes, 1, 20, DEFAULTS.deliberationVotes),
     deliberationSec: b.deliberationSec === undefined ? cur.deliberationSec : clampInt(b.deliberationSec, 30, 3600, DEFAULTS.deliberationSec),
+    remoteLookup: b.remoteLookup === undefined ? cur.remoteLookup : !!b.remoteLookup,
     themeWords: b.themeWords === undefined ? cur.themeWords : !!b.themeWords,
     allowSpectate: b.allowSpectate === undefined ? cur.allowSpectate : !!b.allowSpectate,
     wordCheck: b.wordCheck === undefined ? cur.wordCheck : !!b.wordCheck,
@@ -194,7 +195,7 @@ export async function play(g, ch, uid, text, { isMessage = false, now = Date.now
     finish(g, ch, game, { losers: game.mode === 'solo' ? [game.starter] : [] });
     return { text: `⏰ 時間切れ! **${BOT}の勝ち!** (${chainOf(game)}語続きました)`, ended: true, again: !!game.thread };
   }
-  const rw = await resolveWord(text, { check: getSettings(g).wordCheck, extra: approvedWords(g) }); // 辞書チェックと、漢字の読み取り
+  const rw = await resolveWord(text, { check: getSettings(g).wordCheck, extra: approvedWords(g), remote: getSettings(g).remoteLookup }); // 辞書チェックと、漢字の読み取り
   if (!rw.ok) return isMessage && !isKana(word) ? null : { text: `❌ ${rw.why}`, invalid: true, appeal: rw.appeal }; // 漢字まじりのメッセージが、言葉でなかったら、ふつうの会話として、黙って、無視する
   const used = game.words.map((w) => w.w), r = checkWord(rw.reading, game.need, used);
   if (!r.ok) {
@@ -233,7 +234,7 @@ async function playPvp(g, ch, game, uid, text, { isMessage, now, msgId }) {
   const last = game.words.at(-1);
   if (last && last.by === uid) return { react: '🚫' }; // 続けて、2回は、できない
   if (game.dlb) return { react: '⏳' };                 // 審議中は、止まる
-  const rw = await resolveWord(text, { check: st.wordCheck, extra: approvedWords(g) });
+  const rw = await resolveWord(text, { check: st.wordCheck, extra: approvedWords(g), remote: st.remoteLookup });
   if (!rw.ok) return isMessage && !isKana(toHira(text)) ? null : { react: '❌', text: `${rw.why}`, appeal: rw.appeal };
   const r = checkWord(rw.reading, game.need, game.words.map((w) => w.w));
   if (!r.ok) {

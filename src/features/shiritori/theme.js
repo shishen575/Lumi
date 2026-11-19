@@ -1,3 +1,4 @@
+import fs from 'node:fs';
 import pokemon from 'pokemon';
 
 /**
@@ -31,10 +32,15 @@ const parse = (text) => text.split(/\s+/).filter(Boolean).map((t) => { const [su
 
 /** { reading, surface, tag }[](読みで、重複は、1つに) */
 function build() {
-  const out = new Map(), add = (list, tag) => { for (const x of list) if (!out.has(x.reading)) out.set(x.reading, { ...x, tag }); };
+  const out = new Map(), surfaces = new Set(), add = (list, tag) => { for (const x of list) if (!out.has(x.reading) && !surfaces.has(x.surface)) { out.set(x.reading, { ...x, tag }); surfaces.add(x.surface); } }; // 同じ表記は、1つだけ(手で書いた、正しい読みが、先)
   add(pokemon.all('ja').map((n) => ({ surface: n.replace(/[♀♂]/g, (c) => c), reading: readingOf(n) })).filter((x) => x.reading.length >= 2), 'pokemon'); // 全部の名前(1025種)
   add(parse(POKEMON_TERMS), 'pokemon');
   add(parse(MIKU_TERMS), 'miku');
+  // scripts/fetch-pokemon.mjs・fetch-miku.mjs で取ってきた、追加の言葉(あれば)
+  for (const [file, tag] of [['pokemon-extra.json', 'pokemon'], ['miku-extra.json', 'miku']]) {
+    try { const d = JSON.parse(fs.readFileSync(new URL(`./data/${file}`, import.meta.url), 'utf8')); add((d.entries ?? []).filter((e) => e?.reading && e?.surface).map((e) => ({ surface: e.surface, reading: readingOf(e.reading) })).filter((x) => x.reading.length >= 2), tag); }
+    catch { /* まだ、取っていない */ }
+  }
   return [...out.values()];
 }
 export const THEME = build();
