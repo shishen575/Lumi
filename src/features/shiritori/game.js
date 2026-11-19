@@ -1,4 +1,5 @@
 import { WORDS } from './words.js';
+import { THEME } from './theme.js';
 
 /**
  * しりとりのルール(辞書は、BOTが答えるための、言葉の一覧だけ。人の言葉が、実在するかは、調べない)
@@ -30,6 +31,11 @@ const DICT = WORDS.map(toHira).filter((w) => isKana(w) && [...w].length >= 2 && 
 const BY_HEAD = new Map();
 for (const w of new Set(DICT)) { const h = headOf(w); (BY_HEAD.get(h) ?? BY_HEAD.set(h, []).get(h)).push(w); }
 export const dictSize = () => new Set(DICT).size;
+/** テーマの言葉(ポケモン・ミク): 「ん」で終わらない、2文字以上のものを、ルミの語彙に(設定でオフにできる) */
+const THEME_BY_HEAD = new Map();
+for (const x of THEME) { const w = toHira(x.reading); if (!isKana(w) || [...w].length < 2 || tailOf(w) === 'ん') continue; const h = headOf(w); (THEME_BY_HEAD.get(h) ?? THEME_BY_HEAD.set(h, []).get(h)).push(w); }
+export const themeSize = () => [...THEME_BY_HEAD.values()].reduce((a, l) => a + l.length, 0);
+const headList = (c, theme) => (theme ? [...(BY_HEAD.get(c) ?? []), ...(THEME_BY_HEAD.get(c) ?? [])] : (BY_HEAD.get(c) ?? []));
 const HARD_TAILS = new Set([...'るぬづぢぷぺぴぽぞぜぎぐゆよ']); // 人間が、返しにくい終わりの文字
 
 /** 人の言葉を、検査する。OK なら { ok: true, word, head, tail } / ダメなら { ok: false, lose: 負けにするか, why } */
@@ -50,9 +56,9 @@ export function checkWord(raw, need, used) {
  * BOTの言葉を選ぶ。level: easy(返しやすい終わりの言葉・辞書の一部だけ) / normal / hard(返しにくい文字で、終わる言葉を、選ぶ)
  * 言葉が見つからなければ null(BOTの負け)
  */
-export function botPick(need, used, level = 'normal', rng = Math.random) {
+export function botPick(need, used, level = 'normal', rng = Math.random, theme = true) {
   const seen = new Set(used);
-  let list = (BY_HEAD.get(need) ?? []).filter((w) => !seen.has(w));
+  let list = headList(need, theme).filter((w) => !seen.has(w));
   if (!list.length) return null;
   if (level === 'easy') { // 辞書の、半分くらいしか知らない(そのかわり、返しやすい)
     const known = list.filter((w) => !HARD_TAILS.has(tailOf(w)));
@@ -61,10 +67,10 @@ export function botPick(need, used, level = 'normal', rng = Math.random) {
   } else if (level === 'hard') {
     // 返しにくい文字で終わる言葉(あれば)。さらに、その文字から始まる言葉が、辞書に残っていて、BOTが次に返せるもの
     const hard = list.filter((w) => HARD_TAILS.has(tailOf(w)));
-    const next = (hard.length ? hard : list).filter((w) => (BY_HEAD.get(tailOf(w)) ?? []).some((x) => !seen.has(x) && x !== w));
+    const next = (hard.length ? hard : list).filter((w) => headList(tailOf(w), theme).some((x) => !seen.has(x) && x !== w));
     list = next.length ? next : (hard.length ? hard : list);
   } else {
-    const ok = list.filter((w) => (BY_HEAD.get(tailOf(w)) ?? []).some((x) => !seen.has(x) && x !== w)); // 自分が、詰まらない言葉
+    const ok = list.filter((w) => headList(tailOf(w), theme).some((x) => !seen.has(x) && x !== w)); // 自分が、詰まらない言葉
     list = ok.length ? ok : list;
   }
   return list[Math.floor(rng() * list.length)];

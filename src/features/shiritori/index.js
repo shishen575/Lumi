@@ -6,6 +6,7 @@ import { chanOf } from '../../core/channels.js';
 import { registerButtonOverride } from '../../core/commands.js';
 import { resolveWord } from './dict.js';
 import { SURFACE, JM_RELEASE } from './words.js';
+import { THEME_SURFACE } from './theme.js';
 import { checkWord, botPick, toHira, isKana, tailOf, headOf, dictSize } from './game.js';
 
 /**
@@ -17,7 +18,7 @@ const EPH = { flags: MessageFlags.Ephemeral };
 const NO_MENTION = { parse: [] };
 const BOT = '🤖 ルミ';
 const LEVELS = { easy: 'やさしい', normal: 'ふつう', hard: 'むずかしい' };
-export const DEFAULTS = { enabled: true, pvpChannelIds: [], pvpTimeSec: 600, deliberation: false, deliberationVotes: 3, deliberationSec: 300, allowSpectate: true, level: 'normal', timeSec: 60, messageMode: true, channelId: null, wordCheck: true, appealChannelId: null };
+export const DEFAULTS = { enabled: true, themeWords: true, pvpChannelIds: [], pvpTimeSec: 600, deliberation: false, deliberationVotes: 3, deliberationSec: 300, allowSpectate: true, level: 'normal', timeSec: 60, messageMode: true, channelId: null, wordCheck: true, appealChannelId: null };
 
 migrate(`CREATE TABLE IF NOT EXISTS shiritori_stats (
   guild_id TEXT NOT NULL, user_id TEXT NOT NULL, wins INTEGER NOT NULL DEFAULT 0, losses INTEGER NOT NULL DEFAULT 0, best INTEGER NOT NULL DEFAULT 0,
@@ -99,6 +100,7 @@ export function saveSettings(g, b) {
     deliberation: b.deliberation === undefined ? cur.deliberation : !!b.deliberation,
     deliberationVotes: b.deliberationVotes === undefined ? cur.deliberationVotes : clampInt(b.deliberationVotes, 1, 20, DEFAULTS.deliberationVotes),
     deliberationSec: b.deliberationSec === undefined ? cur.deliberationSec : clampInt(b.deliberationSec, 30, 3600, DEFAULTS.deliberationSec),
+    themeWords: b.themeWords === undefined ? cur.themeWords : !!b.themeWords,
     allowSpectate: b.allowSpectate === undefined ? cur.allowSpectate : !!b.allowSpectate,
     wordCheck: b.wordCheck === undefined ? cur.wordCheck : !!b.wordCheck,
     appealChannelId: b.appealChannelId === undefined ? cur.appealChannelId : (/^\d{15,25}$/.test(String(b.appealChannelId ?? '')) ? String(b.appealChannelId) : null),
@@ -116,9 +118,9 @@ const chainOf = (game) => game.words.length;
 const left = (game, now = Date.now()) => Math.max(0, Math.ceil((game.until - now) / 1000));
 
 /** BOTが、最初に出す言葉(ランダムな、始めの文字から) */
-function firstBotWord(level, rng = Math.random) {
+function firstBotWord(level, rng = Math.random, theme = true) {
   const heads = [...'あいうえおかきくけこさしすせそたちつてとなにはひふへほまみむめもやゆよらりれろわ'];
-  for (let g = 0; g < 50; g++) { const w = botPick(heads[Math.floor(rng() * heads.length)], [], level, rng); if (w) return w; }
+  for (let g = 0; g < 50; g++) { const w = botPick(heads[Math.floor(rng() * heads.length)], [], level, rng, theme); if (w) return w; }
   return null;
 }
 /** チャンネルの、ボタン(押すと、その人だけの、プライベートスレッドができて、しりとりが始まる) */
@@ -149,7 +151,7 @@ function renameThread(id, name) { chanOf(CLIENT, id).then((th) => th?.setName?.(
 function startGame(g, ch, uid, { level, mode = 'solo', first = 'bot', thread = false, base = '', renamed = true, plain = false, rng = Math.random } = {}) {
   const st = getSettings(g), now = Date.now(), lv = level in LEVELS ? level : st.level;
   const nw = { starter: uid, mode, level: lv, timeSec: st.timeSec, words: [], need: null, until: now + (mode === 'pvp' ? st.pvpTimeSec : st.timeSec) * 1000, at: now, thread, plain };
-  if (first === 'bot' && mode !== 'pvp') { const bw = firstBotWord(lv, rng); nw.words.push({ w: bw, by: 'bot' }); nw.need = tailOf(bw); }
+  if (first === 'bot' && mode !== 'pvp') { const bw = firstBotWord(lv, rng, st.themeWords); nw.words.push({ w: bw, by: 'bot' }); nw.need = tailOf(bw); }
   putGame(g, ch, nw);
   if (thread) { const rec = recordThread(g, ch, { starter: uid, status: 'on', base: base || threadRecs(g)[ch]?.base || '', at: now }); if (renamed) renameThread(ch, threadName('on', rec.base)); }
   return nw;
@@ -169,7 +171,8 @@ function finish(g, ch, game, { winners = [], losers = [] }) {
 }
 /** 言葉の表示(漢字で書いたら、「林檎(りんご)」) */
 /** ルミの言葉の表示(漢字の書き方が分かるものは、「ごぼう(牛蒡)」) */
-const botShown = (w) => (SURFACE.get(w) ? `${w}(${SURFACE.get(w)})` : w);
+const surfaceOf = (w) => SURFACE.get(w) ?? THEME_SURFACE.get(w);
+const botShown = (w) => (surfaceOf(w) ? `${w}(${surfaceOf(w)})` : w);
 const fmtWord = (word, surface) => (surface && toHira(surface) !== word ? `${surface}(${word})` : word);
 const participants = (game) => [...new Set(game.words.filter((w) => w.by !== 'bot').map((w) => w.by))];
 
@@ -201,13 +204,13 @@ export async function play(g, ch, uid, text, { isMessage = false, now = Date.now
   }
   const shown = fmtWord(r.word, rw.surface);
   game.words.push({ w: r.word, by: uid, ...(shown !== r.word ? { disp: rw.surface } : {}) }); bumpWord(g, r.word); // 使われた言葉を、数える
-  const bw = botPick(r.tail, game.words.map((w) => w.w), game.level, rng);
+  const bw = botPick(r.tail, game.words.map((w) => w.w), game.level, rng, getSettings(g).themeWords);
   if (!bw) { // BOTが、返せない: 人の勝ち
     const win = game.mode === 'solo' ? [game.starter] : participants(game);
     finish(g, ch, game, { winners: win });
     return { text: `✅ 「${shown}」\n🏳️ ${BOT}: 「**${r.tail}**」から始まる言葉が、思いつきません…参りました! **あなたたちの勝ち!** (${chainOf(game)}語続きました)`, ended: true, again: !!game.thread };
   }
-  game.words.push({ w: bw, by: 'bot', ...(SURFACE.get(bw) ? { disp: SURFACE.get(bw) } : {}) }); game.need = tailOf(bw); game.until = now + game.timeSec * 1000;
+  game.words.push({ w: bw, by: 'bot', ...(surfaceOf(bw) ? { disp: surfaceOf(bw) } : {}) }); game.need = tailOf(bw); game.until = now + game.timeSec * 1000;
   if (game.words.length > 2000) game.words = game.words.slice(-1000);
   putGame(g, ch, game);
   return { text: `✅ 「${shown}」 → ${BOT}: **${botShown(bw)}**\n${nextLine(game.need, game)}・${chainOf(game)}語目` };
