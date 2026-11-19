@@ -16,7 +16,7 @@ const EPH = { flags: MessageFlags.Ephemeral };
 const NO_MENTION = { parse: [] };
 const BOT = '🤖 ルミ';
 const LEVELS = { easy: 'やさしい', normal: 'ふつう', hard: 'むずかしい' };
-export const DEFAULTS = { enabled: true, allowSpectate: true, level: 'normal', timeSec: 60, messageMode: true, channelId: null, wordCheck: true, appealChannelId: null };
+export const DEFAULTS = { enabled: true, pvpChannelIds: [], pvpTimeSec: 600, deliberation: false, deliberationVotes: 3, deliberationSec: 300, allowSpectate: true, level: 'normal', timeSec: 60, messageMode: true, channelId: null, wordCheck: true, appealChannelId: null };
 
 migrate(`CREATE TABLE IF NOT EXISTS shiritori_stats (
   guild_id TEXT NOT NULL, user_id TEXT NOT NULL, wins INTEGER NOT NULL DEFAULT 0, losses INTEGER NOT NULL DEFAULT 0, best INTEGER NOT NULL DEFAULT 0,
@@ -52,18 +52,23 @@ const bumpWord = (g, word) => db.prepare(`INSERT INTO shiritori_words (guild_id,
   ON CONFLICT(guild_id,word) DO UPDATE SET uses=uses+1, last_at=excluded.last_at`).run(g, word, Date.now());
 export const topWords = (g, limit = 10) => db.prepare('SELECT word, uses FROM shiritori_words WHERE guild_id=? ORDER BY uses DESC, last_at DESC LIMIT ?').all(g, limit);
 const wordsText = (rows) => rows.map((r, n) => `${['🥇', '🥈', '🥉'][n] ?? `${n + 1}.`} 「${r.word}」 — **${r.uses}回**`).join('\n') || 'まだ、記録がありません。';
+if (!db.prepare("SELECT 1 FROM pragma_table_info('shiritori_stats') WHERE name='used'").get()) db.exec('ALTER TABLE shiritori_stats ADD COLUMN used INTEGER NOT NULL DEFAULT 0');
+/** 使った言葉の数(人どうしの、しりとりで、数える) */
+const bumpUsed = (g, u, n = 1) => db.prepare(`INSERT INTO shiritori_stats (guild_id,user_id,used) VALUES (?,?,?)
+  ON CONFLICT(guild_id,user_id) DO UPDATE SET used=MAX(0, used+?)`).run(g, u, Math.max(0, n), n);
+const unbumpWord = (g, word) => db.prepare('UPDATE shiritori_words SET uses=MAX(0, uses-1) WHERE guild_id=? AND word=?').run(g, word);
 const bump = (g, u, col, chain = 0) => db.prepare(`INSERT INTO shiritori_stats (guild_id,user_id,${col},best) VALUES (?,?,1,?)
   ON CONFLICT(guild_id,user_id) DO UPDATE SET ${col}=${col}+1, best=MAX(best, excluded.best)`).run(g, u, chain);
 const statsOf = (g, u) => db.prepare('SELECT wins, losses, best FROM shiritori_stats WHERE guild_id=? AND user_id=?').get(g, u) ?? { wins: 0, losses: 0, best: 0 };
 
 /** ランキング: by = wins(勝ち数)/ best(最長の語数)/ rate(勝率。3戦以上) */
-export const RANK_BY = { wins: '勝ち数', best: '最長の語数', rate: '勝率(3戦以上)' };
+export const RANK_BY = { wins: '勝ち数', best: '最長の語数', rate: '勝率(3戦以上)', used: '使った言葉の数(人どうし)' };
 export function rankingRows(g, by = 'wins', limit = 10) {
-  const order = { wins: 'wins DESC, best DESC, losses ASC', best: 'best DESC, wins DESC', rate: '(wins * 1.0 / (wins + losses)) DESC, wins DESC' }[by] ?? 'wins DESC';
-  const where = by === 'rate' ? 'AND wins + losses >= 3' : by === 'wins' ? 'AND wins > 0' : 'AND best > 0';
-  return db.prepare(`SELECT user_id, wins, losses, best FROM shiritori_stats WHERE guild_id=? ${where} ORDER BY ${order} LIMIT ?`).all(g, limit);
+  const order = { wins: 'wins DESC, best DESC, losses ASC', best: 'best DESC, wins DESC', rate: '(wins * 1.0 / (wins + losses)) DESC, wins DESC', used: 'used DESC, wins DESC' }[by] ?? 'wins DESC';
+  const where = by === 'rate' ? 'AND wins + losses >= 3' : by === 'wins' ? 'AND wins > 0' : by === 'used' ? 'AND used > 0' : 'AND best > 0';
+  return db.prepare(`SELECT user_id, wins, losses, best, used FROM shiritori_stats WHERE guild_id=? ${where} ORDER BY ${order} LIMIT ?`).all(g, limit);
 }
-const rankLine = (r, n, by) => `${['🥇', '🥈', '🥉'][n] ?? `${n + 1}.`} <@${r.user_id}> — ${by === 'best' ? `**${r.best}語**(${r.wins}勝 ${r.losses}敗)` : by === 'rate' ? `**${Math.round(r.wins * 100 / (r.wins + r.losses))}%**(${r.wins}勝 ${r.losses}敗)` : `**${r.wins}勝** ${r.losses}敗(最長 ${r.best}語)`}`;
+const rankLine = (r, n, by) => `${['🥇', '🥈', '🥉'][n] ?? `${n + 1}.`} <@${r.user_id}> — ${by === 'used' ? `**${r.used}語**(${r.wins}勝 ${r.losses}敗)` : by === 'best' ? `**${r.best}語**(${r.wins}勝 ${r.losses}敗)` : by === 'rate' ? `**${Math.round(r.wins * 100 / (r.wins + r.losses))}%**(${r.wins}勝 ${r.losses}敗)` : `**${r.wins}勝** ${r.losses}敗(最長 ${r.best}語)`}`;
 export function rankingEmbed(g, by = 'wins', uid = null) {
   const rows = rankingRows(g, by, 10), e = new EmbedBuilder().setColor(0xf1c40f).setTitle(`🏆 しりとりランキング(${RANK_BY[by]})`)
     .setDescription(rows.length ? rows.map((r, n) => rankLine(r, n, by)).join('\n') : 'まだ、記録がありません。');
@@ -87,6 +92,11 @@ export function saveSettings(g, b) {
     level: b.level === undefined ? cur.level : (b.level in LEVELS ? b.level : DEFAULTS.level),
     timeSec: b.timeSec === undefined ? cur.timeSec : clampInt(b.timeSec, 10, 600, DEFAULTS.timeSec),
     messageMode: b.messageMode === undefined ? cur.messageMode : !!b.messageMode,
+    pvpChannelIds: b.pvpChannelIds === undefined ? cur.pvpChannelIds : [...new Set((Array.isArray(b.pvpChannelIds) ? b.pvpChannelIds : []).map(String).filter((x) => /^\d{15,25}$/.test(x)))].slice(0, 10),
+    pvpTimeSec: b.pvpTimeSec === undefined ? cur.pvpTimeSec : clampInt(b.pvpTimeSec, 30, 86400, DEFAULTS.pvpTimeSec),
+    deliberation: b.deliberation === undefined ? cur.deliberation : !!b.deliberation,
+    deliberationVotes: b.deliberationVotes === undefined ? cur.deliberationVotes : clampInt(b.deliberationVotes, 1, 20, DEFAULTS.deliberationVotes),
+    deliberationSec: b.deliberationSec === undefined ? cur.deliberationSec : clampInt(b.deliberationSec, 30, 3600, DEFAULTS.deliberationSec),
     allowSpectate: b.allowSpectate === undefined ? cur.allowSpectate : !!b.allowSpectate,
     wordCheck: b.wordCheck === undefined ? cur.wordCheck : !!b.wordCheck,
     appealChannelId: b.appealChannelId === undefined ? cur.appealChannelId : (/^\d{15,25}$/.test(String(b.appealChannelId ?? '')) ? String(b.appealChannelId) : null),
@@ -134,15 +144,17 @@ const threadName = (status, base, chain = 0) => `しりとり${status === 'on' ?
 function renameThread(id, name) { chanOf(CLIENT, id).then((th) => th?.setName?.(name, 'しりとりの状態').catch(() => {})).catch(() => {}); }
 
 /** ゲームを作る(first: bot = BOTが先 / me = 人が先)。thread = ボタンから作った、プライベートスレッドのゲーム */
-function startGame(g, ch, uid, { level, mode = 'solo', first = 'bot', thread = false, base = '', renamed = true, rng = Math.random } = {}) {
+function startGame(g, ch, uid, { level, mode = 'solo', first = 'bot', thread = false, base = '', renamed = true, plain = false, rng = Math.random } = {}) {
   const st = getSettings(g), now = Date.now(), lv = level in LEVELS ? level : st.level;
-  const nw = { starter: uid, mode, level: lv, timeSec: st.timeSec, words: [], need: null, until: now + st.timeSec * 1000, at: now, thread };
-  if (first === 'bot') { const bw = firstBotWord(lv, rng); nw.words.push({ w: bw, by: 'bot' }); nw.need = tailOf(bw); }
+  const nw = { starter: uid, mode, level: lv, timeSec: st.timeSec, words: [], need: null, until: now + (mode === 'pvp' ? st.pvpTimeSec : st.timeSec) * 1000, at: now, thread, plain };
+  if (first === 'bot' && mode !== 'pvp') { const bw = firstBotWord(lv, rng); nw.words.push({ w: bw, by: 'bot' }); nw.need = tailOf(bw); }
   putGame(g, ch, nw);
   if (thread) { const rec = recordThread(g, ch, { starter: uid, status: 'on', base: base || threadRecs(g)[ch]?.base || '', at: now }); if (renamed) renameThread(ch, threadName('on', rec.base)); }
   return nw;
 }
-const introText = (nw, uid, st) => [`🔤 **しりとり開始!** ${nw.mode === 'solo' ? `<@${uid}> さん と ${BOT}` : `みんな と ${BOT}`}の勝負です(強さ: ${LEVELS[nw.level]} ・ 1回の制限時間 ${nw.timeSec}秒)`,
+const introText = (nw, uid, st) => nw.mode === 'pvp' ? [`🔤 **しりとり開始!(人どうしの勝負)** ${BOT}は、審判です。`,
+  '順番に、言葉をつなぎます(**同じ人が、続けて2回は、できません**)。最初の言葉は、どうぞ!',
+  `-# 言葉は、メッセージで書きます(ひらがな・カタカナ${nw.plain ? '・漢字' : ''})。✅ = OK、❌ = だめ。「ん」で終わる・同じ言葉は、その人の負け。${st.deliberation ? `⚖️ のリアクションで、「審議」を、始められます(最新の言葉だけ。${st.deliberationVotes}票で、決まります)。` : ''}`].join('\n') : [`🔤 **しりとり開始!** ${nw.mode === 'solo' ? `<@${uid}> さん と ${BOT}` : `みんな と ${BOT}`}の勝負です(強さ: ${LEVELS[nw.level]} ・ 1回の制限時間 ${nw.timeSec}秒)`,
   nw.words.length ? `${BOT}: **${nw.words[0].w}**\n${nextLine(nw.need, nw)}` : 'あなたから、どうぞ!(好きな言葉で、始められます)',
   `-# 言葉は、${st.messageMode ? 'そのまま、メッセージで書くか、' : ''}\`/shiritori say\` で送ります。「ん」で終わる・同じ言葉・時間切れは、負けです。ひらがな・カタカナだけ。`].join('\n');
 /** ゲームを終える(戦績をつけて、状態を消す)。winners: 勝った人のID(BOTが勝ったときは、空) / losers: 負けた人のID */
@@ -161,8 +173,9 @@ const participants = (game) => [...new Set(game.words.filter((w) => w.by !== 'bo
  * 人の言葉を、1つ処理する。戻り値: null(無視) / { text, ended, invalid }
  * (メッセージのとき、関係のない発言を、無視できるように、isMessage を渡す)
  */
-export async function play(g, ch, uid, text, { isMessage = false, now = Date.now(), rng = Math.random } = {}) {
+export async function play(g, ch, uid, text, { isMessage = false, now = Date.now(), rng = Math.random, msgId = null } = {}) {
   const game = getGame(g, ch); if (!game) return null;
+  if (game.mode === 'pvp') return playPvp(g, ch, game, uid, text, { isMessage, now, msgId });
   if (game.mode === 'solo' && uid !== game.starter) return isMessage ? null : { text: 'これは、別の人のしりとりです。(みんなで遊ぶ方は、`/shiritori start mode:みんなで`)', invalid: true };
   const word = toHira(text);
   if (isMessage) { // メッセージ: ふつうの会話と、区別する。かな(2〜30文字)は、いつも。漢字まじりは、ひとりのプライベートスレッドでだけ(ふつうの会話と、区別がつかないため)
@@ -196,13 +209,116 @@ export async function play(g, ch, uid, text, { isMessage = false, now = Date.now
   return { text: `✅ 「${shown}」 → ${BOT}: **${bw}**\n${nextLine(game.need, game)}・${chainOf(game)}語目` };
 }
 
+/* ---------- 人どうしの、しりとり(ルミは、審判) ---------- */
+const looksLikeWord = (text, plain) => {
+  const t = String(text ?? '').normalize('NFKC').trim(), h = toHira(t);
+  if (isKana(h) && [...h].length >= 2 && [...h].length <= 30) return true;
+  return !!plain && /^[\u3041-\u3096\u30A1-\u30FAー\u4E00-\u9FFF々〆ヶ]{1,12}$/.test(t) && /[\u4E00-\u9FFF々〆ヶ]/.test(t);
+};
+async function playPvp(g, ch, game, uid, text, { isMessage, now, msgId }) {
+  const st = getSettings(g);
+  if (isMessage && !looksLikeWord(text, game.plain)) return null; // ふつうの会話は、無視する
+  if (now > game.until) { // しばらく、動きがなかった: 終わらせて、(常設のチャンネルなら)この言葉から、新しく始める
+    finish(g, ch, game, {});
+    if (!isPvpChannel(st, ch)) return { text: `⏰ しばらく動きがなかったので、しりとりを終わります。(${chainOf(game)}語続きました。勝ち負けは、つきません)`, ended: true };
+    const nw = startGame(g, ch, uid, { mode: 'pvp', plain: game.plain }); return playPvp(g, ch, nw, uid, text, { isMessage, now, msgId });
+  }
+  const last = game.words.at(-1);
+  if (last && last.by === uid) return { react: '🚫' }; // 続けて、2回は、できない
+  if (game.dlb) return { react: '⏳' };                 // 審議中は、止まる
+  const rw = await resolveWord(text, { check: st.wordCheck, extra: approvedWords(g) });
+  if (!rw.ok) return isMessage && !isKana(toHira(text)) ? null : { react: '❌', text: `${rw.why}`, appeal: rw.appeal };
+  const r = checkWord(rw.reading, game.need, game.words.map((w) => w.w));
+  if (!r.ok) {
+    if (!r.lose) return { react: '❌', text: r.why };
+    const others = participants(game).filter((u) => u !== uid);
+    finish(g, ch, game, { winners: others, losers: [uid] });
+    return { react: '💥', text: `💥 ${r.why} <@${uid}> さんの負け!${others.length ? ` 勝ち: ${others.map((u) => `<@${u}>`).join(' ')}` : ''} (${chainOf(game)}語続きました)`, ended: true };
+  }
+  const shown = fmtWord(r.word, rw.surface);
+  game.words.push({ w: r.word, by: uid, msg: msgId ?? undefined, ...(shown !== r.word ? { disp: rw.surface } : {}) });
+  game.need = r.tail; game.until = now + st.pvpTimeSec * 1000;
+  bumpWord(g, r.word); bumpUsed(g, uid);
+  if (game.words.length > 2000) game.words = game.words.slice(-1000);
+  putGame(g, ch, game);
+  return { react: '✅', accepted: true, prevMsg: last?.msg, shown };
+}
+const isPvpChannel = (st, ch, parentId = null) => st.pvpChannelIds.includes(ch) || (parentId && st.pvpChannelIds.includes(parentId));
+
+/** 過去の発言から、しりとりの言葉を、拾って、数える(最大3000件・古い順)。取り込みずみの所までは、二重に数えない */
+export async function importHistory(client, g, ch, { maxMessages = 3000 } = {}) {
+  const done = getKV(g, 'shiritori_imports', {}) ?? {}, after = done[ch.id] ? BigInt(done[ch.id]) : 0n;
+  const all = []; let before;
+  for (let page = 0; page < Math.ceil(maxMessages / 100); page++) {
+    const batch = await ch.messages.fetch({ limit: 100, ...(before ? { before } : {}) });
+    if (!batch.size) break;
+    let stop = false; for (const m of batch.values()) { if (BigInt(m.id) <= after) { stop = true; continue; } all.push(m); }
+    before = batch.last().id; if (stop || batch.size < 100) break;
+  }
+  all.sort((a, b) => (BigInt(a.id) < BigInt(b.id) ? -1 : 1));
+  let prev = null, words = 0; const seen = new Set(), players = new Set();
+  for (const m of all) {
+    if (m.author.bot || !m.content) continue;
+    const t = toHira(m.content.trim());
+    if (!isKana(t) || [...t].length < 2 || [...t].length > 30) continue; // ふつうの会話は、とばす
+    if (prev && headOf(t) !== prev) continue;                         // つながっていない発言も、とばす
+    if (seen.has(t)) continue;
+    seen.add(t); bumpWord(g, t); bumpUsed(g, m.author.id); words++; players.add(m.author.id);
+    const tail = tailOf(t); if (tail === 'ん') { prev = null; seen.clear(); } else prev = tail; // 「ん」で、1ゲームが終わって、また最初から
+  }
+  if (all.length) { done[ch.id] = String(all.at(-1).id); setKV(g, 'shiritori_imports', done); }
+  return { scanned: all.length, words, players: players.size };
+}
+
+/* ---------- 審議(任意): 最新の言葉に、⚖️ をつけると、投票で、有効/無効を決める ---------- */
+const dlbRow = () => [new ActionRowBuilder().addComponents(
+  new ButtonBuilder().setCustomId('shiritori:dlok').setLabel('有効').setEmoji('⭕').setStyle(ButtonStyle.Success),
+  new ButtonBuilder().setCustomId('shiritori:dlng').setLabel('無効').setEmoji('❌').setStyle(ButtonStyle.Danger))];
+const dlbCount = (d) => ({ ok: Object.values(d.votes).filter((v) => v === 'ok').length, ng: Object.values(d.votes).filter((v) => v === 'ng').length });
+const dlbText = (game, st) => { const w = game.words.at(-1), c = dlbCount(game.dlb); return `⚖️ **審議** 「**${w.disp ?? w.w}**」(<@${w.by}> さんの言葉)は、有効?\n⭕ 有効 **${c.ok}** ・ ❌ 無効 **${c.ng}** ・ **${st.deliberationVotes}票**で、決まります(<t:${Math.floor(game.dlb.until / 1000)}:R> まで。時間切れは、票の多い方。同じなら、有効)\n-# 言葉を書いた人は、投票できません。運営(管理者)が押すと、その場で、決まります。`; };
+/** 審議の結果を、反映する: 無効なら、その言葉を取り消して、1つ前に戻す */
+async function settleDeliberation(client, g, ch, game, result, by = null) {
+  const d = game.dlb, word = game.words.at(-1); game.dlb = null;
+  const chan = await chanOf(client, ch);
+  if (result === 'ng' && word) {
+    game.words.pop(); unbumpWord(g, word.w); bumpUsed(g, word.by, -1);
+    const prev = game.words.at(-1); game.need = prev ? tailOf(prev.w) : null; game.until = Date.now() + getSettings(g).pvpTimeSec * 1000;
+    putGame(g, ch, game);
+    if (word.msg) { const m = await chan?.messages?.fetch?.(word.msg).catch(() => null); m?.react?.('❌').catch(() => {}); }
+    await chan?.send?.({ content: `⚖️ 審議の結果、「**${word.disp ?? word.w}**」は、**無効**になりました。${game.need ? `次は「**${game.need}**」から!` : '最初の言葉から、やり直しです。'}${by ? `(運営が、決めました)` : ''}`, allowedMentions: NO_MENTION }).catch(() => {});
+  } else {
+    if (word) word.locked = true; putGame(g, ch, game);
+    await chan?.send?.({ content: `⚖️ 審議の結果、「**${word?.disp ?? word?.w}**」は、**有効**です。${by ? '(運営が、決めました)' : ''}`, allowedMentions: NO_MENTION }).catch(() => {});
+  }
+  if (d?.review) await chan?.messages?.edit?.(d.review, { components: [], allowedMentions: NO_MENTION }).catch(() => {});
+}
+async function openDeliberation(client, g, ch, game, by) {
+  const st = getSettings(g), now = Date.now();
+  game.dlb = { by, votes: { [by]: 'ng' }, until: now + st.deliberationSec * 1000, review: null };
+  const chan = await chanOf(client, ch);
+  const m = await chan?.send?.({ content: dlbText(game, st), components: dlbRow(), allowedMentions: NO_MENTION }).catch(() => null);
+  if (m) game.dlb.review = m.id;
+  putGame(g, ch, game);
+}
+async function voteButton(i, vote) {
+  const g = i.guildId, ch = i.channelId, game = getGame(g, ch), st = getSettings(g);
+  if (!game?.dlb || game.mode !== 'pvp') return i.reply({ content: 'この審議は、もう、終わっています。', ...EPH });
+  const word = game.words.at(-1);
+  if (word?.by === i.user.id) return i.reply({ content: '自分の言葉の審議には、投票できません。', ...EPH });
+  if (hasAccessSync(i.guild, i.member, i.user.id)) { await i.deferUpdate().catch(() => {}); return settleDeliberation(i.client, g, ch, game, vote, i.user.id); } // 運営は、その場で、決める
+  game.dlb.votes[i.user.id] = vote; const c = dlbCount(game.dlb);
+  if (c.ng >= st.deliberationVotes || c.ok >= st.deliberationVotes) { await i.deferUpdate().catch(() => {}); return settleDeliberation(i.client, g, ch, game, c.ng >= st.deliberationVotes ? 'ng' : 'ok'); }
+  putGame(g, ch, game);
+  return i.update({ content: dlbText(game, st), components: dlbRow(), allowedMentions: NO_MENTION });
+}
+
 /* ---------- コマンド ---------- */
 const canStop = (i, game) => isOperator(i.user.id) || i.user.id === game.starter || i.memberPermissions?.has(PermissionFlagsBits.ManageGuild);
 export const shiritoriCommand = {
   data: new SlashCommandBuilder().setName('shiritori').setDescription('しりとりで、BOTと勝負します').setDMPermission(false)
     .addSubcommand((c) => c.setName('start').setDescription('しりとりを、始めます(チャンネルごとに1つ)')
       .addStringOption((o) => o.setName('level').setDescription('ルミの強さ').addChoices(...Object.entries(LEVELS).map(([value, name]) => ({ name, value }))))
-      .addStringOption((o) => o.setName('mode').setDescription('遊び方').addChoices({ name: '自分ひとりで、ルミと勝負', value: 'solo' }, { name: 'みんなで、ルミと勝負', value: 'team' }))
+      .addStringOption((o) => o.setName('mode').setDescription('遊び方').addChoices({ name: '自分ひとりで、ルミと勝負', value: 'solo' }, { name: 'みんなで、ルミと勝負', value: 'team' }, { name: '人どうしで勝負(ルミは審判)', value: 'pvp' }))
       .addStringOption((o) => o.setName('first').setDescription('どちらが先か').addChoices({ name: 'ルミが先(既定)', value: 'bot' }, { name: '自分が先', value: 'me' })))
     .addSubcommand((c) => c.setName('say').setDescription('言葉を、送ります(メッセージで送れるときは、そのまま書いても、OK)').addStringOption((o) => o.setName('word').setDescription('ひらがな・カタカナの言葉').setRequired(true).setMaxLength(40)))
     .addSubcommand((c) => c.setName('status').setDescription('いまの、しりとりの様子を見ます(自分だけに見えます)').addBooleanOption((o) => o.setName('public').setDescription('みんなに見せる(省略すると、自分だけ)')))
@@ -229,12 +345,12 @@ export const shiritoriCommand = {
     const game = getGame(g, ch);
     if (sub === 'start') {
       if (game) return i.reply({ content: `このチャンネルでは、もう、しりとりをしています。(\`/shiritori status\` で見られます。やめるときは \`/shiritori stop\`)`, ...EPH });
-      const nw = startGame(g, ch, i.user.id, { level: i.options.getString('level') ?? st.level, mode: i.options.getString('mode') ?? 'solo', first: i.options.getString('first') ?? 'bot', rng });
+      const nw = startGame(g, ch, i.user.id, { level: i.options.getString('level') ?? st.level, mode: i.options.getString('mode') ?? 'solo', first: i.options.getString('first') ?? 'bot', plain: !!i.channel?.isThread?.(), rng });
       return i.reply({ content: introText(nw, i.user.id, st), allowedMentions: NO_MENTION });
     }
     if (!game) return i.reply({ content: 'このチャンネルでは、しりとりをしていません。`/shiritori start` で、始められます。', ...EPH });
     if (sub === 'status') {
-      const e = new EmbedBuilder().setColor(0x57f287).setTitle('🔤 しりとり').setDescription(`${game.mode === 'solo' ? `<@${game.starter}> さん と ${BOT}` : `みんな と ${BOT}`} ・ 強さ ${LEVELS[game.level]}\n${chainOf(game)}語 続いています\n${game.need ? nextLine(game.need, game) : 'あなたから、どうぞ!'}`)
+      const e = new EmbedBuilder().setColor(0x57f287).setTitle('🔤 しりとり').setDescription(`${game.mode === 'pvp' ? '人どうしの勝負(ルミは審判)' : game.mode === 'solo' ? `<@${game.starter}> さん と ${BOT}` : `みんな と ${BOT}`}${game.mode === 'pvp' ? '' : ` ・ 強さ ${LEVELS[game.level]}`}\n${chainOf(game)}語 続いています\n${game.need ? nextLine(game.need, game) : 'あなたから、どうぞ!'}`)
         .addFields({ name: '最近の言葉', value: game.words.slice(-10).map((w) => `${w.by === 'bot' ? '🤖' : '🙂'} ${w.disp ?? w.w}`).join(' → ') || 'まだ、ありません' });
       return i.reply({ embeds: [e], allowedMentions: NO_MENTION, ...vis() });
     }
@@ -248,6 +364,8 @@ export const shiritoriCommand = {
     await i.deferReply(solo ? EPH : {}); // 辞書の読み込みで、少し、かかることがある
     const r = await play(g, ch, i.user.id, i.options.getString('word', true), { rng });
     if (!r) return i.editReply({ content: 'このチャンネルでは、しりとりをしていません。' });
+    if (!r.text && r.react) r.text = { '🚫': '続けて、2回は、できません。ほかの人を、待ってください。', '⏳': '審議中です。決まるまで、待ってください。' }[r.react] ?? r.react;
+    if (r.accepted) { const gm = getGame(g, ch); r.text = `✅ 「${r.shown}」 → 次は「**${gm?.need}**」から!`; } // 人どうし: ルミは、審判
     return i.editReply({ content: r.text, allowedMentions: NO_MENTION, ...(r.again ? { components: againRow() } : r.appeal ? { components: appealRow(r.appeal) } : {}) }); // 自分だけ/みんなに見えるかは、deferReply で、決めてある // ひとりの勝負は、自分だけに見える(みんなで遊ぶときは、みんなが、動きを見られるように、全員に見える)
   },
 };
@@ -356,6 +474,7 @@ export const shiritoriButton = {
     const action = i.customId.split(':')[1], g = i.guildId, st = getSettings(g);
     if (action === 'appeal') return appealButton(i, i.customId.split(':').slice(2).join(':'));
     if (action === 'apok' || action === 'apno') return decideButton(i, Number(i.customId.split(':')[2]), action === 'apok' ? 'approved' : 'rejected');
+    if (action === 'dlok' || action === 'dlng') return voteButton(i, action === 'dlok' ? 'ok' : 'ng');
     if (action === 'watch') return watchList(i);
     if (action === 'watchsel') return watchJoin(i);
     if (action === 'statsme') return i.update({ content: '', embeds: [statsEmbed(g, i.user)], components: [], allowedMentions: NO_MENTION });
@@ -388,6 +507,7 @@ export default {
     '辞書にない言葉(名詞でないもの・存在しない言葉)は、「見つかりません」と断ります(負けには、なりません)。',
     '「ん」で終わる・同じ言葉・時間切れは負け。BOTが言葉に詰まったら、あなたの勝ち。',
     '`/shiritori ranking` で、ランキング(勝ち数・最長・勝率)、`/shiritori words` で、サーバーでいちばん使われた言葉、`/shiritori stats` で、自分の戦績を見られます。',
+    '人どうしで遊ぶなら、`/shiritori start mode:人どうし`(ルミは審判。メッセージで、順番に言葉をつなぎます)。管理者が、チャンネルを登録すると、常設になります。',
     '管理者が、チャンネルに「しりとりを始める」のボタンを置くと(`/shiritori panel`)、押した人だけの、プライベートスレッドで、遊べます。',
   ].join('\n'),
 
@@ -426,6 +546,14 @@ export default {
       if (decision !== 'removed') await closeReview(client, r.appeal, decidedText(r.appeal, r.appeal.decided_by));
       res.json({ ok: true });
     });
+    // 過去ログの取り込み: すでに、人どうしで、しりとりをしていたチャンネル(スレッド)の言葉を、ランキングに数える
+    router.post('/import', async (req, res) => {
+      if (!canEditAccess(req.access)) return res.status(403).json({ error: '取り込めるのは、サーバーのオーナー・管理者・運営だけです' });
+      if (!client.options.intents.has('MessageContent')) return res.status(400).json({ error: 'BOTがメッセージの本文を読めないため、取り込めません(MESSAGE CONTENT INTENT が必要です)' });
+      const g = req.guild.id, ch = await chanOf(client, String(req.body?.channel_id ?? ''));
+      if (!ch?.messages || ch.guildId !== g) return res.status(400).json({ error: 'チャンネル(スレッド)が、見つかりません' });
+      try { res.json(await importHistory(client, g, ch)); } catch (e) { console.warn('[shiritori] 取り込みに失敗:', e.message); res.status(500).json({ error: `取り込めませんでした: ${e.message}` }); }
+    });
     router.get('/panel', (req, res) => { const p = panelOf(req.guild.id); res.json(p ? { channel_id: p.ch, link: `https://discord.com/channels/${req.guild.id}/${p.ch}/${p.msg}` } : null); });
     router.post('/panel', async (req, res) => {
       if (!canEditAccess(req.access)) return res.status(403).json({ error: '置けるのは、サーバーのオーナー・管理者・運営だけです' });
@@ -441,11 +569,38 @@ export default {
       try {
         if (!msg.guildId || msg.author.bot || msg.webhookId || !msg.content) return;
         const g = msg.guildId, st = getSettings(g);
-        if (!st.enabled || !st.messageMode || !getGame(g, msg.channelId)) return;
-        const r = await play(g, msg.channelId, msg.author.id, msg.content, { isMessage: true });
+        if (!st.enabled) return;
+        let game = getGame(g, msg.channelId);
+        if (!game) { // 人どうしの、常設のチャンネル(や、そのスレッド)で、言葉らしい発言があれば、自動で、始める
+          const plain = !!msg.channel?.isThread?.();
+          if (!isPvpChannel(st, msg.channelId, msg.channel?.parentId) || !looksLikeWord(msg.content, plain)) return;
+          game = startGame(g, msg.channelId, msg.author.id, { mode: 'pvp', plain });
+        }
+        if (game.mode !== 'pvp' && !st.messageMode) return;
+        const r = await play(g, msg.channelId, msg.author.id, msg.content, { isMessage: true, msgId: msg.id });
         if (!r) return;
-        await msg.reply({ content: r.text, allowedMentions: { parse: [], repliedUser: false }, ...(r.again ? { components: againRow() } : r.appeal ? { components: appealRow(r.appeal) } : {}) });
+        if (r.react) await msg.react(r.react).catch(() => {});
+        if (r.accepted && st.deliberation) { // 審議: 最新の言葉にだけ、⚖️ をつける
+          await msg.react('⚖️').catch(() => {});
+          if (r.prevMsg) { const pm = await msg.channel.messages.fetch(r.prevMsg).catch(() => null); pm?.reactions?.cache?.get('⚖️')?.users?.remove?.(client.user.id).catch(() => {}); }
+        }
+        if (r.text) await msg.reply({ content: r.text, allowedMentions: { parse: [], repliedUser: false }, ...(r.again ? { components: againRow() } : r.appeal ? { components: appealRow(r.appeal) } : {}) });
       } catch (e) { console.warn('[shiritori] メッセージの処理に失敗:', e.message); }
+    });
+
+    // 審議: 最新の言葉の ⚖️ を、だれかが押したら、投票を始める
+    client.on(Events.MessageReactionAdd, async (reaction, user) => {
+      try {
+        if (user.bot || reaction.emoji.name !== '⚖️') return;
+        if (reaction.partial) reaction = await reaction.fetch().catch(() => reaction);
+        const g = reaction.message.guildId; if (!g) return;
+        const st = getSettings(g), ch = reaction.message.channelId, game = getGame(g, ch);
+        if (!st.enabled || !st.deliberation || game?.mode !== 'pvp' || game.dlb) return;
+        const last = game.words.at(-1);
+        if (!last || last.msg !== reaction.message.id || last.locked) return; // 最新の言葉だけ(審議ずみのものも、不可)
+        if (last.by === user.id) { reaction.users.remove(user.id).catch(() => {}); return; }   // 自分の言葉は、審議できない
+        await openDeliberation(client, g, ch, game, user.id);
+      } catch (e) { console.warn('[shiritori] 審議の開始に失敗:', e.message); }
     });
 
     // 時間切れの掃除(15秒ごと): 人が、時間内に答えなかったら、BOTの勝ち
@@ -454,7 +609,15 @@ export default {
       for (const g of client.guilds.cache.keys()) {
         let all; try { all = loadAll(g); } catch { continue; }
         for (const [ch, game] of Object.entries(all)) {
-          if (now <= game.until + 1000) continue;
+          if (game.dlb && now > game.dlb.until) { // 審議の時間切れ: 票の多い方(同じなら、有効)
+            const c = dlbCount(game.dlb); await settleDeliberation(client, g, ch, game, c.ng > c.ok ? 'ng' : 'ok'); continue;
+          }
+          if (now <= game.until + 1000 || game.dlb) continue;
+          if (game.mode === 'pvp') { // 人どうし: しばらく動きがなかったら、勝ち負けなしで、終わる
+            finish(g, ch, game, {});
+            if (chainOf(game) >= 2) (await chanOf(client, ch))?.send?.({ content: `⏰ しばらく動きがなかったので、しりとりを終わります。(${chainOf(game)}語続きました)`, allowedMentions: NO_MENTION }).catch(() => {});
+            continue;
+          }
           finish(g, ch, game, { losers: game.mode === 'solo' ? [game.starter] : [] });
           const c = await chanOf(client, ch);
           c?.send?.({ content: `⏰ 時間切れ! **${BOT}の勝ち!** (${chainOf(game)}語続きました)`, allowedMentions: NO_MENTION, ...(game.thread ? { components: againRow() } : {}) }).catch(() => {});
