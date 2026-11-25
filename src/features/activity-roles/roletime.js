@@ -1,5 +1,6 @@
 import { AuditLogEvent } from 'discord.js';
 import { db, migrate, getKV, setKV } from '../../core/db.js';
+import { getRules, getSettings } from './db.js';
 
 /**
  * ロールを取った(外れた)時刻の記録と、ロールからロールまでの、達成時間の集計。
@@ -87,3 +88,31 @@ export async function importAudit(guild, { maxEntries = 1000 } = {}) {
   }
   return { entries, added };
 }
+
+/**
+ * 過去の発言の時刻(backfill_times)から、「発言数」のルールの、ロールを取った時刻を、推定する。
+ * 発言を、古い順に数えて(連投の間隔は、いまの設定どおり)、条件の数に届いた発言の時刻 = 取った時刻、とする。
+ * いま、そのロールを持っている人だけ。source = 'estimate'(取った時刻は、実際に付いた時刻より、早いことがある)
+ */
+export async function estimateRoleTimes(guild) {
+  const g = guild.id, rules = getRules(g).filter((r) => r.metric === 'messages').sort((a, b) => a.threshold - b.threshold);
+  if (!rules.length) return { users: 0, added: 0 };
+  const gap = getSettings(g).message_cooldown * 1000, has = (u, role) => !!guild.members.cache.get(u)?.roles?.cache?.has(role);
+  let user = null, count = 0, last = -Infinity, idx = 0, users = 0, added = 0;
+  const flush = () => { user = null; count = 0; last = -Infinity; idx = 0; };
+  db.exec('BEGIN');
+  try {
+    for (const r of db.prepare('SELECT user_id, ts FROM backfill_times WHERE guild_id=? ORDER BY user_id, ts').iterate(g)) {
+      if (r.user_id !== user) { flush(); user = r.user_id; users++; }
+      if (gap && r.ts - last < gap) continue; // 連投は、数えない(いまの設定と、同じ)
+      last = r.ts; count++;
+      while (idx < rules.length && count >= rules[idx].threshold) { // この発言で、条件に届いた
+        if (has(user, rules[idx].role_id)) { added += Number(log(g, user, rules[idx].role_id, r.ts, 'add', 'estimate').changes); }
+        idx++;
+      }
+    }
+    db.exec('COMMIT');
+  } catch (e) { db.exec('ROLLBACK'); throw e; }
+  return { users, added };
+}
+export const sourceCounts = (g) => Object.fromEntries(db.prepare("SELECT source, COUNT(*) c FROM role_log WHERE guild_id=? AND action='add' GROUP BY source").all(g).map((r) => [r.source, r.c]));

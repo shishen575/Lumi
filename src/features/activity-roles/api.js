@@ -2,7 +2,7 @@ import { db } from '../../core/db.js';
 import { METRICS, getRules, getSettings, saveSettings, leaderboard, metricValue } from './db.js';
 import { evaluateGuild } from './roles.js';
 import { sendTest } from './notify.js';
-import { pairStats, fastestSinceJoin, joinToStats, importAudit, trackingSince, summarize } from './roletime.js';
+import { pairStats, fastestSinceJoin, joinToStats, importAudit, trackingSince, summarize, sourceCounts } from './roletime.js';
 import { startBackfill, resumeBackfill, getJob } from './backfill.js';
 
 /** router は /api/guilds/:gid/f/activity-roles に載っていて、req.guild が使える */
@@ -104,7 +104,7 @@ export function mountApi(router) {
   router.get('/role-times', async (req, res) => {
     const g = req.guild, from = String(req.query.from ?? ''), to = String(req.query.to ?? '');
     const joinedOf = (u) => g.members.cache.get(u)?.joinedTimestamp ?? null, withNames = (rows) => Promise.all(rows.map(async (x) => ({ ...x, name: await nameOf(g, x.user_id) })));
-    const out = { since: trackingSince(g.id) };
+    const out = { since: trackingSince(g.id), sources: sourceCounts(g.id) };
     if (to && from) { const r = pairStats(g.id, from, to, 10); out.pair = { ...r, fastest: await withNames(r.fastest), fromName: roleName(g, from), toName: roleName(g, to) }; }
     else if (to) { out.join = { toName: roleName(g, to), stats: joinToStats(g.id, to, joinedOf), fastest: await withNames(fastestSinceJoin(g.id, to, joinedOf, 10)) }; }
     // 順番に並んだ、ランクのロール(条件の値が、小さい順)の、となりどうしの達成時間
@@ -135,7 +135,7 @@ export function mountApi(router) {
     const from = num(req.body.from), to = num(req.body.to);
     if ([from, to].some((v) => v != null && !Number.isFinite(v))) return res.status(400).json({ error: '期間が不正です' });
     if (from != null && to != null && from >= to) return res.status(400).json({ error: '開始日は終了日より前にしてください' });
-    if (!startBackfill(req.guild, { from, to })) return res.status(409).json({ error: '取り込み中です' });
+    if (!startBackfill(req.guild, { from, to, estimateRoles: !!req.body.estimateRoles })) return res.status(409).json({ error: '取り込み中です' });
     res.json({ ok: true });
   });
 

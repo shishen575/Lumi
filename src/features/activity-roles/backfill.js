@@ -1,6 +1,7 @@
 import { ChannelType, PermissionFlagsBits, SnowflakeUtil } from 'discord.js';
 import { db, migrate } from '../../core/db.js';
 import { evaluateGuild } from './roles.js';
+import { estimateRoleTimes } from './roletime.js';
 
 // 進捗・集計途中の値はすべてDBに保存(メモリには持たない)。再起動後も進捗が残り、続きから再開できる
 migrate(`
@@ -31,6 +32,10 @@ CREATE TABLE IF NOT EXISTS backfill_channels (
 for (const c of ['heartbeat_at INTEGER', 'gap_from INTEGER', 'gap_to INTEGER', 'auto_resumes INTEGER NOT NULL DEFAULT 0']) {
   try { db.exec(`ALTER TABLE backfill_jobs ADD COLUMN ${c}`); } catch { /* exists */ }
 }
+// 「ロールを取った時刻」を、過去の発言から推定するための、発言の時刻(作業用。終わったら消す)
+for (const c of ['estimate_roles INTEGER NOT NULL DEFAULT 0']) { try { db.exec(`ALTER TABLE backfill_jobs ADD COLUMN ${c}`); } catch { /* exists */ } }
+migrate(`CREATE TABLE IF NOT EXISTS backfill_times (guild_id TEXT NOT NULL, user_id TEXT NOT NULL, ts INTEGER NOT NULL)`);
+migrate('CREATE INDEX IF NOT EXISTS backfill_times_g ON backfill_times (guild_id, user_id, ts)');
 const MAX_AUTO_RESUMES = 5; // 進捗がないまま自動再開が続いたら止める(再起動の繰り返し防止)
 
 const locks = new Set(); // 二重実行防止の鍵のみ(状態は持たない)
@@ -101,14 +106,14 @@ async function collectTargets(guild) {
 }
 
 /** range: { from?: ms, to?: ms }  from以上 to未満の発言だけ数える(未指定なら全期間〜現在) */
-export function startBackfill(guild, { from = null, to = null } = {}) {
+export function startBackfill(guild, { from = null, to = null, estimateRoles = false } = {}) {
   if (locks.has(guild.id)) return false;
   const T = Date.now();
   const end = to == null ? T : Math.min(to, T);
   db.exec('BEGIN');
-  for (const t of ['backfill_jobs', 'backfill_counts', 'backfill_channels']) db.prepare(`DELETE FROM ${t} WHERE guild_id=?`).run(guild.id);
-  db.prepare(`INSERT INTO backfill_jobs (guild_id,status,phase,from_ts,to_ts,end_ts,started_at,scan_start,include_live,heartbeat_at)
-    VALUES (?,?,?,?,?,?,?,?,?,?)`).run(guild.id, 'running', 'collect', from, to == null ? null : end, end, T, T, to == null || to >= T ? 1 : 0, T);
+  for (const t of ['backfill_jobs', 'backfill_counts', 'backfill_channels', 'backfill_times']) db.prepare(`DELETE FROM ${t} WHERE guild_id=?`).run(guild.id);
+  db.prepare(`INSERT INTO backfill_jobs (guild_id,status,phase,from_ts,to_ts,end_ts,started_at,scan_start,include_live,heartbeat_at,estimate_roles)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?)`).run(guild.id, 'running', 'collect', from, to == null ? null : end, end, T, T, to == null || to >= T ? 1 : 0, T, estimateRoles ? 1 : 0);
   db.exec('COMMIT');
   launch(guild, true);
   return true;
@@ -160,6 +165,7 @@ async function run(guild, fresh) {
   const upto = SnowflakeUtil.generate({ timestamp: job.end_ts }).toString();
   const addCount = db.prepare(`INSERT INTO backfill_counts (guild_id,user_id,n) VALUES (?,?,?)
     ON CONFLICT(guild_id,user_id) DO UPDATE SET n=n+excluded.n`);
+  const addTime = db.prepare('INSERT INTO backfill_times (guild_id,user_id,ts) VALUES (?,?,?)');
   const pending = db.prepare('SELECT * FROM backfill_channels WHERE guild_id=? AND done=0').all(gid);
 
   for (const row of pending) {
@@ -174,17 +180,19 @@ async function run(guild, fresh) {
         for (;;) {
           const batch = await ch.messages.fetch({ limit: 100, before });
           if (!batch.size) break;
-          const per = new Map();
+          const per = new Map(), times = [];
           let reachedStart = false;
           for (const m of batch.values()) {
             if (job.from_ts != null && m.createdTimestamp < job.from_ts) { reachedStart = true; continue; }
             if (m.author.bot || m.webhookId || m.system) continue;
             per.set(m.author.id, (per.get(m.author.id) ?? 0) + 1);
+            if (job.estimate_roles) times.push([m.author.id, m.createdTimestamp]);
           }
           before = batch.last().id; // 新しい順なので最後が最古
           const frac = hi > lo ? Math.min(0.99, Math.max(0, (hi - Math.max(batch.last().createdTimestamp, lo)) / (hi - lo))) : 0;
           db.exec('BEGIN'); // カウント・カーソル・進捗を1トランザクションで保存(中断しても二重計上しない)
           for (const [u, n] of per) addCount.run(gid, u, n);
+          for (const [u, ts] of times) addTime.run(gid, u, ts);
           db.prepare('UPDATE backfill_channels SET cursor=? WHERE guild_id=? AND channel_id=?').run(before, gid, row.channel_id);
           setJob('scanned=scanned+?, chfrac=?', batch.size, frac);
           db.exec('COMMIT');
@@ -206,10 +214,12 @@ async function run(guild, fresh) {
   for (const c of counts) up.run(gid, c.user_id, c.total);
   db.exec('COMMIT');
   const changed = await evaluateGuild(guild);
+  if (job.estimate_roles) { try { await estimateRoleTimes(guild); } catch (e) { console.warn('[backfill] ロールを取った時刻の推定に失敗:', e.message); } } // 発言の時刻から、ロールを取った時刻を、推定する
   const cur = jobRow();
   setJob("status='done', phase='done', users=?, roles_changed=?, finished_at=?, elapsed_ms=?",
     counts.length, changed, Date.now(), cur.elapsed_ms + (Date.now() - cur.scan_start));
   db.prepare('DELETE FROM backfill_counts WHERE guild_id=?').run(gid); // 作業用データを掃除
+  db.prepare('DELETE FROM backfill_times WHERE guild_id=?').run(gid);
   db.prepare('DELETE FROM backfill_channels WHERE guild_id=?').run(gid);
 }
 

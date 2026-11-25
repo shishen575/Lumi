@@ -174,7 +174,7 @@
             el.innerHTML = `${pageHeader('ロール達成時間', 'ロールを取った時刻を記録して、「サーバーに入ってから、ロールを取るまで」「ロールAからロールBまで」の時間と、いちばん早かった人を調べます。')}
               <div class="card"><div class="grid2"><div class="field"><label class="f" for="rf">どこから(省略すると、サーバーに入ってから)</label><select id="rf">${opts('サーバーに入ってから')}</select></div>
                 <div class="field"><label class="f" for="rt">どのロールまで</label><select id="rt">${opts('ロールを選ぶ')}</select></div></div>
-                <p class="hint">${since ? `記録の開始: ${since}。これより前に取ったロールの時刻は、分かりません(Discordが、持っていないため)。` : '記録は、まだ、始まっていません。'} 約45日前までは、下の「監査ログから取り込む」で、さかのぼれます。</p></div>
+                <p class="hint">${since ? `記録の開始: ${since}。これより前に取ったロールの時刻は、分かりません(Discordが、持っていないため)。` : '記録は、まだ、始まっていません。'} さかのぼる方法: ① 約45日前までは、下の「監査ログから取り込む」(正確)。② それより前の「発言数」のロールは、「過去ログ取り込み」で「ロールを取った時刻も、推定する」(推定)。${r.sources?.estimate ? `<br>推定の記録: ${r.sources.estimate}件を、含んでいます。` : ''}</p></div>
               ${r.pair ? `<div class="card"><h2>${esc(r.pair.fromName)} → ${esc(r.pair.toName)}</h2>${r.pair.n ? `<div class="tiles"><div class="tile"><div class="k">記録のある人</div><div class="v">${r.pair.n}<span class="u">人</span></div></div><div class="tile"><div class="k">平均</div><div class="v" style="font-size:22px">${dur(r.pair.avg)}</div></div><div class="tile"><div class="k">中央値</div><div class="v" style="font-size:22px">${dur(r.pair.median)}</div></div><div class="tile"><div class="k">最短</div><div class="v" style="font-size:22px">${dur(r.pair.min)}</div></div></div>` : '<p class="mut">両方を取った記録のある人が、いません。</p>'}</div>
                 <div class="card flush"><div class="card-h"><h2>🏃 いちばん早かった人</h2></div>${rank(r.pair.fastest)}</div>` : ''}
               ${r.join ? `<div class="card"><h2>サーバーに入ってから「${esc(r.join.toName)}」まで</h2>${r.join.stats.n ? `<p>${r.join.stats.n}人 ・ 平均 <b>${dur(r.join.stats.avg)}</b> ・ 中央値 <b>${dur(r.join.stats.median)}</b></p>` : '<p class="mut">記録が、ありません。</p>'}</div>
@@ -198,6 +198,7 @@
               <div class="grid2"><div class="field"><label class="f" for="bff">開始日</label><input id="bff" type="date"></div><div class="field"><label class="f" for="bft">終了日(この日を含む)</label><input id="bft" type="date"></div></div>
               <p class="hint" style="margin:-6px 0 14px">開始日の初期値は、BOTを入れた日です。空欄にすると、それぞれ「最初から」「現在まで」になります。</p>
               <div class="card" style="background:var(--warn-soft);border-color:transparent;padding:12px 16px;margin-bottom:16px"><span class="small"><b>現在の発言数は、取り込んだ結果で上書きされます。</b>期間を絞ると、その期間の数だけになります。完了後、全員にロールを適用します(通知はしません)。</span></div>
+              <label class="sw" style="margin-bottom:14px"><input type="checkbox" id="bfe"><i></i><span><b>ロールを取った時刻も、過去の発言から、推定する</b><small>「発言数」のルールのロールについて、条件の数に届いた発言の時刻を、「取った時刻」として、記録します(「ロール達成時間」で使えます)。いまロールを持っている人だけ。実際に付いた時刻より、早いことがあります</small></span></label>
               <div class="acts"><button class="btn" id="bf" type="button">取り込みを開始</button></div></div>
             <div class="card" id="bfc" hidden></div>`;
           const $ = (s) => el.querySelector(s);
@@ -223,7 +224,7 @@
           $('#bf').onclick = async () => {
             const f = $('#bff').value, t = $('#bft').value;
             if (!await confirm({ title: '取り込みを開始', message: `期間(${f || '最初'} 〜 ${t || '現在'})の発言数で、現在の発言数を<b>上書き</b>します。よろしいですか?`, ok: '開始する' })) return;
-            await api('/backfill', { method: 'POST', body: { from: f ? new Date(f + 'T00:00:00').getTime() : null, to: t ? new Date(t + 'T00:00:00').getTime() + 864e5 : null } });
+            await api('/backfill', { method: 'POST', body: { from: f ? new Date(f + 'T00:00:00').getTime() : null, to: t ? new Date(t + 'T00:00:00').getTime() + 864e5 : null, estimateRoles: $('#bfe').checked } });
             poll();
           };
           new MutationObserver(() => { if (!el.isConnected) clearTimeout(timer); }).observe(document.body, { childList: true, subtree: true });
