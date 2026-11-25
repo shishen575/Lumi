@@ -2,7 +2,7 @@ import { db } from '../../core/db.js';
 import { METRICS, getRules, getSettings, saveSettings, leaderboard, metricValue } from './db.js';
 import { evaluateGuild } from './roles.js';
 import { sendTest } from './notify.js';
-import { pairStats, fastestSinceJoin, joinToStats, importAudit, importNotices, trackingSince, summarize, sourceCounts } from './roletime.js';
+import { pairStats, fastestSinceJoin, joinToStats, importAudit, importNotices, trackingSince, summarize, sourceCounts, parsePeriod } from './roletime.js';
 import { chanOf } from '../../core/channels.js';
 import { startBackfill, resumeBackfill, getJob } from './backfill.js';
 
@@ -103,21 +103,23 @@ export function mountApi(router) {
   const nameOf = async (g, id) => { const m = g.members.cache.get(id) ?? (await g.members.fetch(id).catch(() => null)); return m?.displayName ?? id; };
   const roleName = (g, id) => g.roles.cache.get(id)?.name ?? id;
   router.get('/role-times', async (req, res) => {
-    const g = req.guild, from = String(req.query.from ?? ''), to = String(req.query.to ?? '');
+    const g = req.guild, from = String(req.query.from ?? ''), to = String(req.query.to ?? ''), period = parsePeriod(req.query.since, req.query.until);
+    if (period.error) return res.status(400).json({ error: period.error });
     const joinedOf = (u) => g.members.cache.get(u)?.joinedTimestamp ?? null, withNames = (rows) => Promise.all(rows.map(async (x) => ({ ...x, name: await nameOf(g, x.user_id) })));
     const out = { since: trackingSince(g.id), sources: sourceCounts(g.id) };
-    if (to && from) { const r = pairStats(g.id, from, to, 10); out.pair = { ...r, fastest: await withNames(r.fastest), fromName: roleName(g, from), toName: roleName(g, to) }; }
-    else if (to) { out.join = { toName: roleName(g, to), stats: joinToStats(g.id, to, joinedOf), fastest: await withNames(fastestSinceJoin(g.id, to, joinedOf, 10)) }; }
+    if (to && from) { const r = pairStats(g.id, from, to, 10, period); out.pair = { ...r, fastest: await withNames(r.fastest), fromName: roleName(g, from), toName: roleName(g, to) }; }
+    else if (to) { out.join = { toName: roleName(g, to), stats: joinToStats(g.id, to, joinedOf, period), fastest: await withNames(fastestSinceJoin(g.id, to, joinedOf, 10, period)) }; }
     // 順番に並んだ、ランクのロール(条件の値が、小さい順)の、となりどうしの達成時間
     const chain = [];
     for (const metric of Object.keys(METRICS)) {
       const rules = getRules(g.id).filter((r) => r.metric === metric).sort((a, b) => a.threshold - b.threshold);
-      for (let k = 1; k < rules.length; k++) { const r = pairStats(g.id, rules[k - 1].role_id, rules[k].role_id, 1); chain.push({ metric, from: rules[k - 1].role_id, to: rules[k].role_id, fromName: roleName(g, rules[k - 1].role_id), toName: roleName(g, rules[k].role_id), n: r.n, avg: r.avg ?? null, median: r.median ?? null, min: r.min ?? null }); }
+      for (let k = 1; k < rules.length; k++) { const r = pairStats(g.id, rules[k - 1].role_id, rules[k].role_id, 1, period); chain.push({ metric, from: rules[k - 1].role_id, to: rules[k].role_id, fromName: roleName(g, rules[k - 1].role_id), toName: roleName(g, rules[k].role_id), n: r.n, avg: r.avg ?? null, median: r.median ?? null, min: r.min ?? null }); }
     }
     out.chain = chain; res.json(out);
   });
   router.post('/role-times/import-audit', async (req, res) => {
-    try { res.json(await importAudit(req.guild, { maxEntries: 1000 })); }
+    const period = parsePeriod(req.body?.since, req.body?.until); if (period.error) return res.status(400).json({ error: period.error });
+    try { res.json(await importAudit(req.guild, { maxEntries: 1000, since: period.since, until: period.until })); }
     catch (e) { res.status(400).json({ error: `監査ログを読めませんでした(BOTに、「監査ログの表示」の権限が必要です): ${e.message}` }); }
   });
   // 別のBOTなどの、ロール付与の通知から、取った時刻を取り込む(preview: true なら、読み取れた例だけ)
@@ -125,7 +127,8 @@ export function mountApi(router) {
     const b = req.body ?? {}, g = req.guild, ch = await chanOf(req.guild.client, String(b.channel_id ?? ''));
     if (!ch?.messages || ch.guildId !== g.id) return res.status(400).json({ error: 'チャンネル(スレッド)が、見つかりません' });
     const id = (v) => (/^\d{15,25}$/.test(String(v ?? '')) ? String(v) : null);
-    try { res.json(await importNotices(g, ch, { authorId: id(b.author_id), roleId: id(b.role_id), preview: !!b.preview })); }
+    const period = parsePeriod(b.since, b.until); if (period.error) return res.status(400).json({ error: period.error });
+    try { res.json(await importNotices(g, ch, { authorId: id(b.author_id), roleId: id(b.role_id), preview: !!b.preview, since: period.since, until: period.until })); }
     catch (e) { res.status(400).json({ error: `読めませんでした(BOTに、そのチャンネルを読む権限が必要です): ${e.message}` }); }
   });
   router.get('/leaderboard', async (req, res) => {

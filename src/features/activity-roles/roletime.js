@@ -42,7 +42,18 @@ export const forgetMember = (g, u) => db.prepare('DELETE FROM role_seen WHERE gu
 
 /** ユーザーが、そのロールを、はじめて取った時刻(ミリ秒)。分からなければ null */
 export const roleObtainedAt = (g, u, role) => db.prepare("SELECT MIN(at) at FROM role_log WHERE guild_id=? AND user_id=? AND role_id=? AND action='add'").get(g, u, role)?.at ?? null;
-const firstAdds = (g, role) => new Map(db.prepare("SELECT user_id, MIN(at) at FROM role_log WHERE guild_id=? AND role_id=? AND action='add' GROUP BY user_id").all(g, role).map((r) => [r.user_id, r.at]));
+/** 期間(日本時間の日付: 2026-11-01)を、ミリ秒に直す。since = その日の0時、until = その日の終わりまで(含む)。不正なら { error } */
+export function parsePeriod(sinceStr, untilStr) {
+  const one = (v, end) => { if (v == null || v === '') return null; const m = String(v).trim().match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})$/); if (!m) return NaN; const t = Date.UTC(+m[1], +m[2] - 1, +m[3]) - 9 * 3600_000; return Number.isNaN(t) ? NaN : end ? t + 86400_000 : t; };
+  const since = one(sinceStr, false), until = one(untilStr, true);
+  if (Number.isNaN(since) || Number.isNaN(until)) return { error: '日付は、2026-11-01 の形で、書いてください(日本時間)' };
+  if (since != null && until != null && since >= until) return { error: '開始日は、終了日より前にしてください' };
+  return { since, until };
+}
+export const periodText = (p) => (p?.since != null || p?.until != null ? `期間: ${p.since != null ? new Date(p.since + 9 * 3600_000).toISOString().slice(0, 10) : '最初'} 〜 ${p.until != null ? new Date(p.until - 1 + 9 * 3600_000).toISOString().slice(0, 10) : '現在'}` : '');
+const inPeriod = (at, p) => (p?.since == null || at >= p.since) && (p?.until == null || at < p.until);
+/** そのロールを、はじめて取った時刻(ユーザーごと)。period を渡すと、「その期間に、取った」人だけ */
+const firstAdds = (g, role, period = null) => new Map(db.prepare("SELECT user_id, MIN(at) at FROM role_log WHERE guild_id=? AND role_id=? AND action='add' GROUP BY user_id").all(g, role).filter((r) => inPeriod(r.at, period)).map((r) => [r.user_id, r.at]));
 
 const pct = (sorted, p) => (sorted.length ? sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * p))] : null);
 export function summarize(durations) {
@@ -52,39 +63,41 @@ export function summarize(durations) {
   return { n: d.length, avg, median: mid, p25: pct(d, 0.25), p75: pct(d, 0.75), min: d[0], max: d.at(-1) };
 }
 /** ロールA → ロールB の達成時間(Aを取ってから、Bを取るまで)。A・Bの両方を取った記録のある人だけ */
-export function pairStats(g, fromRole, toRole, limit = 5) {
-  const a = firstAdds(g, fromRole), b = firstAdds(g, toRole), dur = [], rows = [];
+export function pairStats(g, fromRole, toRole, limit = 5, period = null) {
+  const a = firstAdds(g, fromRole), b = firstAdds(g, toRole, period), dur = [], rows = []; // 期間は、「あとのロールを取った」時刻に、かける
   let bothBackwards = 0;
   for (const [u, at] of b) { const af = a.get(u); if (af == null) continue; if (at >= af) { dur.push(at - af); rows.push({ user_id: u, ms: at - af, from: af, to: at }); } else bothBackwards++; }
   return { ...summarize(dur), fromCount: a.size, toCount: b.size, backwards: bothBackwards, fastest: rows.sort((x, y) => x.ms - y.ms).slice(0, limit) };
 }
 /** そのロールを、サーバーに入ってから、いちばん早く取った人のランキング(参加 → ロール)。joinedOf(userId) = 参加した時刻(いるメンバーだけ) */
-export function fastestSinceJoin(g, role, joinedOf, limit = 10) {
+export function fastestSinceJoin(g, role, joinedOf, limit = 10, period = null) {
   const rows = [];
-  for (const [u, at] of firstAdds(g, role)) { const j = joinedOf(u); if (j && at >= j) rows.push({ user_id: u, ms: at - j, from: j, to: at }); }
+  for (const [u, at] of firstAdds(g, role, period)) { const j = joinedOf(u); if (j && at >= j) rows.push({ user_id: u, ms: at - j, from: j, to: at }); }
   return rows.sort((a, b) => a.ms - b.ms).slice(0, limit);
 }
 /** 参加(joinedTimestamp)から、そのロールを取るまで */
-export function joinToStats(g, role, joinedOf) {
-  const dur = []; for (const [u, at] of firstAdds(g, role)) { const j = joinedOf(u); if (j && at >= j) dur.push(at - j); }
+export function joinToStats(g, role, joinedOf, period = null) {
+  const dur = []; for (const [u, at] of firstAdds(g, role, period)) { const j = joinedOf(u); if (j && at >= j) dur.push(at - j); }
   return summarize(dur);
 }
 export const dur = (ms) => { if (ms == null) return '—'; const s = Math.round(ms / 1000), d = Math.floor(s / 86400), h = Math.floor(s % 86400 / 3600), m = Math.floor(s % 3600 / 60); return d ? `${d}日${h}時間` : h ? `${h}時間${m}分` : m ? `${m}分` : `${s}秒`; };
 
 /** 監査ログ(ロールの変更)から、取り込む。最大 maxEntries 件。権限(監査ログの表示)が必要 */
-export async function importAudit(guild, { maxEntries = 1000 } = {}) {
-  const g = guild.id; let before, entries = 0, added = 0;
+export async function importAudit(guild, { maxEntries = 1000, since = null, until = null } = {}) {
+  const g = guild.id; let before, entries = 0, added = 0, stop = false;
   while (entries < maxEntries) {
     const page = await guild.fetchAuditLogs({ type: AuditLogEvent.MemberRoleUpdate, limit: 100, ...(before ? { before } : {}) });
     if (!page.entries.size) break;
     for (const e of page.entries.values()) {
+      if (since != null && e.createdTimestamp < since) { stop = true; continue; } // 新しい順に読んでいるので、期間より前に来たら、終わり
+      if (until != null && e.createdTimestamp >= until) continue;
       entries++; const uid = e.targetId ?? e.target?.id; if (!uid) continue;
       for (const ch of e.changes ?? []) {
         const action = ch.key === '$add' ? 'add' : ch.key === '$remove' ? 'remove' : null; if (!action) continue;
         for (const r of ch.new ?? []) { const info = log(g, uid, r.id, e.createdTimestamp, action, 'audit'); added += Number(info.changes); }
       }
     }
-    before = page.entries.last().id; if (page.entries.size < 100) break;
+    before = page.entries.last().id; if (stop || page.entries.size < 100) break;
   }
   return { entries, added };
 }
@@ -140,20 +153,22 @@ export function parseNotice(m, roles, { forceRole = null } = {}) {
  * チャンネルの過去の発言から、ロール付与の通知を、拾って、記録する(取った時刻 = 通知の時刻)。
  * authorId: その発言者(BOT)の通知だけ。省略すると、BOTの発言だけ。roleId: ロールを、決めて読む(通知に、ロール名が無いとき)。preview: 記録せず、読み取れた例だけ返す
  */
-export async function importNotices(guild, channel, { authorId = null, roleId = null, preview = false, maxMessages = 10000 } = {}) {
+export async function importNotices(guild, channel, { authorId = null, roleId = null, preview = false, maxMessages = 10000, since = null, until = null } = {}) {
   const g = guild.id, roles = guild.roles.cache, found = [], samples = [], unread = [];
-  let scanned = 0, before;
+  let scanned = 0, before, stop = false;
   while (scanned < maxMessages) {
     const batch = await channel.messages.fetch({ limit: 100, ...(before ? { before } : {}) });
     if (!batch.size) break;
     for (const m of batch.values()) {
+      if (since != null && m.createdTimestamp < since) { stop = true; continue; } // 期間より前: 新しい順に読んでいるので、ここから先は、読まない
+      if (until != null && m.createdTimestamp >= until) continue;
       scanned++;
       if (authorId ? m.author?.id !== authorId : !m.author?.bot) continue;
       const r = parseNotice(m, roles, { forceRole: roleId });
       if (r) { found.push({ ...r, at: m.createdTimestamp }); if (samples.length < 5) samples.push({ userId: r.userId, roleName: roles.get(r.roleId)?.name ?? r.roleId, at: m.createdTimestamp, text: textOf(m).slice(0, 80) }); }
       else if (unread.length < 3 && textOf(m)) unread.push(textOf(m).slice(0, 80));
     }
-    before = batch.last().id; if (batch.size < 100) break;
+    before = batch.last().id; if (stop || batch.size < 100) break;
   }
   let added = 0;
   if (!preview) { db.exec('BEGIN'); try { for (const e of found) added += Number(log(g, e.userId, e.roleId, e.at, 'add', 'notice').changes); db.exec('COMMIT'); } catch (err) { db.exec('ROLLBACK'); throw err; } }
