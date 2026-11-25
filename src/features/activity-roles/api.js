@@ -2,7 +2,7 @@ import { db } from '../../core/db.js';
 import { METRICS, getRules, getSettings, saveSettings, leaderboard, metricValue } from './db.js';
 import { evaluateGuild } from './roles.js';
 import { sendTest } from './notify.js';
-import { pairStats, fastestSinceJoin, joinToStats, importAudit, importNotices, trackingSince, summarize, sourceCounts, parsePeriod } from './roletime.js';
+import { pairStats, fastestSinceJoin, joinToStats, importAudit, importNotices, trackingSince, summarize, sourceCounts, parsePeriod, firstRoleStats } from './roletime.js';
 import { chanOf } from '../../core/channels.js';
 import { startBackfill, resumeBackfill, getJob } from './backfill.js';
 
@@ -115,6 +115,9 @@ export function mountApi(router) {
       const rules = getRules(g.id).filter((r) => r.metric === metric).sort((a, b) => a.threshold - b.threshold);
       for (let k = 1; k < rules.length; k++) { const r = pairStats(g.id, rules[k - 1].role_id, rules[k].role_id, 1, period); chain.push({ metric, from: rules[k - 1].role_id, to: rules[k].role_id, fromName: roleName(g, rules[k - 1].role_id), toName: roleName(g, rules[k].role_id), n: r.n, avg: r.avg ?? null, median: r.median ?? null, min: r.min ?? null }); }
     }
+    // 「ロールなし」→ 最初のロール(ルールに入っている、どれかのロール)
+    const ruleRoles = [...new Set(getRules(g.id).map((r) => r.role_id))], first = firstRoleStats(g.id, ruleRoles, joinedOf, 10, period);
+    out.first = { ...first, fastest: await Promise.all(first.fastest.map(async (x) => ({ ...x, name: await nameOf(g, x.user_id), roleName: roleName(g, x.role_id) }))) };
     out.chain = chain; res.json(out);
   });
   router.post('/role-times/import-audit', async (req, res) => {

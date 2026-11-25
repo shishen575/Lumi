@@ -75,6 +75,17 @@ export function fastestSinceJoin(g, role, joinedOf, limit = 10, period = null) {
   for (const [u, at] of firstAdds(g, role, period)) { const j = joinedOf(u); if (j && at >= j) rows.push({ user_id: u, ms: at - j, from: j, to: at }); }
   return rows.sort((a, b) => a.ms - b.ms).slice(0, limit);
 }
+/**
+ * 「ロールなし」から、最初のロールまで: roleIds(ランクのロールなど)のうち、いちばん早く取ったものを、その人の「最初のロール」として、
+ * サーバーに入ってから、それを取るまでの時間を出す。期間は、「最初のロールを取った」時刻にかかる
+ */
+export function firstRoleStats(g, roleIds, joinedOf, limit = 10, period = null) {
+  const best = new Map(); // user → { at, role }
+  for (const role of roleIds) for (const [u, at] of firstAdds(g, role)) { const cur = best.get(u); if (!cur || at < cur.at) best.set(u, { at, role }); }
+  const rows = [];
+  for (const [u, { at, role }] of best) { const j = joinedOf(u); if (j && at >= j && inPeriod(at, period)) rows.push({ user_id: u, ms: at - j, from: j, to: at, role_id: role }); }
+  return { ...summarize(rows.map((r) => r.ms)), fastest: rows.sort((a, b) => a.ms - b.ms).slice(0, limit) };
+}
 /** 参加(joinedTimestamp)から、そのロールを取るまで */
 export function joinToStats(g, role, joinedOf, period = null) {
   const dur = []; for (const [u, at] of firstAdds(g, role, period)) { const j = joinedOf(u); if (j && at >= j) dur.push(at - j); }

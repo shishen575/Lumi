@@ -3,7 +3,7 @@ import { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, But
 const eph = (on = true) => (on ? { flags: MessageFlags.Ephemeral } : {}); // 自分だけに表示
 import { db } from '../../core/db.js';
 import { METRICS, getRules, getStats, metricValue } from './db.js';
-import { pairStats, fastestSinceJoin, joinToStats, roleObtainedAt, trackingSince, dur, importNotices, parsePeriod, periodText } from './roletime.js';
+import { pairStats, fastestSinceJoin, joinToStats, roleObtainedAt, trackingSince, dur, importNotices, parsePeriod, periodText, firstRoleStats } from './roletime.js';
 import { hasAccessSync } from '../../core/access.js';
 
 const COL = { messages: 'messages', reactions_received: 'reactions_received', reactions_given: 'reactions_given', voice_minutes: 'voice_seconds' };
@@ -201,6 +201,9 @@ export const roletimeCommand = {
       .addRoleOption((o) => o.setName('role').setDescription('ランキングを見たいロール').setRequired(true)).addRoleOption((o) => o.setName('from').setDescription('どこから数えるか(省略すると、サーバーに入ってから)'))
       .addStringOption((o) => o.setName('since').setDescription('期間の開始日(日本時間。例: 2026-11-01)')).addStringOption((o) => o.setName('until').setDescription('期間の終了日(その日を含む。例: 2026-11-30)'))
       .addBooleanOption((o) => o.setName('public').setDescription('みんなに見せる(省略すると、自分だけ)')))
+    .addSubcommand((c) => c.setName('first').setDescription('「ロールなし」から、最初のロールを取るまでの時間(サーバーに入ってから)と、いちばん早かった人')
+      .addStringOption((o) => o.setName('since').setDescription('期間の開始日(日本時間。例: 2026-11-01)')).addStringOption((o) => o.setName('until').setDescription('期間の終了日(その日を含む。例: 2026-11-30)'))
+      .addBooleanOption((o) => o.setName('public').setDescription('みんなに見せる(省略すると、自分だけ)')))
     .addSubcommand((c) => c.setName('me').setDescription('自分が、各ロールを取った日時と、サーバーに入ってからの時間'))
     .addSubcommand((c) => c.setName('import-notices').setDescription('【管理者向け】別のBOTなどの、ロール付与の通知から、取った時刻を取り込みます')
       .addChannelOption((o) => o.setName('channel').setDescription('通知が出ていたチャンネル(スレッド)').setRequired(true))
@@ -212,6 +215,17 @@ export const roletimeCommand = {
     const g = i.guildId, sub = i.options.getSubcommand(), joinedOf = (u) => i.guild.members.cache.get(u)?.joinedTimestamp ?? null, vis = () => eph(!i.options.getBoolean?.('public'));
     const period = parsePeriod(i.options.getString?.('since'), i.options.getString?.('until'));
     if (period.error) return i.reply({ content: period.error, ...eph(true) });
+    if (sub === 'first') {
+      const ruleRoles = [...new Set(getRules(g).map((r) => r.role_id))].filter((id) => i.guild.roles.cache.has(id));
+      if (!ruleRoles.length) return i.reply({ content: '活動ロールの、ルールが、ありません。', ...eph(true) });
+      const r = firstRoleStats(g, ruleRoles, joinedOf, 10, period);
+      const e = new EmbedBuilder().setColor(0x57f287).setTitle('🌱 ロールなし → 最初のロール').setDescription('サーバーに入ってから、活動ロール(ルールに入っているロール)を、はじめて取るまでの時間です。');
+      if (!r.n) e.addFields({ name: '結果', value: '記録が、ありません。' });
+      else e.addFields({ name: `${r.n}人の記録`, value: `平均 **${dur(r.avg)}** ・ 中央値 **${dur(r.median)}**\n早い方 25%: ${dur(r.p25)} ・ 遅い方 75%: ${dur(r.p75)}\n最短 **${dur(r.min)}** ・ 最長 ${dur(r.max)}` },
+        { name: '🏃 いちばん早かった人', value: r.fastest.map((x, n) => `${MEDALS[n] ?? `${n + 1}.`} <@${x.user_id}> — **${dur(x.ms)}**(「${i.guild.roles.cache.get(x.role_id)?.name ?? '?'}」)`).join('\n') });
+      e.addFields({ name: '記録について', value: `${periodText(period) ? `${periodText(period)}(最初のロールを、取った時刻で)\n` : ''}${since(g)}` });
+      return i.reply({ embeds: [e], ...vis(), allowedMentions: { parse: [] } });
+    }
     if (sub === 'import-notices') {
       if (!hasAccessSync(i.guild, i.member, i.user.id)) return i.reply({ content: '取り込めるのは、運営・サーバーのオーナー・管理者だけです。', ...eph(true) });
       const ch = i.options.getChannel('channel', true), bot = i.options.getUser('bot'), role = i.options.getRole('role'), preview = !!i.options.getBoolean('preview');
