@@ -4,6 +4,7 @@ import { evaluateUser } from './roles.js';
 import { mountApi } from './api.js';
 import { noteLive, markInterrupted, startHeartbeat, resumeBackfill } from './backfill.js';
 import { rankCommand, topCommand, rolesCommand, roletimeCommand } from './commands.js';
+import { roletimeComponent } from './roletimeview.js';
 import { syncMemberRoles, syncGuildRoles, forgetMember } from './roletime.js';
 
 export default {
@@ -19,7 +20,8 @@ export default {
     '`/top` で、ランキングを10位ごとに見られます(ボタンでページ送り)。',
     '`/roles` で、取れるロールと昇格の条件、自分の達成状況を確認できます。',
   ].join('\n'),
-  commands: [rankCommand, topCommand, rolesCommand, roletimeCommand], // スラッシュコマンド(/rank /top /roles)
+  commands: [rankCommand, topCommand, rolesCommand, roletimeCommand],
+  components: [roletimeComponent], // スラッシュコマンド(/rank /top /roles)
 
   register({ client, router }) {
     mountApi(router, client);
