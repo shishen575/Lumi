@@ -2,7 +2,7 @@ import { db } from '../../core/db.js';
 import { METRICS, getRules, getSettings, saveSettings, leaderboard, metricValue } from './db.js';
 import { evaluateGuild } from './roles.js';
 import { sendTest } from './notify.js';
-import { pairStats, fastestSinceJoin, joinToStats, importAudit, importNotices, trackingSince, summarize, sourceCounts, parsePeriod, firstRoleStats } from './roletime.js';
+import { pairStats, fastestSinceJoin, joinToStats, importAudit, importNotices, trackingSince, summarize, sourceCounts, parsePeriod, firstRoleStats, messageRoles } from './roletime.js';
 import { chanOf } from '../../core/channels.js';
 import { startBackfill, resumeBackfill, getJob } from './backfill.js';
 
@@ -105,18 +105,20 @@ export function mountApi(router) {
   router.get('/role-times', async (req, res) => {
     const g = req.guild, from = String(req.query.from ?? ''), to = String(req.query.to ?? ''), period = parsePeriod(req.query.since, req.query.until);
     if (period.error) return res.status(400).json({ error: period.error });
+    const msgRoles = messageRoles(g.id), msgIds = new Set(msgRoles.map((r) => r.role_id)); // 集計の対象は、「会話数(発言数)」で付与するロールだけ
+    if ((from && !msgIds.has(from)) || (to && !msgIds.has(to))) return res.status(400).json({ error: '会話数(発言数)で付与するロールを、選んでください' });
     const joinedOf = (u) => g.members.cache.get(u)?.joinedTimestamp ?? null, withNames = (rows) => Promise.all(rows.map(async (x) => ({ ...x, name: await nameOf(g, x.user_id) })));
-    const out = { since: trackingSince(g.id), sources: sourceCounts(g.id) };
+    const out = { since: trackingSince(g.id), sources: sourceCounts(g.id), roles: msgRoles.map((r) => ({ id: r.role_id, name: roleName(g, r.role_id), threshold: r.threshold })).filter((r) => g.roles.cache.has(r.id)) };
     if (to && from) { const r = pairStats(g.id, from, to, 10, period); out.pair = { ...r, fastest: await withNames(r.fastest), fromName: roleName(g, from), toName: roleName(g, to) }; }
     else if (to) { out.join = { toName: roleName(g, to), stats: joinToStats(g.id, to, joinedOf, period), fastest: await withNames(fastestSinceJoin(g.id, to, joinedOf, 10, period)) }; }
     // 順番に並んだ、ランクのロール(条件の値が、小さい順)の、となりどうしの達成時間
     const chain = [];
-    for (const metric of Object.keys(METRICS)) {
+    for (const metric of ['messages']) {
       const rules = getRules(g.id).filter((r) => r.metric === metric).sort((a, b) => a.threshold - b.threshold);
       for (let k = 1; k < rules.length; k++) { const r = pairStats(g.id, rules[k - 1].role_id, rules[k].role_id, 1, period); chain.push({ metric, from: rules[k - 1].role_id, to: rules[k].role_id, fromName: roleName(g, rules[k - 1].role_id), toName: roleName(g, rules[k].role_id), n: r.n, avg: r.avg ?? null, median: r.median ?? null, min: r.min ?? null }); }
     }
     // 「ロールなし」→ 最初のロール(ルールに入っている、どれかのロール)
-    const ruleRoles = [...new Set(getRules(g.id).map((r) => r.role_id))], first = firstRoleStats(g.id, ruleRoles, joinedOf, 10, period);
+    const first = firstRoleStats(g.id, [...msgIds], joinedOf, 10, period);
     out.first = { ...first, fastest: await Promise.all(first.fastest.map(async (x) => ({ ...x, name: await nameOf(g, x.user_id), roleName: roleName(g, x.role_id) }))) };
     out.chain = chain; res.json(out);
   });

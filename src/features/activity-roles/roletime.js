@@ -17,6 +17,8 @@ migrate('CREATE INDEX IF NOT EXISTS role_log_user ON role_log (guild_id, user_id
 migrate(`CREATE TABLE IF NOT EXISTS role_seen (guild_id TEXT NOT NULL, user_id TEXT NOT NULL, role_id TEXT NOT NULL, PRIMARY KEY (guild_id, user_id, role_id))`);
 
 const log = (g, u, r, at, action, source) => db.prepare('INSERT OR IGNORE INTO role_log (guild_id, user_id, role_id, at, action, source) VALUES (?,?,?,?,?,?)').run(g, u, r, at, action, source);
+/** 「発言数(会話数)」のルールで付与するロール(条件の小さい順)。達成時間の集計は、これだけを、対象にする */
+export const messageRoles = (g) => { const seen = new Set(); return getRules(g).filter((r) => r.metric === 'messages').sort((a, b) => a.threshold - b.threshold).filter((r) => !seen.has(r.role_id) && seen.add(r.role_id)).map((r) => ({ role_id: r.role_id, threshold: r.threshold })); };
 export const trackingSince = (g) => getKV(g, 'role_log_since', null);
 
 /**
