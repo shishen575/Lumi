@@ -218,11 +218,11 @@ export const roletimeCommand = {
     if (sub === 'first') {
       const ruleRoles = [...new Set(getRules(g).map((r) => r.role_id))].filter((id) => i.guild.roles.cache.has(id));
       if (!ruleRoles.length) return i.reply({ content: '活動ロールの、ルールが、ありません。', ...eph(true) });
-      const r = firstRoleStats(g, ruleRoles, joinedOf, 10, period);
+      const r = firstRoleStats(g, ruleRoles, joinedOf, 100000, period), top = r.fastest.slice(0, 10), myPos = r.fastest.findIndex((x) => x.user_id === i.user.id);
       const e = new EmbedBuilder().setColor(0x57f287).setTitle('🌱 ロールなし → 最初のロール').setDescription('サーバーに入ってから、活動ロール(ルールに入っているロール)を、はじめて取るまでの時間です。');
       if (!r.n) e.addFields({ name: '結果', value: '記録が、ありません。' });
       else e.addFields({ name: `${r.n}人の記録`, value: `平均 **${dur(r.avg)}** ・ 中央値 **${dur(r.median)}**\n早い方 25%: ${dur(r.p25)} ・ 遅い方 75%: ${dur(r.p75)}\n最短 **${dur(r.min)}** ・ 最長 ${dur(r.max)}` },
-        { name: '🏃 いちばん早かった人', value: r.fastest.map((x, n) => `${MEDALS[n] ?? `${n + 1}.`} <@${x.user_id}> — **${dur(x.ms)}**(「${i.guild.roles.cache.get(x.role_id)?.name ?? '?'}」)`).join('\n') });
+        { name: '🏃 いちばん早かった人', value: top.map((x, n) => `${MEDALS[n] ?? `${n + 1}.`} <@${x.user_id}> — **${dur(x.ms)}**(「${i.guild.roles.cache.get(x.role_id)?.name ?? '?'}」)`).join('\n') + (myPos >= 10 ? `\n…\n**あなた: ${myPos + 1}位 — ${dur(r.fastest[myPos].ms)}**` : '') });
       e.addFields({ name: '記録について', value: `${periodText(period) ? `${periodText(period)}(最初のロールを、取った時刻で)\n` : ''}${since(g)}` });
       return i.reply({ embeds: [e], ...vis(), allowedMentions: { parse: [] } });
     }
@@ -237,24 +237,30 @@ export const roletimeCommand = {
       } catch (e) { return i.editReply({ content: `読めませんでした: ${e.message}(BOTに、そのチャンネルを読む権限が必要です)` }); }
     }
     if (sub === 'me') {
-      const rows = db.prepare("SELECT role_id, MIN(at) at FROM role_log WHERE guild_id=? AND user_id=? AND action='add' GROUP BY role_id ORDER BY at").all(g, i.user.id), joined = joinedOf(i.user.id);
-      const e = new EmbedBuilder().setColor(0x6d5dfc).setTitle('🕒 ロールを取った日時').setDescription(rows.length ? rows.filter((r) => i.guild.roles.cache.has(r.role_id)).map((r) => `<@&${r.role_id}> — <t:${Math.floor(r.at / 1000)}:f>${joined && r.at >= joined ? `(入ってから ${dur(r.at - joined)})` : ''}`).join('\n') || '記録が、ありません' : '記録が、ありません。').addFields({ name: '記録', value: since(g) });
+      const target = i.options.getUser?.('user') ?? i.user, mine = target.id === i.user.id;
+      const rows = db.prepare("SELECT role_id, MIN(at) at FROM role_log WHERE guild_id=? AND user_id=? AND action='add' GROUP BY role_id ORDER BY at").all(g, target.id).filter((r) => i.guild.roles.cache.has(r.role_id)), joined = joinedOf(target.id);
+      const standing = (role) => { const all = fastestSinceJoin(g, role, joinedOf, 100000), pos = all.findIndex((x) => x.user_id === target.id); return pos >= 0 ? `${pos + 1}位/${all.length}人` : null; }; // そのロールを、入ってから早く取った順位
+      const lines = rows.map((r) => { const st = joined && r.at >= joined ? standing(r.role_id) : null; return `<@&${r.role_id}> — <t:${Math.floor(r.at / 1000)}:f>${joined && r.at >= joined ? `(入ってから ${dur(r.at - joined)}${st ? ` ・ ${st}` : ''})` : ''}`; });
+      const ruleRoles = [...new Set(getRules(g).map((x) => x.role_id))], fr = firstRoleStats(g, ruleRoles, joinedOf, 100000), fpos = fr.fastest.findIndex((x) => x.user_id === target.id);
+      const e = new EmbedBuilder().setColor(0x6d5dfc).setTitle(`🕒 ${mine ? "自分" : target.username}がロールを取った日時`).setDescription(lines.join('\n') || '記録が、ありません。');
+      if (fpos >= 0) e.addFields({ name: '🌱 ロールなし → 最初のロール', value: `**${dur(fr.fastest[fpos].ms)}**(「${i.guild.roles.cache.get(fr.fastest[fpos].role_id)?.name ?? '?'}」)・ ${fpos + 1}位/${fr.fastest.length}人` });
+      e.addFields({ name: '記録', value: since(g) });
       return i.reply({ embeds: [e], ...eph(true), allowedMentions: { parse: [] } });
     }
     if (sub === 'pair') {
-      const a = i.options.getRole('from', true), b = i.options.getRole('to', true), r = pairStats(g, a.id, b.id, 5, period);
+      const a = i.options.getRole('from', true), b = i.options.getRole('to', true), r = pairStats(g, a.id, b.id, 100000, period), top5 = r.fastest.slice(0, 5), myPos = r.fastest.findIndex((x) => x.user_id === i.user.id);
       const e = new EmbedBuilder().setColor(0x6d5dfc).setTitle('⏱️ ロール間の達成時間').setDescription(`<@&${a.id}> → <@&${b.id}>`);
       if (!r.n) e.addFields({ name: '結果', value: `両方を取った記録のある人が、いません。(${a.name}: ${r.fromCount}人 / ${b.name}: ${r.toCount}人の記録)` });
       else e.addFields({ name: `${r.n}人の記録`, value: `平均 **${dur(r.avg)}** ・ 中央値 **${dur(r.median)}**\n早い方 25%: ${dur(r.p25)} ・ 遅い方 75%: ${dur(r.p75)}\n最短 **${dur(r.min)}** ・ 最長 ${dur(r.max)}` },
-        { name: '🏃 いちばん早かった人', value: r.fastest.map((x, n) => `${MEDALS[n] ?? `${n + 1}.`} <@${x.user_id}> — ${dur(x.ms)}`).join('\n') });
+        { name: '🏃 いちばん早かった人', value: top5.map((x, n) => `${MEDALS[n] ?? `${n + 1}.`} <@${x.user_id}> — ${dur(x.ms)}`).join('\n') + (myPos >= 5 ? `\n…\n**あなた: ${myPos + 1}位 — ${dur(r.fastest[myPos].ms)}**(${r.n}人中)` : '') });
       e.addFields({ name: '記録について', value: `${periodText(period) ? `${periodText(period)}(あとのロールを、取った時刻で)\n` : ''}${since(g)}${r.backwards ? `\n-# ${r.backwards}人は、順番が逆(Bが先)なので、除きました` : ''}` });
       return i.reply({ embeds: [e], ...vis(), allowedMentions: { parse: [] } });
     }
     // fastest
     const role = i.options.getRole('role', true), from = i.options.getRole('from');
-    const rows = from ? pairStats(g, from.id, role.id, 10, period).fastest : fastestSinceJoin(g, role.id, joinedOf, 10, period);
+    const allRows = from ? pairStats(g, from.id, role.id, 100000, period).fastest : fastestSinceJoin(g, role.id, joinedOf, 100000, period), rows = allRows.slice(0, 10), myPos = allRows.findIndex((x) => x.user_id === i.user.id);
     const e = new EmbedBuilder().setColor(0xf1c40f).setTitle(`🏆 「${role.name}」を、いちばん早く取った人`).setDescription(`${from ? `「${from.name}」を取ってから` : 'サーバーに入ってから'}の、早い順です。`);
-    e.addFields({ name: 'ランキング', value: rows.length ? rows.map((x, n) => `${MEDALS[n] ?? `${n + 1}.`} <@${x.user_id}> — **${dur(x.ms)}**`).join('\n') : '記録が、ありません。' });
+    e.addFields({ name: 'ランキング', value: (rows.length ? rows.map((x, n) => `${MEDALS[n] ?? `${n + 1}.`} <@${x.user_id}> — **${dur(x.ms)}**`).join('\n') : '記録が、ありません。') + (myPos >= 10 ? `\n…\n**あなた: ${myPos + 1}位 — ${dur(allRows[myPos].ms)}**(${allRows.length}人中)` : '') });
     if (!from) { const st = joinToStats(g, role.id, joinedOf, period); if (st.n) e.addFields({ name: '全体', value: `${st.n}人 ・ 平均 ${dur(st.avg)} ・ 中央値 ${dur(st.median)}` }); }
     e.addFields({ name: '記録について', value: `${periodText(period) ? `${periodText(period)}(あとのロールを、取った時刻で)\n` : ''}${since(g)}` });
     return i.reply({ embeds: [e], ...vis(), allowedMentions: { parse: [] } });
