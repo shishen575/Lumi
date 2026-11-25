@@ -204,13 +204,16 @@ export const roletimeCommand = {
     .addSubcommand((c) => c.setName('first').setDescription('「ロールなし」から、最初のロールを取るまでの時間(サーバーに入ってから)と、いちばん早かった人')
       .addStringOption((o) => o.setName('since').setDescription('期間の開始日(日本時間。例: 2026-11-01)')).addStringOption((o) => o.setName('until').setDescription('期間の終了日(その日を含む。例: 2026-11-30)'))
       .addBooleanOption((o) => o.setName('public').setDescription('みんなに見せる(省略すると、自分だけ)')))
-    .addSubcommand((c) => c.setName('me').setDescription('自分が、各ロールを取った日時と、サーバーに入ってからの時間'))
+    .addSubcommand((c) => c.setName('me').setDescription('各ロールを取った日時と、サーバーに入ってからの時間・順位(自分か、ほかの人)')
+      .addUserOption((o) => o.setName('user').setDescription('見たい人(省略すると、自分)'))
+      .addBooleanOption((o) => o.setName('public').setDescription('みんなに見せる(省略すると、自分だけ)')))
     .addSubcommand((c) => c.setName('import-notices').setDescription('【管理者向け】別のBOTなどの、ロール付与の通知から、取った時刻を取り込みます')
       .addChannelOption((o) => o.setName('channel').setDescription('通知が出ていたチャンネル(スレッド)').setRequired(true))
       .addUserOption((o) => o.setName('bot').setDescription('その通知を出したBOT(省略すると、BOTの発言すべて)'))
       .addRoleOption((o) => o.setName('role').setDescription('通知に、ロール名が無いとき: どのロールの通知か'))
       .addBooleanOption((o) => o.setName('preview').setDescription('記録せず、読み取れる例だけ見る'))
-      .addStringOption((o) => o.setName('since').setDescription('期間の開始日(日本時間。例: 2026-11-01)')).addStringOption((o) => o.setName('until').setDescription('期間の終了日(その日を含む。例: 2026-11-30)'))),
+      .addStringOption((o) => o.setName('since').setDescription('期間の開始日(日本時間。例: 2026-11-01)')).addStringOption((o) => o.setName('until').setDescription('期間の終了日(その日を含む。例: 2026-11-30)'))
+      .addBooleanOption((o) => o.setName('public').setDescription('みんなに見せる(省略すると、自分だけ)'))),
   async execute(i) {
     const g = i.guildId, sub = i.options.getSubcommand(), joinedOf = (u) => i.guild.members.cache.get(u)?.joinedTimestamp ?? null, vis = () => eph(!i.options.getBoolean?.('public'));
     const period = parsePeriod(i.options.getString?.('since'), i.options.getString?.('until'));
@@ -229,7 +232,7 @@ export const roletimeCommand = {
     if (sub === 'import-notices') {
       if (!hasAccessSync(i.guild, i.member, i.user.id)) return i.reply({ content: '取り込めるのは、運営・サーバーのオーナー・管理者だけです。', ...eph(true) });
       const ch = i.options.getChannel('channel', true), bot = i.options.getUser('bot'), role = i.options.getRole('role'), preview = !!i.options.getBoolean('preview');
-      await i.deferReply(eph(true));
+      await i.deferReply(vis());
       try {
         const r = await importNotices(i.guild, await i.guild.channels.fetch(ch.id), { authorId: bot?.id ?? null, roleId: role?.id ?? null, preview, since: period.since, until: period.until });
         const sample = r.samples.map((x) => `・<@${x.userId}> が **${x.roleName}**(<t:${Math.floor(x.at / 1000)}:f>)\n  -# ${x.text.replace(/\n/g, ' ')}`).join('\n');
@@ -245,7 +248,7 @@ export const roletimeCommand = {
       const e = new EmbedBuilder().setColor(0x6d5dfc).setTitle(`🕒 ${mine ? "自分" : target.username}がロールを取った日時`).setDescription(lines.join('\n') || '記録が、ありません。');
       if (fpos >= 0) e.addFields({ name: '🌱 ロールなし → 最初のロール', value: `**${dur(fr.fastest[fpos].ms)}**(「${i.guild.roles.cache.get(fr.fastest[fpos].role_id)?.name ?? '?'}」)・ ${fpos + 1}位/${fr.fastest.length}人` });
       e.addFields({ name: '記録', value: since(g) });
-      return i.reply({ embeds: [e], ...eph(true), allowedMentions: { parse: [] } });
+      return i.reply({ embeds: [e], ...vis(), allowedMentions: { parse: [] } });
     }
     if (sub === 'pair') {
       const a = i.options.getRole('from', true), b = i.options.getRole('to', true), r = pairStats(g, a.id, b.id, 100000, period), top5 = r.fastest.slice(0, 5), myPos = r.fastest.findIndex((x) => x.user_id === i.user.id);
