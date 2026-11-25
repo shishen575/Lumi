@@ -162,6 +162,31 @@
         } },
 
       /* ===== 過去ログ取り込み ===== */
+      { id: 'roletime', title: 'ロール達成時間', icon: 'chart',
+        async render(el, { api, roles: getRoles, esc, toast, pageHeader }) {
+          const roles = await getRoles();
+          const dur = (ms) => { if (ms == null) return '—'; const t = Math.round(ms / 1000), d = Math.floor(t / 86400), h = Math.floor(t % 86400 / 3600), m = Math.floor(t % 3600 / 60); return d ? `${d}日${h}時間` : h ? `${h}時間${m}分` : m ? `${m}分` : `${t}秒`; };
+          const opts = (blank) => `<option value="">${blank}</option>${roles.map((r) => `<option value="${r.id}">${esc(r.name)}</option>`).join('')}`;
+          let from = '', to = '';
+          const draw = async () => {
+            const r = await api(`/role-times?from=${from}&to=${to}`), since = r.since ? new Date(r.since).toLocaleDateString('ja-JP') : null;
+            const rank = (rows) => rows.length ? `<ol class="lb">${rows.map((x, n) => `<li><span class="rk ${n < 3 ? 'top' : ''}">${n + 1}</span><span class="nm">${esc(x.name)}</span><span class="val">${dur(x.ms)}</span></li>`).join('')}</ol>` : '<p class="mut" style="padding:0 18px 14px">記録が、ありません</p>';
+            el.innerHTML = `${pageHeader('ロール達成時間', 'ロールを取った時刻を記録して、「サーバーに入ってから、ロールを取るまで」「ロールAからロールBまで」の時間と、いちばん早かった人を調べます。')}
+              <div class="card"><div class="grid2"><div class="field"><label class="f" for="rf">どこから(省略すると、サーバーに入ってから)</label><select id="rf">${opts('サーバーに入ってから')}</select></div>
+                <div class="field"><label class="f" for="rt">どのロールまで</label><select id="rt">${opts('ロールを選ぶ')}</select></div></div>
+                <p class="hint">${since ? `記録の開始: ${since}。これより前に取ったロールの時刻は、分かりません(Discordが、持っていないため)。` : '記録は、まだ、始まっていません。'} 約45日前までは、下の「監査ログから取り込む」で、さかのぼれます。</p></div>
+              ${r.pair ? `<div class="card"><h2>${esc(r.pair.fromName)} → ${esc(r.pair.toName)}</h2>${r.pair.n ? `<div class="tiles"><div class="tile"><div class="k">記録のある人</div><div class="v">${r.pair.n}<span class="u">人</span></div></div><div class="tile"><div class="k">平均</div><div class="v" style="font-size:22px">${dur(r.pair.avg)}</div></div><div class="tile"><div class="k">中央値</div><div class="v" style="font-size:22px">${dur(r.pair.median)}</div></div><div class="tile"><div class="k">最短</div><div class="v" style="font-size:22px">${dur(r.pair.min)}</div></div></div>` : '<p class="mut">両方を取った記録のある人が、いません。</p>'}</div>
+                <div class="card flush"><div class="card-h"><h2>🏃 いちばん早かった人</h2></div>${rank(r.pair.fastest)}</div>` : ''}
+              ${r.join ? `<div class="card"><h2>サーバーに入ってから「${esc(r.join.toName)}」まで</h2>${r.join.stats.n ? `<p>${r.join.stats.n}人 ・ 平均 <b>${dur(r.join.stats.avg)}</b> ・ 中央値 <b>${dur(r.join.stats.median)}</b></p>` : '<p class="mut">記録が、ありません。</p>'}</div>
+                <div class="card flush"><div class="card-h"><h2>🏃 いちばん早かった人</h2></div>${rank(r.join.fastest)}</div>` : ''}
+              <div class="card flush"><div class="card-h"><h2>ランクのロールの、となりどうし</h2></div>${r.chain.length ? `<div style="padding:0 18px 14px"><table><tr><th>ロール</th><th>→</th><th>人数</th><th>平均</th><th>中央値</th><th>最短</th></tr>${r.chain.map((c) => `<tr><td>${esc(c.fromName)}</td><td>${esc(c.toName)}</td><td>${c.n}</td><td>${dur(c.avg)}</td><td>${dur(c.median)}</td><td>${dur(c.min)}</td></tr>`).join('')}</table></div>` : '<p class="mut" style="padding:0 18px 14px">ルールが2つ以上、ありません。</p>'}</div>
+              <div class="card"><h2>監査ログから取り込む</h2><p class="hint">Discord の監査ログに残っている、ロールの変更(約45日分)から、取った時刻を、さかのぼって記録します。BOTに「監査ログの表示」の権限が、必要です。</p><div class="acts"><button class="btn" id="imp" type="button">取り込む</button></div><p class="hint" id="impr"></p></div>`;
+            el.querySelector('#rf').value = from; el.querySelector('#rt').value = to;
+            el.querySelector('#rf').onchange = (e) => { from = e.target.value; draw(); }; el.querySelector('#rt').onchange = (e) => { to = e.target.value; draw(); };
+            el.querySelector('#imp').onclick = async () => { el.querySelector('#impr').textContent = '取り込み中…'; try { const x = await api('/role-times/import-audit', { method: 'POST' }); el.querySelector('#impr').textContent = `✅ 監査ログ ${x.entries}件から、${x.added}件の記録を、足しました。`; setTimeout(draw, 1200); } catch (e) { el.querySelector('#impr').textContent = ''; toast(e.message); } };
+          };
+          await draw();
+        } },
       { id: 'import', title: '過去ログ取り込み', icon: 'download',
         async render(el, { api, esc, ic, toast, confirm, pageHeader }) {
           const { botJoinedAt } = await api('/meta');

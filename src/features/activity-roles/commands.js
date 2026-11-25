@@ -3,6 +3,7 @@ import { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, But
 const eph = (on = true) => (on ? { flags: MessageFlags.Ephemeral } : {}); // 自分だけに表示
 import { db } from '../../core/db.js';
 import { METRICS, getRules, getStats, metricValue } from './db.js';
+import { pairStats, fastestSinceJoin, joinToStats, roleObtainedAt, trackingSince, dur } from './roletime.js';
 
 const COL = { messages: 'messages', reactions_received: 'reactions_received', reactions_given: 'reactions_given', voice_minutes: 'voice_seconds' };
 const UNIT = { messages: '回', reactions_received: '個', reactions_given: '個', voice_minutes: '分' };
@@ -50,7 +51,7 @@ export const rankCommand = {
         `順位: ${pos ? `**${pos}位** / ${total}人` : '圏外'}`,
       ];
       if (tiers.length) {
-        lines.push(`ランク: ${cur ? `<@&${cur.role_id}>` : 'なし'}`);
+        { const got = cur ? roleObtainedAt(gid, user.id, cur.role_id) : null; lines.push(`ランク: ${cur ? `<@&${cur.role_id}>` : 'なし'}${got ? `(取った日: <t:${Math.floor(got / 1000)}:D>)` : ''}`); }
         lines.push(next
           ? `次: <@&${next.role_id}> まであと **${fmt(metric, next.threshold - v)}**(${fmt(metric, next.threshold)}で到達)`
           : '次: 最高ランクに到達しています 🎉');
@@ -183,5 +184,44 @@ export const rolesCommand = {
       .addFields(fields.slice(0, 25).map(({ name, value }) => ({ name, value })))
       .setFooter({ text: '自分の詳しい順位は /rank で確認できます' });
     await i.reply({ embeds: [embed], ...eph(i.options.getBoolean('private') ?? false) });
+  },
+};
+
+/* ---------- /roletime : ロールを取った時間・ロール間の達成時間・早かった人のランキング ---------- */
+const MEDALS = ['🥇', '🥈', '🥉'];
+const since = (g) => { const t = trackingSince(g); return t ? `記録の開始: <t:${Math.floor(t / 1000)}:D>(これより前に取ったロールの時刻は、分かりません)` : '記録は、まだ、始まっていません'; };
+export const roletimeCommand = {
+  data: new SlashCommandBuilder().setName('roletime').setDescription('ロールを取った時間と、ロール間の達成時間・いちばん早かった人のランキング').setDMPermission(false)
+    .addSubcommand((c) => c.setName('pair').setDescription('ロールAを取ってから、ロールBを取るまでの時間(平均・中央値など)')
+      .addRoleOption((o) => o.setName('from').setDescription('はじめのロール').setRequired(true)).addRoleOption((o) => o.setName('to').setDescription('次のロール').setRequired(true))
+      .addBooleanOption((o) => o.setName('public').setDescription('みんなに見せる(省略すると、自分だけ)')))
+    .addSubcommand((c) => c.setName('fastest').setDescription('そのロールを、いちばん早く取った人のランキング(サーバーに入ってから / 別のロールから)')
+      .addRoleOption((o) => o.setName('role').setDescription('ランキングを見たいロール').setRequired(true)).addRoleOption((o) => o.setName('from').setDescription('どこから数えるか(省略すると、サーバーに入ってから)'))
+      .addBooleanOption((o) => o.setName('public').setDescription('みんなに見せる(省略すると、自分だけ)')))
+    .addSubcommand((c) => c.setName('me').setDescription('自分が、各ロールを取った日時と、サーバーに入ってからの時間')),
+  async execute(i) {
+    const g = i.guildId, sub = i.options.getSubcommand(), joinedOf = (u) => i.guild.members.cache.get(u)?.joinedTimestamp ?? null, vis = () => eph(!i.options.getBoolean?.('public'));
+    if (sub === 'me') {
+      const rows = db.prepare("SELECT role_id, MIN(at) at FROM role_log WHERE guild_id=? AND user_id=? AND action='add' GROUP BY role_id ORDER BY at").all(g, i.user.id), joined = joinedOf(i.user.id);
+      const e = new EmbedBuilder().setColor(0x6d5dfc).setTitle('🕒 ロールを取った日時').setDescription(rows.length ? rows.filter((r) => i.guild.roles.cache.has(r.role_id)).map((r) => `<@&${r.role_id}> — <t:${Math.floor(r.at / 1000)}:f>${joined && r.at >= joined ? `(入ってから ${dur(r.at - joined)})` : ''}`).join('\n') || '記録が、ありません' : '記録が、ありません。').addFields({ name: '記録', value: since(g) });
+      return i.reply({ embeds: [e], ...eph(true), allowedMentions: { parse: [] } });
+    }
+    if (sub === 'pair') {
+      const a = i.options.getRole('from', true), b = i.options.getRole('to', true), r = pairStats(g, a.id, b.id);
+      const e = new EmbedBuilder().setColor(0x6d5dfc).setTitle('⏱️ ロール間の達成時間').setDescription(`<@&${a.id}> → <@&${b.id}>`);
+      if (!r.n) e.addFields({ name: '結果', value: `両方を取った記録のある人が、いません。(${a.name}: ${r.fromCount}人 / ${b.name}: ${r.toCount}人の記録)` });
+      else e.addFields({ name: `${r.n}人の記録`, value: `平均 **${dur(r.avg)}** ・ 中央値 **${dur(r.median)}**\n早い方 25%: ${dur(r.p25)} ・ 遅い方 75%: ${dur(r.p75)}\n最短 **${dur(r.min)}** ・ 最長 ${dur(r.max)}` },
+        { name: '🏃 いちばん早かった人', value: r.fastest.map((x, n) => `${MEDALS[n] ?? `${n + 1}.`} <@${x.user_id}> — ${dur(x.ms)}`).join('\n') });
+      e.addFields({ name: '記録について', value: `${since(g)}${r.backwards ? `\n-# ${r.backwards}人は、順番が逆(Bが先)なので、除きました` : ''}` });
+      return i.reply({ embeds: [e], ...vis(), allowedMentions: { parse: [] } });
+    }
+    // fastest
+    const role = i.options.getRole('role', true), from = i.options.getRole('from');
+    const rows = from ? pairStats(g, from.id, role.id, 10).fastest : fastestSinceJoin(g, role.id, joinedOf, 10);
+    const e = new EmbedBuilder().setColor(0xf1c40f).setTitle(`🏆 「${role.name}」を、いちばん早く取った人`).setDescription(`${from ? `「${from.name}」を取ってから` : 'サーバーに入ってから'}の、早い順です。`);
+    e.addFields({ name: 'ランキング', value: rows.length ? rows.map((x, n) => `${MEDALS[n] ?? `${n + 1}.`} <@${x.user_id}> — **${dur(x.ms)}**`).join('\n') : '記録が、ありません。' });
+    if (!from) { const st = joinToStats(g, role.id, joinedOf); if (st.n) e.addFields({ name: '全体', value: `${st.n}人 ・ 平均 ${dur(st.avg)} ・ 中央値 ${dur(st.median)}` }); }
+    e.addFields({ name: '記録について', value: since(g) });
+    return i.reply({ embeds: [e], ...vis(), allowedMentions: { parse: [] } });
   },
 };

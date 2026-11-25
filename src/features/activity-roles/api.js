@@ -2,6 +2,7 @@ import { db } from '../../core/db.js';
 import { METRICS, getRules, getSettings, saveSettings, leaderboard, metricValue } from './db.js';
 import { evaluateGuild } from './roles.js';
 import { sendTest } from './notify.js';
+import { pairStats, fastestSinceJoin, joinToStats, importAudit, trackingSince, summarize } from './roletime.js';
 import { startBackfill, resumeBackfill, getJob } from './backfill.js';
 
 /** router は /api/guilds/:gid/f/activity-roles に載っていて、req.guild が使える */
@@ -97,6 +98,27 @@ export function mountApi(router) {
     } catch (e) { res.status(400).json({ error: '送信に失敗: ' + e.message }); }
   });
 
+  // ロールを取った時間・ロール間の達成時間・早かった人のランキング
+  const nameOf = async (g, id) => { const m = g.members.cache.get(id) ?? (await g.members.fetch(id).catch(() => null)); return m?.displayName ?? id; };
+  const roleName = (g, id) => g.roles.cache.get(id)?.name ?? id;
+  router.get('/role-times', async (req, res) => {
+    const g = req.guild, from = String(req.query.from ?? ''), to = String(req.query.to ?? '');
+    const joinedOf = (u) => g.members.cache.get(u)?.joinedTimestamp ?? null, withNames = (rows) => Promise.all(rows.map(async (x) => ({ ...x, name: await nameOf(g, x.user_id) })));
+    const out = { since: trackingSince(g.id) };
+    if (to && from) { const r = pairStats(g.id, from, to, 10); out.pair = { ...r, fastest: await withNames(r.fastest), fromName: roleName(g, from), toName: roleName(g, to) }; }
+    else if (to) { out.join = { toName: roleName(g, to), stats: joinToStats(g.id, to, joinedOf), fastest: await withNames(fastestSinceJoin(g.id, to, joinedOf, 10)) }; }
+    // 順番に並んだ、ランクのロール(条件の値が、小さい順)の、となりどうしの達成時間
+    const chain = [];
+    for (const metric of Object.keys(METRICS)) {
+      const rules = getRules(g.id).filter((r) => r.metric === metric).sort((a, b) => a.threshold - b.threshold);
+      for (let k = 1; k < rules.length; k++) { const r = pairStats(g.id, rules[k - 1].role_id, rules[k].role_id, 1); chain.push({ metric, from: rules[k - 1].role_id, to: rules[k].role_id, fromName: roleName(g, rules[k - 1].role_id), toName: roleName(g, rules[k].role_id), n: r.n, avg: r.avg ?? null, median: r.median ?? null, min: r.min ?? null }); }
+    }
+    out.chain = chain; res.json(out);
+  });
+  router.post('/role-times/import-audit', async (req, res) => {
+    try { res.json(await importAudit(req.guild, { maxEntries: 1000 })); }
+    catch (e) { res.status(400).json({ error: `監査ログを読めませんでした(BOTに、「監査ログの表示」の権限が必要です): ${e.message}` }); }
+  });
   router.get('/leaderboard', async (req, res) => {
     const metric = req.query.metric in METRICS ? req.query.metric : 'messages';
     const rows = leaderboard(req.guild.id, metric);

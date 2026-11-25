@@ -3,7 +3,8 @@ import { addStat, getSettings, setLeft, reconcileMembers } from './db.js';
 import { evaluateUser } from './roles.js';
 import { mountApi } from './api.js';
 import { noteLive, markInterrupted, startHeartbeat, resumeBackfill } from './backfill.js';
-import { rankCommand, topCommand, rolesCommand } from './commands.js';
+import { rankCommand, topCommand, rolesCommand, roletimeCommand } from './commands.js';
+import { syncMemberRoles, syncGuildRoles, forgetMember } from './roletime.js';
 
 export default {
   name: 'activity-roles',
@@ -18,7 +19,7 @@ export default {
     '`/top` で、ランキングを10位ごとに見られます(ボタンでページ送り)。',
     '`/roles` で、取れるロールと昇格の条件、自分の達成状況を確認できます。',
   ].join('\n'),
-  commands: [rankCommand, topCommand, rolesCommand], // スラッシュコマンド(/rank /top /roles)
+  commands: [rankCommand, topCommand, rolesCommand, roletimeCommand], // スラッシュコマンド(/rank /top /roles)
 
   register({ client, router }) {
     mountApi(router, client);
@@ -33,11 +34,13 @@ export default {
     });
 
     // 退出したメンバーはランキングから除外(再参加で復活)。停止中の出入りは起動時に合わせ直す
-    client.on(Events.GuildMemberRemove, (m) => setLeft(m.guild.id, m.id, true));
-    client.on(Events.GuildMemberAdd, (m) => setLeft(m.guild.id, m.id, false));
+    client.on(Events.GuildMemberRemove, (m) => { setLeft(m.guild.id, m.id, true); try { forgetMember(m.guild.id, m.id); } catch { /* 記録の掃除 */ } });
+    // ロールを取った(外れた)時刻を、記録する(だれが付けても。あとで、ロール間の達成時間・早さのランキングに使う)
+    client.on(Events.GuildMemberUpdate, (_old, m) => { try { if (!m.user?.bot) syncMemberRoles(m.guild.id, m); } catch (e) { console.warn('[roletime] 記録に失敗:', e.message); } });
+    client.on(Events.GuildMemberAdd, (m) => { setLeft(m.guild.id, m.id, false); try { if (!m.user?.bot) syncMemberRoles(m.guild.id, m); } catch { /* 記録 */ } });
     client.once(Events.ClientReady, async () => {
       for (const g of client.guilds.cache.values()) {
-        try { reconcileMembers(g.id, (await g.members.fetch()).keys()); }
+        try { const all = await g.members.fetch(); reconcileMembers(g.id, all.keys()); syncGuildRoles(g, all.values()); }
         catch (e) { console.error(`[activity-roles] メンバー同期に失敗 ${g.name}:`, e.message); }
       }
     });
