@@ -2,7 +2,8 @@ import { db } from '../../core/db.js';
 import { METRICS, getRules, getSettings, saveSettings, leaderboard, metricValue } from './db.js';
 import { evaluateGuild } from './roles.js';
 import { sendTest } from './notify.js';
-import { pairStats, fastestSinceJoin, joinToStats, importAudit, trackingSince, summarize, sourceCounts } from './roletime.js';
+import { pairStats, fastestSinceJoin, joinToStats, importAudit, importNotices, trackingSince, summarize, sourceCounts } from './roletime.js';
+import { chanOf } from '../../core/channels.js';
 import { startBackfill, resumeBackfill, getJob } from './backfill.js';
 
 /** router は /api/guilds/:gid/f/activity-roles に載っていて、req.guild が使える */
@@ -118,6 +119,14 @@ export function mountApi(router) {
   router.post('/role-times/import-audit', async (req, res) => {
     try { res.json(await importAudit(req.guild, { maxEntries: 1000 })); }
     catch (e) { res.status(400).json({ error: `監査ログを読めませんでした(BOTに、「監査ログの表示」の権限が必要です): ${e.message}` }); }
+  });
+  // 別のBOTなどの、ロール付与の通知から、取った時刻を取り込む(preview: true なら、読み取れた例だけ)
+  router.post('/role-times/import-notices', async (req, res) => {
+    const b = req.body ?? {}, g = req.guild, ch = await chanOf(req.guild.client, String(b.channel_id ?? ''));
+    if (!ch?.messages || ch.guildId !== g.id) return res.status(400).json({ error: 'チャンネル(スレッド)が、見つかりません' });
+    const id = (v) => (/^\d{15,25}$/.test(String(v ?? '')) ? String(v) : null);
+    try { res.json(await importNotices(g, ch, { authorId: id(b.author_id), roleId: id(b.role_id), preview: !!b.preview })); }
+    catch (e) { res.status(400).json({ error: `読めませんでした(BOTに、そのチャンネルを読む権限が必要です): ${e.message}` }); }
   });
   router.get('/leaderboard', async (req, res) => {
     const metric = req.query.metric in METRICS ? req.query.metric : 'messages';

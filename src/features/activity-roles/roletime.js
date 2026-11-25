@@ -116,3 +116,46 @@ export async function estimateRoleTimes(guild) {
   return { users, added };
 }
 export const sourceCounts = (g) => Object.fromEntries(db.prepare("SELECT source, COUNT(*) c FROM role_log WHERE guild_id=? AND action='add' GROUP BY source").all(g).map((r) => [r.source, r.c]));
+
+/* ---------- 別のBOTなどが出した、ロール付与の通知から、取った時刻を、取り込む ---------- */
+const textOf = (m) => [m.content, ...(m.embeds ?? []).flatMap((e) => [e.title, e.description, e.author?.name, e.footer?.text, ...(e.fields ?? []).flatMap((f) => [f.name, f.value])])].filter(Boolean).join('\n');
+/** 通知の1通から、(だれが・どのロールを)を、読み取る。1人・1ロールに、決まったときだけ。{ userId, roleId } か null */
+export function parseNotice(m, roles, { forceRole = null } = {}) {
+  const text = textOf(m);
+  const users = new Set([...text.matchAll(/<@!?(\d{15,25})>/g)].map((x) => x[1])); for (const id of m.mentions?.users?.keys?.() ?? []) users.add(id);
+  if (users.size !== 1) return null; // 何人もの名前が出ている通知は、だれの分か、分からないので、読まない
+  const userId = [...users][0];
+  if (forceRole) return { userId, roleId: forceRole };
+  const byMention = new Set([...text.matchAll(/<@&(\d{15,25})>/g)].map((x) => x[1])); for (const id of m.mentions?.roles?.keys?.() ?? []) byMention.add(id);
+  const known = [...byMention].filter((id) => roles.has(id));
+  if (known.length === 1) return { userId, roleId: known[0] };
+  if (known.length > 1) return null;
+  // ロール名が、文章に出ているか(長い名前を、先に。「常連」と「超常連」の、取り違えを防ぐ)
+  const hits = [...roles.values()].filter((r) => r.name && r.name.length >= 2 && text.includes(r.name)).sort((a, b) => b.name.length - a.name.length);
+  if (!hits.length) return null;
+  const top = hits.filter((r) => r.name.length === hits[0].name.length);
+  return top.length === 1 ? { userId, roleId: top[0].id } : null;
+}
+/**
+ * チャンネルの過去の発言から、ロール付与の通知を、拾って、記録する(取った時刻 = 通知の時刻)。
+ * authorId: その発言者(BOT)の通知だけ。省略すると、BOTの発言だけ。roleId: ロールを、決めて読む(通知に、ロール名が無いとき)。preview: 記録せず、読み取れた例だけ返す
+ */
+export async function importNotices(guild, channel, { authorId = null, roleId = null, preview = false, maxMessages = 10000 } = {}) {
+  const g = guild.id, roles = guild.roles.cache, found = [], samples = [], unread = [];
+  let scanned = 0, before;
+  while (scanned < maxMessages) {
+    const batch = await channel.messages.fetch({ limit: 100, ...(before ? { before } : {}) });
+    if (!batch.size) break;
+    for (const m of batch.values()) {
+      scanned++;
+      if (authorId ? m.author?.id !== authorId : !m.author?.bot) continue;
+      const r = parseNotice(m, roles, { forceRole: roleId });
+      if (r) { found.push({ ...r, at: m.createdTimestamp }); if (samples.length < 5) samples.push({ userId: r.userId, roleName: roles.get(r.roleId)?.name ?? r.roleId, at: m.createdTimestamp, text: textOf(m).slice(0, 80) }); }
+      else if (unread.length < 3 && textOf(m)) unread.push(textOf(m).slice(0, 80));
+    }
+    before = batch.last().id; if (batch.size < 100) break;
+  }
+  let added = 0;
+  if (!preview) { db.exec('BEGIN'); try { for (const e of found) added += Number(log(g, e.userId, e.roleId, e.at, 'add', 'notice').changes); db.exec('COMMIT'); } catch (err) { db.exec('ROLLBACK'); throw err; } }
+  return { scanned, matched: found.length, added, preview, samples, unread };
+}

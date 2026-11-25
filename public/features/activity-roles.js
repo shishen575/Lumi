@@ -163,8 +163,8 @@
 
       /* ===== 過去ログ取り込み ===== */
       { id: 'roletime', title: 'ロール達成時間', icon: 'chart',
-        async render(el, { api, roles: getRoles, esc, toast, pageHeader }) {
-          const roles = await getRoles();
+        async render(el, { api, roles: getRoles, channels: getChannels, esc, toast, pageHeader }) {
+          const [roles, chans] = await Promise.all([getRoles(), getChannels()]);
           const dur = (ms) => { if (ms == null) return '—'; const t = Math.round(ms / 1000), d = Math.floor(t / 86400), h = Math.floor(t % 86400 / 3600), m = Math.floor(t % 3600 / 60); return d ? `${d}日${h}時間` : h ? `${h}時間${m}分` : m ? `${m}分` : `${t}秒`; };
           const opts = (blank) => `<option value="">${blank}</option>${roles.map((r) => `<option value="${r.id}">${esc(r.name)}</option>`).join('')}`;
           let from = '', to = '';
@@ -180,9 +180,24 @@
               ${r.join ? `<div class="card"><h2>サーバーに入ってから「${esc(r.join.toName)}」まで</h2>${r.join.stats.n ? `<p>${r.join.stats.n}人 ・ 平均 <b>${dur(r.join.stats.avg)}</b> ・ 中央値 <b>${dur(r.join.stats.median)}</b></p>` : '<p class="mut">記録が、ありません。</p>'}</div>
                 <div class="card flush"><div class="card-h"><h2>🏃 いちばん早かった人</h2></div>${rank(r.join.fastest)}</div>` : ''}
               <div class="card flush"><div class="card-h"><h2>ランクのロールの、となりどうし</h2></div>${r.chain.length ? `<div style="padding:0 18px 14px"><table><tr><th>ロール</th><th>→</th><th>人数</th><th>平均</th><th>中央値</th><th>最短</th></tr>${r.chain.map((c) => `<tr><td>${esc(c.fromName)}</td><td>${esc(c.toName)}</td><td>${c.n}</td><td>${dur(c.avg)}</td><td>${dur(c.median)}</td><td>${dur(c.min)}</td></tr>`).join('')}</table></div>` : '<p class="mut" style="padding:0 18px 14px">ルールが2つ以上、ありません。</p>'}</div>
+              <div class="card"><h2>別のBOTなどの、通知から取り込む</h2><p class="hint">ロールを付けたときに、通知(「@だれか さんが ○○ を獲得しました」など)を出していたチャンネル(スレッド)があれば、その通知の時刻を、「ロールを取った時刻」として、記録します。通知に、<b>だれか1人へのメンション</b>と、<b>ロールの名前(かメンション)</b>が、入っている必要があります。まず「試し読み」で、読み取れるか、確かめてください。</p>
+                <div class="grid2"><div class="field"><label class="f" for="nc">通知のチャンネル(スレッド)</label><select id="nc"><option value="">選ぶ</option>${chans.map((c) => `<option value="${c.id}">#${esc(c.name)}</option>`).join('')}</select></div>
+                  <div class="field"><label class="f" for="na">通知を出したBOTのユーザーID(省略可)</label><input id="na" placeholder="省略すると、BOTの発言すべて"></div>
+                  <div class="field"><label class="f" for="nr">ロールが決まっているとき(省略可)</label><select id="nr">${opts('通知から読み取る')}</select></div></div>
+                <div class="acts"><button class="btn ghost" id="npv" type="button">試し読み</button><button class="btn" id="nim" type="button">取り込む</button></div><div id="nres" class="small" style="margin-top:8px"></div></div>
               <div class="card"><h2>監査ログから取り込む</h2><p class="hint">Discord の監査ログに残っている、ロールの変更(約45日分)から、取った時刻を、さかのぼって記録します。BOTに「監査ログの表示」の権限が、必要です。</p><div class="acts"><button class="btn" id="imp" type="button">取り込む</button></div><p class="hint" id="impr"></p></div>`;
             el.querySelector('#rf').value = from; el.querySelector('#rt').value = to;
             el.querySelector('#rf').onchange = (e) => { from = e.target.value; draw(); }; el.querySelector('#rt').onchange = (e) => { to = e.target.value; draw(); };
+            const notice = async (preview) => {
+              const ch = el.querySelector('#nc').value; if (!ch) return toast('チャンネルを選んでください');
+              const box = el.querySelector('#nres'); box.textContent = '読み取り中…';
+              try {
+                const x = await api('/role-times/import-notices', { method: 'POST', body: { channel_id: ch, author_id: el.querySelector('#na').value.trim() || null, role_id: el.querySelector('#nr').value || null, preview } });
+                box.innerHTML = `${preview ? '👀 試し読み' : '✅ 取り込み'}: ${x.scanned}件の発言から、<b>${x.matched}件</b>の通知を、読み取りました${preview ? '' : `(${x.added}件を、新しく記録)`}。` + (x.samples.length ? `<ul style="margin:6px 0 0;padding-left:1.2em">${x.samples.map((t) => `<li>${esc(t.roleName)} — ${new Date(t.at).toLocaleString('ja-JP')} <span class="mut">${esc(t.text.replace(/\n/g, ' '))}</span></li>`).join('')}</ul>` : `<br>読み取れる通知が、ありませんでした。${x.unread.length ? '<br>例: ' + x.unread.map((t) => '「' + esc(t.replace(/\n/g, ' ')) + '」').join(' ') : ''}`);
+                if (!preview && x.added) setTimeout(draw, 1500);
+              } catch (e) { box.textContent = ''; toast(e.message); }
+            };
+            el.querySelector('#npv').onclick = () => notice(true); el.querySelector('#nim').onclick = () => notice(false);
             el.querySelector('#imp').onclick = async () => { el.querySelector('#impr').textContent = '取り込み中…'; try { const x = await api('/role-times/import-audit', { method: 'POST' }); el.querySelector('#impr').textContent = `✅ 監査ログ ${x.entries}件から、${x.added}件の記録を、足しました。`; setTimeout(draw, 1200); } catch (e) { el.querySelector('#impr').textContent = ''; toast(e.message); } };
           };
           await draw();

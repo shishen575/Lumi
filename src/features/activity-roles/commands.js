@@ -3,7 +3,8 @@ import { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, But
 const eph = (on = true) => (on ? { flags: MessageFlags.Ephemeral } : {}); // 自分だけに表示
 import { db } from '../../core/db.js';
 import { METRICS, getRules, getStats, metricValue } from './db.js';
-import { pairStats, fastestSinceJoin, joinToStats, roleObtainedAt, trackingSince, dur } from './roletime.js';
+import { pairStats, fastestSinceJoin, joinToStats, roleObtainedAt, trackingSince, dur, importNotices } from './roletime.js';
+import { hasAccessSync } from '../../core/access.js';
 
 const COL = { messages: 'messages', reactions_received: 'reactions_received', reactions_given: 'reactions_given', voice_minutes: 'voice_seconds' };
 const UNIT = { messages: '回', reactions_received: '個', reactions_given: '個', voice_minutes: '分' };
@@ -198,9 +199,24 @@ export const roletimeCommand = {
     .addSubcommand((c) => c.setName('fastest').setDescription('そのロールを、いちばん早く取った人のランキング(サーバーに入ってから / 別のロールから)')
       .addRoleOption((o) => o.setName('role').setDescription('ランキングを見たいロール').setRequired(true)).addRoleOption((o) => o.setName('from').setDescription('どこから数えるか(省略すると、サーバーに入ってから)'))
       .addBooleanOption((o) => o.setName('public').setDescription('みんなに見せる(省略すると、自分だけ)')))
-    .addSubcommand((c) => c.setName('me').setDescription('自分が、各ロールを取った日時と、サーバーに入ってからの時間')),
+    .addSubcommand((c) => c.setName('me').setDescription('自分が、各ロールを取った日時と、サーバーに入ってからの時間'))
+    .addSubcommand((c) => c.setName('import-notices').setDescription('【管理者向け】別のBOTなどの、ロール付与の通知から、取った時刻を取り込みます')
+      .addChannelOption((o) => o.setName('channel').setDescription('通知が出ていたチャンネル(スレッド)').setRequired(true))
+      .addUserOption((o) => o.setName('bot').setDescription('その通知を出したBOT(省略すると、BOTの発言すべて)'))
+      .addRoleOption((o) => o.setName('role').setDescription('通知に、ロール名が無いとき: どのロールの通知か'))
+      .addBooleanOption((o) => o.setName('preview').setDescription('記録せず、読み取れる例だけ見る'))),
   async execute(i) {
     const g = i.guildId, sub = i.options.getSubcommand(), joinedOf = (u) => i.guild.members.cache.get(u)?.joinedTimestamp ?? null, vis = () => eph(!i.options.getBoolean?.('public'));
+    if (sub === 'import-notices') {
+      if (!hasAccessSync(i.guild, i.member, i.user.id)) return i.reply({ content: '取り込めるのは、運営・サーバーのオーナー・管理者だけです。', ...eph(true) });
+      const ch = i.options.getChannel('channel', true), bot = i.options.getUser('bot'), role = i.options.getRole('role'), preview = !!i.options.getBoolean('preview');
+      await i.deferReply(eph(true));
+      try {
+        const r = await importNotices(i.guild, await i.guild.channels.fetch(ch.id), { authorId: bot?.id ?? null, roleId: role?.id ?? null, preview });
+        const sample = r.samples.map((x) => `・<@${x.userId}> が **${x.roleName}**(<t:${Math.floor(x.at / 1000)}:f>)\n  -# ${x.text.replace(/\n/g, ' ')}`).join('\n');
+        return i.editReply({ content: `${preview ? '👀 試し読み' : '✅ 取り込み'}: <#${ch.id}> の ${r.scanned}件の発言から、**${r.matched}件**の「ロールを取った」通知を、読み取りました。${preview ? '' : `(${r.added}件を、新しく記録)`}\n${sample || '読み取れる通知が、ありませんでした。'}${r.matched ? '' : `\n読み取れなかった発言の例: ${r.unread.map((t) => `「${t.replace(/\n/g, ' ')}」`).join(' ') || 'なし'}\n-# 通知に、だれかへのメンションと、ロールの名前(か、ロールのメンション)が、必要です。ロール名が無い通知は、role: で、ロールを決めてください。`}`, allowedMentions: { parse: [] } });
+      } catch (e) { return i.editReply({ content: `読めませんでした: ${e.message}(BOTに、そのチャンネルを読む権限が必要です)` }); }
+    }
     if (sub === 'me') {
       const rows = db.prepare("SELECT role_id, MIN(at) at FROM role_log WHERE guild_id=? AND user_id=? AND action='add' GROUP BY role_id ORDER BY at").all(g, i.user.id), joined = joinedOf(i.user.id);
       const e = new EmbedBuilder().setColor(0x6d5dfc).setTitle('🕒 ロールを取った日時').setDescription(rows.length ? rows.filter((r) => i.guild.roles.cache.has(r.role_id)).map((r) => `<@&${r.role_id}> — <t:${Math.floor(r.at / 1000)}:f>${joined && r.at >= joined ? `(入ってから ${dur(r.at - joined)})` : ''}`).join('\n') || '記録が、ありません' : '記録が、ありません。').addFields({ name: '記録', value: since(g) });
