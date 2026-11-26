@@ -6,7 +6,6 @@ import { METRICS, getRules, getStats, metricValue } from './db.js';
 import { pairStats, fastestSinceJoin, joinToStats, roleObtainedAt, trackingSince, dur, importNotices, parsePeriod, periodText, firstRoleStats, messageRoles, withBaseline, measureStart } from './roletime.js';
 import { buildRankView } from './roletimeview.js';
 import { cachedScan, withProgress } from '../pins/index.js';
-import { pinHistory } from '../pins/history.js';
 import { hasAccessSync } from '../../core/access.js';
 
 const COL = { messages: 'messages', reactions_received: 'reactions_received', reactions_given: 'reactions_given', voice_minutes: 'voice_seconds' };
@@ -210,11 +209,11 @@ function pinsView(i, list, page, label = 'いまのピン留めを数えてい�
 }
 async function topPins(i, page, deps = {}) {
   await i.deferReply(eph(i.options.getBoolean('private') ?? false)); // 全チャンネルを調べるので、先に、返事の枠を取る
-  // 過去の分まで数えた結果(/pins scan)があれば、それを使う(ピンを外した分も、入る)。なければ、いまのピン留めを数える
-  const hist = deps.history ?? pinHistory(i.guildId);
-  let list, label;
-  if (hist?.total) { list = [...hist.byTarget].sort((a, b) => b[1] - a[1] || String(a[0]).localeCompare(String(b[0]))); label = `過去の分も、数えています(${hist.total}件・${new Date(hist.finishedAt).toLocaleDateString('ja-JP')}に調べた結果)`; }
-  else { const r = await withProgress(i, cachedScan(i.guild, deps.scan ? { scan: deps.scan } : {}), 'ピン留めを数えています'); if (!r.ok) return i.editReply({ content: `調べられませんでした: ${r.error.message}` }); const scan = r.value; list = [...scan.byUser].sort((a, b) => b[1] - a[1] || String(a[0]).localeCompare(String(b[0]))); label = 'いまのピン留めだけ(過去の分は、/pins scan で、数えられます)'; }
+  // いま付いているピン留めを数える(自動では、探し直さない。結果は、新しいピン留めだけ、足されていく)
+  const r = await withProgress(i, cachedScan(i.guild, deps.scan ? { scan: deps.scan } : {}), 'ピン留めを数えています');
+  if (!r.ok) return i.editReply({ content: `調べられませんでした: ${r.error.message}` });
+  const list = [...r.value.byUser].sort((a, b) => b[1] - a[1] || String(a[0]).localeCompare(String(b[0])));
+  const label = `いま付いているピン留め(${new Date(r.value.at).toLocaleString('ja-JP')}に調べた結果)`;
   let view = pinsView(i, list, page, label);
   const msg = await i.editReply({ embeds: view.embeds, components: view.components });
   if (!view.components.length || !msg?.createMessageComponentCollector) return;

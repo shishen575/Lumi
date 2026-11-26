@@ -1,4 +1,4 @@
-import { SlashCommandBuilder, EmbedBuilder, MessageFlags, PermissionFlagsBits, ChannelType } from 'discord.js';
+import { SlashCommandBuilder, EmbedBuilder, MessageFlags, PermissionFlagsBits, ChannelType, MessageType, Events } from 'discord.js';
 import { hasAccessSync, canEditAccess } from '../../core/access.js';
 import { collectTargets } from '../activity-roles/backfill.js';
 import { startPinScan, scanState, pinHistory, markStarting, markFailed, isScanning } from './history.js';
@@ -9,7 +9,7 @@ import { startPinScan, scanState, pinHistory, markStarting, markFailed, isScanni
  *  /pins ranking … サーバー全体で、ピン留めが多いチャンネルの順位(全部のチャンネルを、順に調べるので、少し時間がかかります)
  */
 const EPH = { flags: MessageFlags.Ephemeral };
-const CACHE_MS = 10 * 60_000, cache = new Map(); // ranking の結果を、10分、覚える(調べ直しで、Discordに負担をかけない)
+const cache = new Map(); // いまのピン留めの結果。自動では、探し直さない(「調べ直す」を押したときだけ)。新しいピン留めは、bumpPin で足す
 
 const canRead = (ch, me) => ch.permissionsFor?.(me)?.has([PermissionFlagsBits.ViewChannel, PermissionFlagsBits.ReadMessageHistory]);
 /** そのチャンネルの、ピン留めを、全部、取る: [{ pinnedTimestamp, message }](新しい順) */
@@ -62,11 +62,20 @@ const when = (ts) => `<t:${Math.floor(ts / 1000)}:D>`;
 const inflight = new Map(); // サーバーごとの、調べ中のもの(同じものを、何度も、調べない): { promise, done, total }
 /** 調べている途中の、進み具合(なければ null) */
 export const scanProgress = (g) => { const f = inflight.get(g); return f ? { done: f.done, total: f.total } : null; };
+/** ピン留めされた(システムメッセージが来た)ら、覚えている結果に、1件、足す。外された分は、「調べ直す」まで、反映されない */
+export function bumpPin(m) {
+  if (m.type !== MessageType.ChannelPinnedMessage || !m.guildId || m.author?.bot) return;
+  const hit = cache.get(m.guildId); if (!hit) return;
+  const row = hit.rows.find((r) => r.id === m.channelId); if (row) row.count++; else hit.rows.push({ id: m.channelId, name: m.channel?.name ?? '', count: 1, thread: !!m.channel?.isThread?.() });
+  hit.rows.sort((a, b) => b.count - a.count);
+  const ref = m.reference?.messageId; if (!ref) return;
+  m.channel.messages.fetch(ref).then((t) => { if (t.author && !t.author.bot) hit.byUser.set(t.author.id, (hit.byUser.get(t.author.id) ?? 0) + 1); }).catch(() => {});
+}
 export const cachedResult = (g) => cache.get(g) ?? null;
 /** サーバー全体のピン留めの集計(10分、覚える)。/pins ranking・/top・ダッシュボードで、共有する。調べ中なら、その結果を、待つ */
 export function cachedScan(guild, { refresh = false, scan = countGuildPins } = {}) {
   const hit = cache.get(guild.id);
-  if (hit && !refresh && Date.now() - hit.at < CACHE_MS) return Promise.resolve(hit);
+  if (hit && !refresh) return Promise.resolve(hit);
   const running = inflight.get(guild.id); if (running) return running.promise;
   const f = { done: 0, total: 0 };
   f.promise = (async () => { try { const res = { ...(await scan(guild, { onProgress: (d, t) => { f.done = d; f.total = t; } })), at: Date.now() }; cache.set(guild.id, res); return res; } finally { inflight.delete(guild.id); } })();
@@ -88,7 +97,7 @@ export const pinsCommand = {
     .addSubcommand((c) => c.setName('history').setDescription('過去のピン留めの集計(ピン留めした人・された人のランキング)と、調べの進み具合')
       .addBooleanOption((o) => o.setName('public').setDescription('みんなに見せる(省略すると、自分だけ)')))
     .addSubcommand((c) => c.setName('ranking').setDescription('サーバー全体で、ピン留めが多いチャンネルの順位(少し時間がかかります)')
-      .addBooleanOption((o) => o.setName('refresh').setDescription('10分以内でも、調べ直す'))
+      .addBooleanOption((o) => o.setName('refresh').setDescription('覚えている結果を捨てて、調べ直す'))
       .addBooleanOption((o) => o.setName('public').setDescription('みんなに見せる(省略すると、自分だけ)'))),
   async execute(i, deps = {}) {
     const vis = i.options.getBoolean('public') ? {} : EPH, sub = i.options.getSubcommand();
@@ -144,7 +153,8 @@ export default {
   commands: [pinsCommand],
   help: '`/pins count` で、チャンネルのピン留めの数と内訳、`/pins ranking` で、サーバー全体の、ピン留めが多いチャンネルの順位を、調べられます。',
   ui: '/dashboard/features/pins.js',
-  register({ router }) {
+  register({ router, client }) {
+    client.on(Events.MessageCreate, (m) => { try { bumpPin(m); } catch { /* 足せなくても、次の「調べ直す」で、直る */ } });
     const nameOf = async (g, id) => { const m = g.members.cache.get(id) ?? await g.members.fetch(id).catch(() => null); return m?.displayName ?? '(不明)'; };
     const names = (g, map) => Promise.all([...map].sort((a, b) => b[1] - a[1] || String(a[0]).localeCompare(String(b[0]))).slice(0, 20).map(async ([u, n]) => ({ user_id: u, name: await nameOf(g, u), count: n })));
     // いまの状態: いまのピン留め(覚えている結果)・調べ中の進み具合・過去の集計
