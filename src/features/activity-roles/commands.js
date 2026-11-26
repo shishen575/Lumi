@@ -5,6 +5,8 @@ import { db } from '../../core/db.js';
 import { METRICS, getRules, getStats, metricValue } from './db.js';
 import { pairStats, fastestSinceJoin, joinToStats, roleObtainedAt, trackingSince, dur, importNotices, parsePeriod, periodText, firstRoleStats, messageRoles, withBaseline, measureStart } from './roletime.js';
 import { buildRankView } from './roletimeview.js';
+import { cachedScan } from '../pins/index.js';
+import { pinHistory } from '../pins/history.js';
 import { hasAccessSync } from '../../core/access.js';
 
 const COL = { messages: 'messages', reactions_received: 'reactions_received', reactions_given: 'reactions_given', voice_minutes: 'voice_seconds' };
@@ -116,13 +118,14 @@ export const topCommand = {
     .setDescription('ランキングを10位ごとに表示します')
     .setDMPermission(false)
     .addStringOption((o) => o.setName('metric').setDescription('何のランキングか(省略すると発言数)')
-      .addChoices(...Object.entries(METRICS).map(([value, name]) => ({ name, value }))))
+      .addChoices(...Object.entries(METRICS).map(([value, name]) => ({ name, value })), { name: 'ピン留めされた数', value: 'pins' }))
     .addIntegerOption((o) => o.setName('page').setDescription('開くページ(省略すると1)').setMinValue(1))
     .addBooleanOption((o) => o.setName('private').setDescription('自分だけに表示する')),
 
-  async execute(i) {
+  async execute(i, deps = {}) {
     const metric = i.options.getString('metric') ?? 'messages';
     let page = i.options.getInteger('page') ?? 1;
+    if (metric === 'pins') return topPins(i, page, deps);
     const view = await renderTop(i, metric, page);
     page = view.page;
     const res = await i.reply({ embeds: view.embeds, components: view.components,
@@ -188,6 +191,41 @@ export const rolesCommand = {
     await i.reply({ embeds: [embed], ...eph(i.options.getBoolean('private') ?? false) });
   },
 };
+
+/** 「ピン留めされた数」: ピン留めされている発言の、発言者ごとの数(サーバー全体。全チャンネルを調べるので、結果は10分、覚える) */
+function pinsView(i, list, page, label = 'いまのピン留めを数えています') {
+  const pages = Math.max(1, Math.ceil(list.length / PAGE)), p = Math.min(Math.max(1, page), pages);
+  const ranked = list.map(([u, n]) => ({ u, n, rk: 1 + list.filter(([, m]) => m > n).length })); // 同数は、同順位
+  const rows = ranked.slice((p - 1) * PAGE, p * PAGE), mine = ranked.find((x) => x.u === i.user.id);
+  const embed = new EmbedBuilder().setColor(0xe74c3c).setTitle('📌 ピン留めされた数ランキング')
+    .setAuthor({ name: i.member?.displayName ?? i.user.globalName ?? i.user.username, iconURL: i.user.displayAvatarURL?.() })
+    .setDescription(rows.map((r) => `${MEDAL[r.rk] ?? `**${r.rk}位**`} <@${r.u}> — ${r.n}件`).join('\n') || 'ピン留めされた発言は、ありません')
+    .setFooter({ text: `${p} / ${pages} ページ ・ ${i.member?.displayName ?? i.user.username}: ${mine ? `${mine.rk}位(${mine.n}件)` : '圏外'} ・ ${label}` });
+  const row = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId('top:first').setEmoji('⏮').setStyle(ButtonStyle.Secondary).setDisabled(p <= 1),
+    new ButtonBuilder().setCustomId('top:prev').setLabel('前へ').setStyle(ButtonStyle.Primary).setDisabled(p <= 1),
+    new ButtonBuilder().setCustomId('top:next').setLabel('次へ').setStyle(ButtonStyle.Primary).setDisabled(p >= pages),
+    new ButtonBuilder().setCustomId('top:last').setEmoji('⏭').setStyle(ButtonStyle.Secondary).setDisabled(p >= pages));
+  return { embeds: [embed], components: pages > 1 ? [row] : [], page: p, pages };
+}
+async function topPins(i, page, deps = {}) {
+  await i.deferReply(eph(i.options.getBoolean('private') ?? false)); // 全チャンネルを調べるので、先に、返事の枠を取る
+  // 過去の分まで数えた結果(/pins scan)があれば、それを使う(ピンを外した分も、入る)。なければ、いまのピン留めを数える
+  const hist = deps.history ?? pinHistory(i.guildId);
+  let list, label;
+  if (hist?.total) { list = [...hist.byTarget].sort((a, b) => b[1] - a[1] || String(a[0]).localeCompare(String(b[0]))); label = `過去の分も、数えています(${hist.total}件・${new Date(hist.finishedAt).toLocaleDateString('ja-JP')}に調べた結果)`; }
+  else { const scan = await cachedScan(i.guild, deps.scan ? { scan: deps.scan } : {}); list = [...scan.byUser].sort((a, b) => b[1] - a[1] || String(a[0]).localeCompare(String(b[0]))); label = 'いまのピン留めだけ(過去の分は、/pins scan で、数えられます)'; }
+  let view = pinsView(i, list, page, label);
+  const msg = await i.editReply({ embeds: view.embeds, components: view.components });
+  if (!view.components.length || !msg?.createMessageComponentCollector) return;
+  const collector = msg.createMessageComponentCollector({ idle: 120_000, time: 600_000 });
+  collector.on('collect', async (b) => {
+    if (b.user.id !== i.user.id) return b.reply({ content: 'コマンドを実行した人だけがページを切り替えられます。`/top` で自分用に開けます。', ...eph() });
+    const to = { 'top:first': 1, 'top:prev': view.page - 1, 'top:next': view.page + 1, 'top:last': view.pages }[b.customId] ?? view.page;
+    view = pinsView(i, list, to, label); await b.update({ embeds: view.embeds, components: view.components });
+  });
+  collector.on('end', () => i.editReply({ components: [] }).catch(() => {}));
+}
 
 /* ---------- /roletime : ロールを取った時間・ロール間の達成時間・早かった人のランキング ---------- */
 const MEDALS = ['🥇', '🥈', '🥉'];

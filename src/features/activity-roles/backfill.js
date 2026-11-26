@@ -77,7 +77,7 @@ export function noteLive(guildId, userId) {
 const canRead = (ch, me) =>
   ch.permissionsFor(me)?.has([PermissionFlagsBits.ViewChannel, PermissionFlagsBits.ReadMessageHistory]);
 
-async function collectTargets(guild) {
+export async function collectTargets(guild) {
   const me = guild.members.me;
   const targets = new Map();
   const add = (ch) => { if (ch?.isTextBased() && canRead(ch, me)) targets.set(ch.id, ch); };
