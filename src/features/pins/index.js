@@ -1,8 +1,7 @@
 import { SlashCommandBuilder, EmbedBuilder, MessageFlags, PermissionFlagsBits, ChannelType } from 'discord.js';
 import { hasAccessSync, canEditAccess } from '../../core/access.js';
 import { collectTargets } from '../activity-roles/backfill.js';
-import { Events } from 'discord.js';
-import { startPinScan, scanState, pinHistory, recordPin, markStarting, markFailed, isScanning } from './history.js';
+import { startPinScan, scanState, pinHistory, markStarting, markFailed, isScanning } from './history.js';
 
 /**
  * ピン留めの数を、調べる。
@@ -10,6 +9,7 @@ import { startPinScan, scanState, pinHistory, recordPin, markStarting, markFaile
  *  /pins ranking … サーバー全体で、ピン留めが多いチャンネルの順位(全部のチャンネルを、順に調べるので、少し時間がかかります)
  */
 const EPH = { flags: MessageFlags.Ephemeral };
+const CACHE_MS = 10 * 60_000, cache = new Map(); // ranking の結果を、10分、覚える(調べ直しで、Discordに負担をかけない)
 
 const canRead = (ch, me) => ch.permissionsFor?.(me)?.has([PermissionFlagsBits.ViewChannel, PermissionFlagsBits.ReadMessageHistory]);
 /** そのチャンネルの、ピン留めを、全部、取る: [{ pinnedTimestamp, message }](新しい順) */
@@ -23,6 +23,28 @@ export async function fetchAllPins(ch, { max = 1000 } = {}) {
   }
   return out;
 }
+/** サーバー内の、ピン留めの数を、チャンネルごとに数える(見られるチャンネルと、開いているスレッド)。4つずつ、同時に調べる。onProgress(done, total) で、進み具合を知らせる */
+export async function countGuildPins(guild, { fetchPins = fetchAllPins, concurrency = 4, onProgress = null } = {}) {
+  const me = guild.members.me, found = [];
+  for (const ch of guild.channels.cache.values()) if (ch.isTextBased?.() && !ch.isVoiceBased?.() && ch.messages && canRead(ch, me)) found.push(ch);
+  try { for (const th of (await guild.channels.fetchActiveThreads()).threads.values()) if (th.messages && canRead(th, me)) found.push(th); } catch { /* スレッドは、読めなくても、続ける */ }
+  const list = [...new Map(found.map((c) => [c.id, c])).values()], rows = [], byUser = new Map();
+  let failed = 0, next = 0, done = 0;
+  onProgress?.(0, list.length);
+  await Promise.all(Array.from({ length: Math.min(concurrency, list.length) }, async () => {
+    while (next < list.length) {
+      const ch = list[next++];
+      try {
+        const pins = await Promise.race([fetchPins(ch), new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 60_000))]); // 1チャンネルに、60秒以上は、かけない
+        if (pins.length) rows.push({ id: ch.id, name: ch.name, count: pins.length, thread: !!ch.isThread?.() });
+        for (const p of pins) { const a = p.message.author; if (a && !a.bot) byUser.set(a.id, (byUser.get(a.id) ?? 0) + 1); } // ピン留めされた発言の、発言者ごとの数(BOTの発言は、除く)
+      } catch { failed++; }
+      onProgress?.(++done, list.length);
+    }
+  }));
+  return { rows: rows.sort((a, b) => b.count - a.count), byUser, failed, scanned: list.length };
+}
+
 /** 過去のピン留めの調べを、始める(裏で動く)。チャンネルの一覧集めも、裏で行うので、返事を待たせない。始められたら true */
 export function startPinScanFor(i, deps = {}) {
   const g = i.guildId, channel = i.channel;
@@ -37,6 +59,26 @@ export function startPinScanFor(i, deps = {}) {
   return true;
 }
 const when = (ts) => `<t:${Math.floor(ts / 1000)}:D>`;
+const inflight = new Map(); // サーバーごとの、調べ中のもの(同じものを、何度も、調べない): { promise, done, total }
+/** 調べている途中の、進み具合(なければ null) */
+export const scanProgress = (g) => { const f = inflight.get(g); return f ? { done: f.done, total: f.total } : null; };
+export const cachedResult = (g) => cache.get(g) ?? null;
+/** サーバー全体のピン留めの集計(10分、覚える)。/pins ranking・/top・ダッシュボードで、共有する。調べ中なら、その結果を、待つ */
+export function cachedScan(guild, { refresh = false, scan = countGuildPins } = {}) {
+  const hit = cache.get(guild.id);
+  if (hit && !refresh && Date.now() - hit.at < CACHE_MS) return Promise.resolve(hit);
+  const running = inflight.get(guild.id); if (running) return running.promise;
+  const f = { done: 0, total: 0 };
+  f.promise = (async () => { try { const res = { ...(await scan(guild, { onProgress: (d, t) => { f.done = d; f.total = t; } })), at: Date.now() }; cache.set(guild.id, res); return res; } finally { inflight.delete(guild.id); } })();
+  inflight.set(guild.id, f); return f.promise;
+}
+/** 調べている間、返事の「考え中」が、止まって見えないように、進み具合を、数秒おきに、書き換える。エラーは、メッセージにして返す */
+export async function withProgress(i, promise, label = 'ピン留めを調べています') {
+  const timer = setInterval(() => { const p = scanProgress(i.guildId); if (p?.total) i.editReply({ content: `🔎 ${label}… ${p.done} / ${p.total} チャンネル` }).catch(() => {}); }, 4000);
+  try { return { ok: true, value: await promise }; }
+  catch (e) { return { ok: false, error: e }; }
+  finally { clearInterval(timer); }
+}
 export const pinsCommand = {
   data: new SlashCommandBuilder().setName('pins').setDescription('ピン留めの数を、調べます').setDMPermission(false)
     .addSubcommand((c) => c.setName('count').setDescription('チャンネル(スレッド)の、ピン留めの数と、内訳を調べます')
@@ -45,7 +87,8 @@ export const pinsCommand = {
     .addSubcommand((c) => c.setName('scan').setDescription('【管理者向け】過去のピン留め(外した分も)を、全チャンネルの履歴から、数え始めます(時間がかかります)'))
     .addSubcommand((c) => c.setName('history').setDescription('過去のピン留めの集計(ピン留めした人・された人のランキング)と、調べの進み具合')
       .addBooleanOption((o) => o.setName('public').setDescription('みんなに見せる(省略すると、自分だけ)')))
-    .addSubcommand((c) => c.setName('ranking').setDescription('サーバー全体で、ピン留めが多いチャンネルの順位(記録から)')
+    .addSubcommand((c) => c.setName('ranking').setDescription('サーバー全体で、ピン留めが多いチャンネルの順位(少し時間がかかります)')
+      .addBooleanOption((o) => o.setName('refresh').setDescription('10分以内でも、調べ直す'))
       .addBooleanOption((o) => o.setName('public').setDescription('みんなに見せる(省略すると、自分だけ)'))),
   async execute(i, deps = {}) {
     const vis = i.options.getBoolean('public') ? {} : EPH, sub = i.options.getSubcommand();
@@ -82,13 +125,16 @@ export const pinsCommand = {
       }
       return i.editReply({ embeds: [e], allowedMentions: { parse: [] } });
     }
-    // ranking: 記録(pin_log)から。サーバー全体を、探し直さない
-    const h = pinHistory(i.guildId); if (!h?.total) return i.reply({ content: 'まだ、記録がありません。運営が `/pins scan` で、過去の分を、一度だけ数えると、使えます。(それ以降は、ピン留めされるたびに、足されます)', ...vis });
-    const M = ['🥇', '🥈', '🥉'], list = [...h.byChannel].sort((a, b) => b[1] - a[1] || String(a[0]).localeCompare(String(b[0]))).slice(0, 15);
-    const e = new EmbedBuilder().setColor(0xe74c3c).setTitle('📌 ピン留めが多いチャンネル(外した分も)').setDescription(`合計 **${h.total}件**`)
-      .addFields({ name: '多いチャンネル', value: list.map(([c, n], k) => `${M[k] ?? `${k + 1}.`} <#${c}> — **${n}件**`).join('\n') })
-      .setFooter({ text: h.partial ? '過去の分は、まだ数えていません(`/pins scan`)。いまからの分は、足されています' : 'ピン留めされるたびに、足されます' });
-    return i.reply({ embeds: [e], ...vis, allowedMentions: { parse: [] } });
+    // ranking
+    await i.deferReply(vis);
+    const r = await withProgress(i, cachedScan(i.guild, { refresh: !!i.options.getBoolean('refresh'), scan: deps.count ? (g, o) => countGuildPins(g, { ...o, fetchPins: deps.count }) : countGuildPins }));
+    if (!r.ok) return i.editReply({ content: `調べられませんでした: ${r.error.message}` });
+    const res = r.value;
+    const total = res.rows.reduce((a, r) => a + r.count, 0), M = ['🥇', '🥈', '🥉'];
+    const e = new EmbedBuilder().setColor(0xe74c3c).setTitle('📌 ピン留めの数(サーバー全体)').setDescription(`合計 **${total}件**(${res.rows.length}チャンネル)`)
+      .addFields({ name: '多いチャンネル', value: res.rows.slice(0, 15).map((r, n) => `${M[n] ?? `${n + 1}.`} <#${r.id}> — **${r.count}件**`).join('\n') || 'ピン留めは、ありません。' })
+      .setFooter({ text: `${res.scanned}チャンネルを調べました${res.failed ? ` ・ 読めなかった: ${res.failed}` : ''} ・ <t:${Math.floor(res.at / 1000)}:R> に調べた結果` });
+    return i.editReply({ embeds: [e], allowedMentions: { parse: [] } });
   },
 };
 
@@ -98,16 +144,24 @@ export default {
   commands: [pinsCommand],
   help: '`/pins count` で、チャンネルのピン留めの数と内訳、`/pins ranking` で、サーバー全体の、ピン留めが多いチャンネルの順位を、調べられます。',
   ui: '/dashboard/features/pins.js',
-  register({ router, client }) {
-    client.on(Events.MessageCreate, (m) => { try { recordPin(m); } catch (e) { console.warn('[pins] 記録に失敗:', e.message); } }); // ピン留めされたら、1件、足す
+  register({ router }) {
     const nameOf = async (g, id) => { const m = g.members.cache.get(id) ?? await g.members.fetch(id).catch(() => null); return m?.displayName ?? '(不明)'; };
     const names = (g, map) => Promise.all([...map].sort((a, b) => b[1] - a[1] || String(a[0]).localeCompare(String(b[0]))).slice(0, 20).map(async ([u, n]) => ({ user_id: u, name: await nameOf(g, u), count: n })));
+    // いまの状態: いまのピン留め(覚えている結果)・調べ中の進み具合・過去の集計
     router.get('/status', async (req, res) => {
-      const g = req.guild, st = scanState(g.id), h = pinHistory(g.id);
+      const g = req.guild, cur = cachedResult(g.id), prog = scanProgress(g.id), st = scanState(g.id), h = pinHistory(g.id);
       res.json({
-        state: st ? { status: st.status === 'running' && !isScanning(g.id) ? 'stopped' : st.status, done: st.done, total: st.total, found: st.found, current: st.current, error: st.error, startedAt: st.startedAt, finishedAt: st.finishedAt } : null,
-        result: h ? { total: h.total, partial: h.partial, channels: [...h.byChannel].sort((a, b) => b[1] - a[1]).slice(0, 20).map(([id, n]) => ({ id, name: g.channels.cache.get(id)?.name ?? '(不明)', count: n })), unknown: h.unknownTargets, pinners: await names(g, h.byPinner), targets: await names(g, h.byTarget) } : null,
+        current: cur ? { at: cur.at, total: cur.rows.reduce((a, r) => a + r.count, 0), scanned: cur.scanned, failed: cur.failed, channels: cur.rows.slice(0, 20), users: await names(g, cur.byUser) } : null,
+        refreshing: prog,
+        history: { state: st ? { status: st.status === 'running' && !isScanning(g.id) ? 'stopped' : st.status, done: st.done, total: st.total, found: st.found, current: st.current, error: st.error, startedAt: st.startedAt, finishedAt: st.finishedAt } : null,
+          result: h ? { total: h.total, channels: h.channels, unknown: h.unknownTargets, pinners: await names(g, h.byPinner), targets: await names(g, h.byTarget) } : null },
       });
+    });
+    // いまのピン留めを、調べ直す(裏で。結果は、/status で見る)
+    router.post('/refresh', (req, res) => {
+      if (scanProgress(req.guild.id)) return res.json({ started: false, running: true });
+      cachedScan(req.guild, { refresh: true }).catch((e) => console.warn('[pins] 調べ直しに失敗:', e.message));
+      res.json({ started: true });
     });
     // 過去のピン留めを、数え始める(運営・管理者のみ)
     router.post('/scan', (req, res) => {

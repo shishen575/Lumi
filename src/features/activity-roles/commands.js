@@ -5,6 +5,7 @@ import { db } from '../../core/db.js';
 import { METRICS, getRules, getStats, metricValue } from './db.js';
 import { pairStats, fastestSinceJoin, joinToStats, roleObtainedAt, trackingSince, dur, importNotices, parsePeriod, periodText, firstRoleStats, messageRoles, withBaseline, measureStart } from './roletime.js';
 import { buildRankView } from './roletimeview.js';
+import { cachedScan, withProgress } from '../pins/index.js';
 import { pinHistory } from '../pins/history.js';
 import { hasAccessSync } from '../../core/access.js';
 
@@ -211,9 +212,9 @@ async function topPins(i, page, deps = {}) {
   await i.deferReply(eph(i.options.getBoolean('private') ?? false)); // 全チャンネルを調べるので、先に、返事の枠を取る
   // 過去の分まで数えた結果(/pins scan)があれば、それを使う(ピンを外した分も、入る)。なければ、いまのピン留めを数える
   const hist = deps.history ?? pinHistory(i.guildId);
-  if (!hist?.total) return i.editReply({ content: 'まだ、ピン留めの記録がありません。運営が `/pins scan` で、過去の分を、一度だけ数えると、使えます。(それ以降は、ピン留めされるたびに、足されます)' });
-  const list = [...hist.byTarget].sort((a, b) => b[1] - a[1] || String(a[0]).localeCompare(String(b[0])));
-  const label = hist.partial ? `記録 ${hist.total}件(過去の分は、まだ数えていません。/pins scan)` : `過去の分も、数えています(${hist.total}件・ピン留めされるたびに、足されます)`;
+  let list, label;
+  if (hist?.total) { list = [...hist.byTarget].sort((a, b) => b[1] - a[1] || String(a[0]).localeCompare(String(b[0]))); label = `過去の分も、数えています(${hist.total}件・${new Date(hist.finishedAt).toLocaleDateString('ja-JP')}に調べた結果)`; }
+  else { const r = await withProgress(i, cachedScan(i.guild, deps.scan ? { scan: deps.scan } : {}), 'ピン留めを数えています'); if (!r.ok) return i.editReply({ content: `調べられませんでした: ${r.error.message}` }); const scan = r.value; list = [...scan.byUser].sort((a, b) => b[1] - a[1] || String(a[0]).localeCompare(String(b[0]))); label = 'いまのピン留めだけ(過去の分は、/pins scan で、数えられます)'; }
   let view = pinsView(i, list, page, label);
   const msg = await i.editReply({ embeds: view.embeds, components: view.components });
   if (!view.components.length || !msg?.createMessageComponentCollector) return;

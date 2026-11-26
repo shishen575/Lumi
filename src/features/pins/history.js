@@ -15,26 +15,12 @@ export const scanState = (g) => getKV(g, 'pin_scan', null);
 export const isScanning = (g) => locks.has(g) || (scanState(g)?.status === 'running' && scanState(g)?.total === 0 && Date.now() - (scanState(g).startedAt ?? 0) < 5 * 60_000);
 const setState = (g, patch) => setKV(g, 'pin_scan', { ...(scanState(g) ?? {}), ...patch });
 
-/** 集計: { total, byPinner, byTarget, byChannel, finishedAt, partial }(1件も、記録がなければ null)。ピン留めされるたびに、recordPin で足されていく */
+/** 集計: { total, byPinner, byTarget, finishedAt }(まだ、調べていなければ null) */
 export function pinHistory(g) {
-  const st = scanState(g), rows = db.prepare('SELECT pinner_id, target_author, channel_id FROM pin_log WHERE guild_id=?').all(g);
-  if (!rows.length && st?.status !== 'done') return null;
-  const byPinner = new Map(), byTarget = new Map(), byChannel = new Map();
-  for (const r of rows) { byPinner.set(r.pinner_id, (byPinner.get(r.pinner_id) ?? 0) + 1); byChannel.set(r.channel_id, (byChannel.get(r.channel_id) ?? 0) + 1); if (r.target_author && r.target_author !== '?') byTarget.set(r.target_author, (byTarget.get(r.target_author) ?? 0) + 1); }
-  return { total: rows.length, byPinner, byTarget, byChannel, unknownTargets: rows.filter((r) => !r.target_author || r.target_author === '?').length, finishedAt: st?.status === 'done' ? st.finishedAt : null, channels: st?.channels ?? 0, partial: st?.status !== 'done' };
-}
-
-/** ピン留めされた瞬間に、1件、足す(全チャンネルを、探し直さない)。足したら true */
-export function recordPin(m) {
-  if (m.type !== MessageType.ChannelPinnedMessage || !m.guildId || !m.author || m.author.bot) return false;
-  const g = m.guildId, ref = m.reference?.messageId ?? null;
-  const r = db.prepare('INSERT OR IGNORE INTO pin_log (guild_id, sys_id, channel_id, pinner_id, target_id, at) VALUES (?,?,?,?,?,?)').run(g, m.id, m.channelId, m.author.id, ref, m.createdTimestamp);
-  if (!Number(r.changes)) return false;
-  (async () => { // ピン留めされた発言の、発言者(消えていたら「不明」)
-    let author = '?'; try { const t = await m.channel.messages.fetch(ref); if (t.author && !t.author.bot) author = t.author.id; } catch { /* 不明 */ }
-    db.prepare('UPDATE pin_log SET target_author=? WHERE guild_id=? AND sys_id=?').run(author, g, m.id);
-  })().catch(() => {});
-  return true;
+  const st = scanState(g); if (!st || st.status !== 'done') return null;
+  const rows = db.prepare('SELECT pinner_id, target_author FROM pin_log WHERE guild_id=?').all(g), byPinner = new Map(), byTarget = new Map();
+  for (const r of rows) { byPinner.set(r.pinner_id, (byPinner.get(r.pinner_id) ?? 0) + 1); if (r.target_author && r.target_author !== '?') byTarget.set(r.target_author, (byTarget.get(r.target_author) ?? 0) + 1); }
+  return { total: rows.length, byPinner, byTarget, unknownTargets: rows.filter((r) => !r.target_author || r.target_author === '?').length, finishedAt: st.finishedAt, channels: st.channels ?? 0 };
 }
 
 /** チャンネルの一覧を、集めている間の、状態(この間も、「調べている」と、表示できる) */
