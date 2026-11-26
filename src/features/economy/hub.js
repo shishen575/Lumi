@@ -19,7 +19,7 @@ export const catPanels = (g) => getKV(g, KEY, {});
 const link = (g, st) => `https://discord.com/channels/${g}/${st.ch}/${st.msg}`;
 const catById = (id) => commandCategories().find((c) => c.id === id);
 /** パネルに載せない、サブコマンド(管理者向けのもの) */
-const HUB_EXCLUDE_SUB = new Set(['shiritori panel', 'shiritori import', 'shiritori pvp']);
+const HUB_EXCLUDE_SUB = new Set(['shiritori panel', 'shiritori import', 'shiritori pvp', 'pins scan', 'roletime import-notices', 'roletime fastest']);
 const cmdsOf = (cat) => cat.commands.filter((n) => !HUB_EXCLUDE.has(n));
 /** そのパネルで、廃止しているコマンド(名前の配列。カテゴリーのコマンドの中から) */
 export const catRetired = (id, st) => { const cat = catById(id); return cat && st?.msg ? (st.retire ?? []).filter((n) => cmdsOf(cat).includes(n)) : []; };
@@ -54,6 +54,9 @@ const LABELS = {
   'balance-edit': ['✏️', '残高を編集'], 'cooldown-reset': ['⏱️', '待ち時間を解除'], release: ['🔓', '釈放'], 'blackjack-end': ['🛑', 'ブラックジャックを終了'],
   // しりとり
   'shiritori start': ['🔤', 'しりとりを始める'], 'shiritori say': ['✍️', '言葉を送る'], 'shiritori watch': ['👀', '観戦する'], 'shiritori status': ['📋', 'しりとりの様子'], 'shiritori stop': ['🛑', 'しりとりをやめる'], 'shiritori ranking': ['🏆', 'しりとりランキング'], 'shiritori words': ['📚', 'よく使われた言葉'], 'shiritori stats': ['📊', 'しりとりの戦績'],
+  // ピン留め・ロールの達成時間
+  'pins count': ['📌', 'ピン留めの数'], 'pins ranking': ['🏆', 'ピン留めが多いチャンネル'], 'pins history': ['📜', '過去のピン留めの集計'],
+  'roletime pair': ['⏱️', 'ロール → ロールの順位'], 'roletime fastest': ['🏃', 'いちばん早く取った人'], 'roletime first': ['🌱', '最初のロールまで'], 'roletime me': ['🕒', '自分のロール取得時間'],
   // 活動ロール・大喜利
   rank: ['📊', 'ランク'], top: ['🏆', 'ランキング'], roles: ['🎖️', 'ロール一覧'], odai: ['💡', 'お題を出す'], kaitou: ['✍️', 'お題に回答'], kekka: ['📣', '結果を発表'], ranking: ['🌱', '大喜利ランキング'], best: ['🌿', '一番の草'], kusaemoji: ['🌱', '草の絵文字'], up: ['⬇️', 'お題を下に出す'],
 };
