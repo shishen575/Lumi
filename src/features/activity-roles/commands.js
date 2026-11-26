@@ -5,7 +5,7 @@ import { db } from '../../core/db.js';
 import { METRICS, getRules, getStats, metricValue } from './db.js';
 import { pairStats, fastestSinceJoin, joinToStats, roleObtainedAt, trackingSince, dur, importNotices, parsePeriod, periodText, firstRoleStats, messageRoles, withBaseline, measureStart } from './roletime.js';
 import { buildRankView } from './roletimeview.js';
-import { cachedScan, withProgress } from '../pins/index.js';
+import { cachedScan, withProgress, onlyMembers } from '../pins/index.js';
 import { hasAccessSync } from '../../core/access.js';
 
 const COL = { messages: 'messages', reactions_received: 'reactions_received', reactions_given: 'reactions_given', voice_minutes: 'voice_seconds' };
@@ -212,7 +212,7 @@ async function topPins(i, page, deps = {}) {
   // いま付いているピン留めを数える(自動では、探し直さない。結果は、新しいピン留めだけ、足されていく)
   const r = await withProgress(i, cachedScan(i.guild, deps.scan ? { scan: deps.scan } : {}), 'ピン留めを数えています');
   if (!r.ok) return i.editReply({ content: `調べられませんでした: ${r.error.message}` });
-  const list = [...r.value.byUser].sort((a, b) => b[1] - a[1] || String(a[0]).localeCompare(String(b[0])));
+  const list = (await onlyMembers(i.guild, [...r.value.byUser])).sort((a, b) => b[1] - a[1] || String(a[0]).localeCompare(String(b[0])));
   const label = `いま付いているピン留め(${new Date(r.value.at).toLocaleString('ja-JP')}に調べた結果)`;
   let view = pinsView(i, list, page, label);
   const msg = await i.editReply({ embeds: view.embeds, components: view.components });

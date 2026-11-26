@@ -71,6 +71,12 @@ export function bumpPin(m) {
   const ref = m.reference?.messageId; if (!ref) return;
   m.channel.messages.fetch(ref).then((t) => { if (t.author && !t.author.bot) hit.byUser.set(t.author.id, (hit.byUser.get(t.author.id) ?? 0) + 1); }).catch(() => {});
 }
+/** サーバーに、いる人だけを、残す(抜けた人・アカウントが消えた人は、「不明」になるので、一覧から、消す)。entries: [[userId, n], ...] */
+export async function onlyMembers(guild, entries) {
+  const missing = entries.map(([u]) => u).filter((u) => !guild.members.cache.has(u));
+  for (let k = 0; k < missing.length; k += 100) { try { await guild.members.fetch({ user: missing.slice(k, k + 100) }); } catch { /* 取れない人は、不明として、消える */ } }
+  return entries.filter(([u]) => guild.members.cache.has(u));
+}
 export const cachedResult = (g) => cache.get(g) ?? null;
 /** サーバー全体のピン留めの集計(10分、覚える)。/pins ranking・/top・ダッシュボードで、共有する。調べ中なら、その結果を、待つ */
 export function cachedScan(guild, { refresh = false, scan = countGuildPins } = {}) {
@@ -112,12 +118,12 @@ export const pinsCommand = {
       if (st.status === 'running' && !isScanning(i.guildId)) return i.reply({ content: '前回の調べは、再起動などで、途中で止まりました。もう一度、`/pins scan` で、始められます。', ...vis });
       if (st.status === 'running') return i.reply({ content: `🔎 調べている途中です: ${st.done ?? 0} / ${st.total ?? '?'} チャンネル(見つけたピン留め ${st.found ?? 0}件)${st.current ? `\n-# いま: ${st.current}` : ''}`, ...vis });
       if (st.status === 'error') return i.reply({ content: `調べが、止まりました: ${st.error}。もう一度、\`/pins scan\` で、始められます。`, ...vis });
-      const h = pinHistory(i.guildId), top = (m) => [...m].sort((a, b) => b[1] - a[1] || String(a[0]).localeCompare(String(b[0]))).slice(0, 10), M = ['🥇', '🥈', '🥉'];
+      const h = pinHistory(i.guildId); await i.deferReply(vis); const present = async (m) => onlyMembers(i.guild, [...m]); const [pn, tn] = [await present(h.byPinner), await present(h.byTarget)], top = (m) => [...m].sort((a, b) => b[1] - a[1] || String(a[0]).localeCompare(String(b[0]))).slice(0, 10), M = ['🥇', '🥈', '🥉'];
       const e = new EmbedBuilder().setColor(0xe74c3c).setTitle('📌 過去のピン留め(外した分も)').setDescription(`合計 **${h.total}件**(${h.channels}チャンネルを調べました)`)
-        .addFields({ name: 'ピン留めした人', value: top(h.byPinner).map(([u, n], k) => `${M[k] ?? `${k + 1}.`} <@${u}> — ${n}件`).join('\n') || 'なし', inline: true },
-          { name: 'ピン留めされた発言の、発言者', value: top(h.byTarget).map(([u, n], k) => `${M[k] ?? `${k + 1}.`} <@${u}> — ${n}件`).join('\n') || 'なし', inline: true })
+        .addFields({ name: 'ピン留めした人', value: top(pn).map(([u, n], k) => `${M[k] ?? `${k + 1}.`} <@${u}> — ${n}件`).join('\n') || 'なし', inline: true },
+          { name: 'ピン留めされた発言の、発言者', value: top(tn).map(([u, n], k) => `${M[k] ?? `${k + 1}.`} <@${u}> — ${n}件`).join('\n') || 'なし', inline: true })
         .setFooter({ text: `${new Date(h.finishedAt).toLocaleDateString('ja-JP')}に調べた結果${h.unknownTargets ? ` ・ 発言者が不明: ${h.unknownTargets}件(発言が消されたなど)` : ''}` });
-      return i.reply({ embeds: [e], ...vis, allowedMentions: { parse: [] } });
+      return i.editReply({ embeds: [e], allowedMentions: { parse: [] } });
     }
     if (sub === 'count') {
       const target = i.options.getChannel('channel') ?? i.channel, ch = i.guild.channels.cache.get(target.id) ?? await i.guild.channels.fetch(target.id).catch(() => null);
@@ -155,8 +161,7 @@ export default {
   ui: '/dashboard/features/pins.js',
   register({ router, client }) {
     client.on(Events.MessageCreate, (m) => { try { bumpPin(m); } catch { /* 足せなくても、次の「調べ直す」で、直る */ } });
-    const nameOf = async (g, id) => { const m = g.members.cache.get(id) ?? await g.members.fetch(id).catch(() => null); return m?.displayName ?? '(不明)'; };
-    const names = (g, map) => Promise.all([...map].sort((a, b) => b[1] - a[1] || String(a[0]).localeCompare(String(b[0]))).slice(0, 20).map(async ([u, n]) => ({ user_id: u, name: await nameOf(g, u), count: n })));
+    const names = async (g, map) => (await onlyMembers(g, [...map])).sort((a, b) => b[1] - a[1] || String(a[0]).localeCompare(String(b[0]))).slice(0, 20).map(([u, n]) => ({ user_id: u, name: g.members.cache.get(u).displayName, count: n })); // いない人は、消す
     // いまの状態: いまのピン留め(覚えている結果)・調べ中の進み具合・過去の集計
     router.get('/status', async (req, res) => {
       const g = req.guild, cur = cachedResult(g.id), prog = scanProgress(g.id), st = scanState(g.id), h = pinHistory(g.id);
