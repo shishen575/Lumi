@@ -19,6 +19,12 @@ migrate(`CREATE TABLE IF NOT EXISTS role_seen (guild_id TEXT NOT NULL, user_id T
 const log = (g, u, r, at, action, source) => db.prepare('INSERT OR IGNORE INTO role_log (guild_id, user_id, role_id, at, action, source) VALUES (?,?,?,?,?,?)').run(g, u, r, at, action, source);
 /** 「発言数(会話数)」のルールで付与するロール(条件の小さい順)。達成時間の集計は、これだけを、対象にする */
 export const messageRoles = (g) => { const seen = new Set(); return getRules(g).filter((r) => r.metric === 'messages').sort((a, b) => a.threshold - b.threshold).filter((r) => !seen.has(r.role_id) && seen.add(r.role_id)).map((r) => ({ role_id: r.role_id, threshold: r.threshold })); };
+/**
+ * 計測開始日: 記録を始めた日と、取り込んだ(監査ログ・通知・発言からの推定)いちばん古いロールの記録の、早い方。
+ * 継続開始日 = そのメンバーの「参加日」と「計測開始日」の、遅い方(参加日が、計測開始日より前の人は、計測開始日から数える)
+ */
+export const measureStart = (g) => { const since = getKV(g, 'role_log_since', null), first = db.prepare('SELECT MIN(at) at FROM role_log WHERE guild_id=?').get(g)?.at ?? null; const all = [since, first].filter((x) => x != null); return all.length ? Math.min(...all) : null; };
+export const withBaseline = (g, joinedOf) => { const ms = measureStart(g); return (u) => { const j = joinedOf(u); return j == null ? null : Math.max(j, ms ?? 0); }; };
 export const trackingSince = (g) => getKV(g, 'role_log_since', null);
 
 /**
@@ -71,18 +77,18 @@ export function pairStats(g, fromRole, toRole, limit = 5, period = null) {
   for (const [u, at] of b) { const af = a.get(u); if (af == null) continue; if (at >= af) { dur.push(at - af); rows.push({ user_id: u, ms: at - af, from: af, to: at }); } else bothBackwards++; }
   return { ...summarize(dur), fromCount: a.size, toCount: b.size, backwards: bothBackwards, fastest: rows.sort((x, y) => x.ms - y.ms).slice(0, limit) };
 }
-/** そのロールを、サーバーに入ってから、いちばん早く取った人のランキング(参加 → ロール)。joinedOf(userId) = 参加した時刻(いるメンバーだけ) */
+/** そのロールを、継続開始日から、いちばん早く取った人のランキング(参加 → ロール)。joinedOf(userId) = 参加した時刻(いるメンバーだけ) */
 export function fastestSinceJoin(g, role, joinedOf, limit = 10, period = null) {
-  const rows = [];
+  joinedOf = withBaseline(g, joinedOf); const rows = [];
   for (const [u, at] of firstAdds(g, role, period)) { const j = joinedOf(u); if (j && at >= j) rows.push({ user_id: u, ms: at - j, from: j, to: at }); }
   return rows.sort((a, b) => a.ms - b.ms).slice(0, limit);
 }
 /**
  * 「ロールなし」から、最初のロールまで: roleIds(ランクのロールなど)のうち、いちばん早く取ったものを、その人の「最初のロール」として、
- * サーバーに入ってから、それを取るまでの時間を出す。期間は、「最初のロールを取った」時刻にかかる
+ * 継続開始日から、それを取るまでの時間を出す。期間は、「最初のロールを取った」時刻にかかる
  */
 export function firstRoleStats(g, roleIds, joinedOf, limit = 10, period = null) {
-  const best = new Map(); // user → { at, role }
+  joinedOf = withBaseline(g, joinedOf); const best = new Map(); // user → { at, role }
   for (const role of roleIds) for (const [u, at] of firstAdds(g, role)) { const cur = best.get(u); if (!cur || at < cur.at) best.set(u, { at, role }); }
   const rows = [];
   for (const [u, { at, role }] of best) { const j = joinedOf(u); if (j && at >= j && inPeriod(at, period)) rows.push({ user_id: u, ms: at - j, from: j, to: at, role_id: role }); }
@@ -90,7 +96,7 @@ export function firstRoleStats(g, roleIds, joinedOf, limit = 10, period = null) 
 }
 /** 参加(joinedTimestamp)から、そのロールを取るまで */
 export function joinToStats(g, role, joinedOf, period = null) {
-  const dur = []; for (const [u, at] of firstAdds(g, role, period)) { const j = joinedOf(u); if (j && at >= j) dur.push(at - j); }
+  joinedOf = withBaseline(g, joinedOf); const dur = []; for (const [u, at] of firstAdds(g, role, period)) { const j = joinedOf(u); if (j && at >= j) dur.push(at - j); }
   return summarize(dur);
 }
 export const dur = (ms) => { if (ms == null) return '—'; const s = Math.round(ms / 1000), d = Math.floor(s / 86400), h = Math.floor(s % 86400 / 3600), m = Math.floor(s % 3600 / 60); return d ? `${d}日${h}時間` : h ? `${h}時間${m}分` : m ? `${m}分` : `${s}秒`; };
