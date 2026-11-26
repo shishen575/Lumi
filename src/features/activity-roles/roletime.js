@@ -23,7 +23,14 @@ export const messageRoles = (g) => { const seen = new Set(); return getRules(g).
  * 計測開始日: 記録を始めた日と、取り込んだ(監査ログ・通知・発言からの推定)いちばん古いロールの記録の、早い方。
  * 継続開始日 = そのメンバーの「参加日」と「計測開始日」の、遅い方(参加日が、計測開始日より前の人は、計測開始日から数える)
  */
-export const measureStart = (g) => { const since = getKV(g, 'role_log_since', null), first = db.prepare('SELECT MIN(at) at FROM role_log WHERE guild_id=?').get(g)?.at ?? null; const all = [since, first].filter((x) => x != null); return all.length ? Math.min(...all) : null; };
+export const measureStart = (g) => {
+  const cover = getKV(g, 'role_cover', {}) ?? {}, all = [getKV(g, 'role_log_since', null), ...Object.values(cover)].filter((x) => x != null);
+  // 取り込みの「どこまでさかのぼって読んだか」が、記録されていないもの(古い取り込み)は、その取り込みの、いちばん古い記録の時刻で、代わりにする
+  for (const r of db.prepare("SELECT source, MIN(at) at FROM role_log WHERE guild_id=? AND source IN ('audit','notice','estimate') GROUP BY source").all(g)) if (!(r.source in cover)) all.push(r.at);
+  return all.length ? Math.min(...all) : null;
+};
+/** 取り込みが、どの時刻まで、さかのぼって、読んだか(source ごとに、いちばん古い時刻を、残す)。「0」は、はじめから */
+export function markCoverage(g, source, ts) { if (ts == null) return; const cover = getKV(g, 'role_cover', {}) ?? {}; cover[source] = Math.min(cover[source] ?? Infinity, ts); setKV(g, 'role_cover', cover); }
 export const withBaseline = (g, joinedOf) => { const ms = measureStart(g); return (u) => { const j = joinedOf(u); return j == null ? null : Math.max(j, ms ?? 0); }; };
 export const trackingSince = (g) => getKV(g, 'role_log_since', null);
 
@@ -80,7 +87,7 @@ export function pairStats(g, fromRole, toRole, limit = 5, period = null) {
 /** そのロールを、継続開始日から、いちばん早く取った人のランキング(参加 → ロール)。joinedOf(userId) = 参加した時刻(いるメンバーだけ) */
 export function fastestSinceJoin(g, role, joinedOf, limit = 10, period = null) {
   joinedOf = withBaseline(g, joinedOf); const rows = [];
-  for (const [u, at] of firstAdds(g, role, period)) { const j = joinedOf(u); if (j && at >= j) rows.push({ user_id: u, ms: at - j, from: j, to: at }); }
+  for (const [u, at] of firstAdds(g, role, period)) { const j = joinedOf(u); if (j && at > j) rows.push({ user_id: u, ms: at - j, from: j, to: at }); }
   return rows.sort((a, b) => a.ms - b.ms).slice(0, limit);
 }
 /**
@@ -91,23 +98,24 @@ export function firstRoleStats(g, roleIds, joinedOf, limit = 10, period = null) 
   joinedOf = withBaseline(g, joinedOf); const best = new Map(); // user → { at, role }
   for (const role of roleIds) for (const [u, at] of firstAdds(g, role)) { const cur = best.get(u); if (!cur || at < cur.at) best.set(u, { at, role }); }
   const rows = [];
-  for (const [u, { at, role }] of best) { const j = joinedOf(u); if (j && at >= j && inPeriod(at, period)) rows.push({ user_id: u, ms: at - j, from: j, to: at, role_id: role }); }
+  for (const [u, { at, role }] of best) { const j = joinedOf(u); if (j && at > j && inPeriod(at, period)) rows.push({ user_id: u, ms: at - j, from: j, to: at, role_id: role }); }
   return { ...summarize(rows.map((r) => r.ms)), fastest: rows.sort((a, b) => a.ms - b.ms).slice(0, limit) };
 }
 /** 参加(joinedTimestamp)から、そのロールを取るまで */
 export function joinToStats(g, role, joinedOf, period = null) {
-  joinedOf = withBaseline(g, joinedOf); const dur = []; for (const [u, at] of firstAdds(g, role, period)) { const j = joinedOf(u); if (j && at >= j) dur.push(at - j); }
+  joinedOf = withBaseline(g, joinedOf); const dur = []; for (const [u, at] of firstAdds(g, role, period)) { const j = joinedOf(u); if (j && at > j) dur.push(at - j); }
   return summarize(dur);
 }
 export const dur = (ms) => { if (ms == null) return '—'; const s = Math.round(ms / 1000), d = Math.floor(s / 86400), h = Math.floor(s % 86400 / 3600), m = Math.floor(s % 3600 / 60); return d ? `${d}日${h}時間` : h ? `${h}時間${m}分` : m ? `${m}分` : `${s}秒`; };
 
 /** 監査ログ(ロールの変更)から、取り込む。最大 maxEntries 件。権限(監査ログの表示)が必要 */
 export async function importAudit(guild, { maxEntries = 1000, since = null, until = null } = {}) {
-  const g = guild.id; let before, entries = 0, added = 0, stop = false;
+  const g = guild.id; let before, entries = 0, added = 0, stop = false, oldest = null;
   while (entries < maxEntries) {
     const page = await guild.fetchAuditLogs({ type: AuditLogEvent.MemberRoleUpdate, limit: 100, ...(before ? { before } : {}) });
     if (!page.entries.size) break;
     for (const e of page.entries.values()) {
+      oldest = oldest == null ? e.createdTimestamp : Math.min(oldest, e.createdTimestamp);
       if (since != null && e.createdTimestamp < since) { stop = true; continue; } // 新しい順に読んでいるので、期間より前に来たら、終わり
       if (until != null && e.createdTimestamp >= until) continue;
       entries++; const uid = e.targetId ?? e.target?.id; if (!uid) continue;
@@ -118,6 +126,7 @@ export async function importAudit(guild, { maxEntries = 1000, since = null, unti
     }
     before = page.entries.last().id; if (stop || page.entries.size < 100) break;
   }
+  markCoverage(g, 'audit', since != null ? Math.max(since, oldest ?? since) : (oldest ?? Date.now() - 45 * 86400_000)); // 読んだ範囲の、はじまり
   return { entries, added };
 }
 
@@ -126,7 +135,8 @@ export async function importAudit(guild, { maxEntries = 1000, since = null, unti
  * 発言を、古い順に数えて(連投の間隔は、いまの設定どおり)、条件の数に届いた発言の時刻 = 取った時刻、とする。
  * いま、そのロールを持っている人だけ。source = 'estimate'(取った時刻は、実際に付いた時刻より、早いことがある)
  */
-export async function estimateRoleTimes(guild) {
+export async function estimateRoleTimes(guild, { from = null } = {}) {
+  markCoverage(guild.id, 'estimate', from ?? 0); // 全期間の発言から推定したなら、はじめから(参加日が、そのまま、起点になる)
   const g = guild.id, rules = getRules(g).filter((r) => r.metric === 'messages').sort((a, b) => a.threshold - b.threshold);
   if (!rules.length) return { users: 0, added: 0 };
   const gap = getSettings(g).message_cooldown * 1000, has = (u, role) => !!guild.members.cache.get(u)?.roles?.cache?.has(role);
@@ -174,11 +184,12 @@ export function parseNotice(m, roles, { forceRole = null } = {}) {
  */
 export async function importNotices(guild, channel, { authorId = null, roleId = null, preview = false, maxMessages = 10000, since = null, until = null } = {}) {
   const g = guild.id, roles = guild.roles.cache, found = [], samples = [], unread = [];
-  let scanned = 0, before, stop = false;
+  let scanned = 0, before, stop = false, oldest = null;
   while (scanned < maxMessages) {
     const batch = await channel.messages.fetch({ limit: 100, ...(before ? { before } : {}) });
     if (!batch.size) break;
     for (const m of batch.values()) {
+      oldest = oldest == null ? m.createdTimestamp : Math.min(oldest, m.createdTimestamp);
       if (since != null && m.createdTimestamp < since) { stop = true; continue; } // 期間より前: 新しい順に読んでいるので、ここから先は、読まない
       if (until != null && m.createdTimestamp >= until) continue;
       scanned++;
@@ -190,6 +201,7 @@ export async function importNotices(guild, channel, { authorId = null, roleId = 
     before = batch.last().id; if (stop || batch.size < 100) break;
   }
   let added = 0;
+  if (!preview && oldest != null) markCoverage(g, 'notice', since != null ? Math.max(since, oldest) : oldest); // このチャンネルの、通知は、ここから先は、読んだ
   if (!preview) { db.exec('BEGIN'); try { for (const e of found) added += Number(log(g, e.userId, e.roleId, e.at, 'add', 'notice').changes); db.exec('COMMIT'); } catch (err) { db.exec('ROLLBACK'); throw err; } }
   return { scanned, matched: found.length, added, preview, samples, unread };
 }

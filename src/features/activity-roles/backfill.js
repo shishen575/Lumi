@@ -214,7 +214,7 @@ async function run(guild, fresh) {
   for (const c of counts) up.run(gid, c.user_id, c.total);
   db.exec('COMMIT');
   const changed = await evaluateGuild(guild);
-  if (job.estimate_roles) { try { await estimateRoleTimes(guild); } catch (e) { console.warn('[backfill] ロールを取った時刻の推定に失敗:', e.message); } } // 発言の時刻から、ロールを取った時刻を、推定する
+  if (job.estimate_roles) { try { await estimateRoleTimes(guild, { from: job.from_ts }); } catch (e) { console.warn('[backfill] ロールを取った時刻の推定に失敗:', e.message); } } // 発言の時刻から、ロールを取った時刻を、推定する
   const cur = jobRow();
   setJob("status='done', phase='done', users=?, roles_changed=?, finished_at=?, elapsed_ms=?",
     counts.length, changed, Date.now(), cur.elapsed_ms + (Date.now() - cur.scan_start));
