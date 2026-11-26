@@ -5,7 +5,7 @@ import { db } from '../../core/db.js';
 import { METRICS, getRules, getStats, metricValue } from './db.js';
 import { pairStats, fastestSinceJoin, joinToStats, roleObtainedAt, trackingSince, dur, importNotices, parsePeriod, periodText, firstRoleStats, messageRoles, withBaseline, measureStart } from './roletime.js';
 import { buildRankView } from './roletimeview.js';
-import { cachedScan } from '../pins/index.js';
+import { cachedScan, withProgress } from '../pins/index.js';
 import { pinHistory } from '../pins/history.js';
 import { hasAccessSync } from '../../core/access.js';
 
@@ -214,7 +214,7 @@ async function topPins(i, page, deps = {}) {
   const hist = deps.history ?? pinHistory(i.guildId);
   let list, label;
   if (hist?.total) { list = [...hist.byTarget].sort((a, b) => b[1] - a[1] || String(a[0]).localeCompare(String(b[0]))); label = `過去の分も、数えています(${hist.total}件・${new Date(hist.finishedAt).toLocaleDateString('ja-JP')}に調べた結果)`; }
-  else { const scan = await cachedScan(i.guild, deps.scan ? { scan: deps.scan } : {}); list = [...scan.byUser].sort((a, b) => b[1] - a[1] || String(a[0]).localeCompare(String(b[0]))); label = 'いまのピン留めだけ(過去の分は、/pins scan で、数えられます)'; }
+  else { const r = await withProgress(i, cachedScan(i.guild, deps.scan ? { scan: deps.scan } : {}), 'ピン留めを数えています'); if (!r.ok) return i.editReply({ content: `調べられませんでした: ${r.error.message}` }); const scan = r.value; list = [...scan.byUser].sort((a, b) => b[1] - a[1] || String(a[0]).localeCompare(String(b[0]))); label = 'いまのピン留めだけ(過去の分は、/pins scan で、数えられます)'; }
   let view = pinsView(i, list, page, label);
   const msg = await i.editReply({ embeds: view.embeds, components: view.components });
   if (!view.components.length || !msg?.createMessageComponentCollector) return;

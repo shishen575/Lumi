@@ -11,6 +11,8 @@ migrate(`CREATE TABLE IF NOT EXISTS pin_log (
   PRIMARY KEY (guild_id, sys_id))`);
 const locks = new Set();
 export const scanState = (g) => getKV(g, 'pin_scan', null);
+/** 本当に、いま、調べているか(再起動などで、「調べ中」のまま、止まった状態は、含めない) */
+export const isScanning = (g) => locks.has(g) || (scanState(g)?.status === 'running' && scanState(g)?.total === 0 && Date.now() - (scanState(g).startedAt ?? 0) < 5 * 60_000);
 const setState = (g, patch) => setKV(g, 'pin_scan', { ...(scanState(g) ?? {}), ...patch });
 
 /** 集計: { total, byPinner, byTarget, finishedAt }(まだ、調べていなければ null) */
@@ -21,6 +23,9 @@ export function pinHistory(g) {
   return { total: rows.length, byPinner, byTarget, unknownTargets: rows.filter((r) => !r.target_author || r.target_author === '?').length, finishedAt: st.finishedAt, channels: st.channels ?? 0 };
 }
 
+/** チャンネルの一覧を、集めている間の、状態(この間も、「調べている」と、表示できる) */
+export function markStarting(g) { setState(g, { status: 'running', startedAt: Date.now(), total: 0, done: 0, found: 0, current: 'チャンネルの一覧を集めています', error: null }); }
+export function markFailed(g, error) { setState(g, { status: 'error', error }); }
 /** 調べを、始める(裏で、動く)。targets: 読めるチャンネル・スレッドの一覧 */
 export function startPinScan(guild, targets, { notify = null } = {}) {
   const g = guild.id; if (locks.has(g)) return false;
